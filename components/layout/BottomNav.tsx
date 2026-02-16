@@ -16,7 +16,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-white">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background">
       <div className="mx-auto max-w-6xl px-2">
         <div className="grid grid-cols-5 h-14">
           {items.map((item) => {
@@ -33,7 +33,7 @@ export default function BottomNav() {
                 className={[
                   "flex flex-col items-center justify-center gap-1 text-xs",
                   "no-underline",
-                  active ? "text-black font-medium" : "text-zinc-500",
+                  active ? "text-primary font-medium" : "text-muted-foreground",
                 ].join(" ")}
               >
                 <Icon className="h-5 w-5" />

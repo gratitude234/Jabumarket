@@ -44,13 +44,9 @@ export default function MobileTopBar() {
     const t = setTimeout(() => {
       const nextUrl = buildNextUrl(pathname, new URLSearchParams(sp.toString()), q);
 
-      // ✅ Avoid unnecessary replaces:
-      // - On Home: only replace when URL would actually change (/ vs /explore?...).
-      // - Elsewhere: compare querystrings.
       if (pathname === "/") {
         const shouldBeExplore = q.trim().length > 0;
-        const alreadyExplore = false; // you're on "/" here
-        if (!shouldBeExplore && !alreadyExplore) return;
+        if (!shouldBeExplore) return; // stay on "/" when not searching
       } else {
         const current = sp.toString();
         const nextSp = nextUrl.includes("?") ? nextUrl.split("?")[1] : "";
@@ -77,17 +73,14 @@ export default function MobileTopBar() {
   }
 
   return (
-    <header className="md:hidden sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
+    <header className="md:hidden sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="font-bold text-lg no-underline text-black">
+          <Link href="/" className="font-bold text-lg no-underline">
             Jabumarket
           </Link>
 
-          <Link
-            href="/post"
-            className="inline-flex items-center gap-2 rounded-lg bg-black px-3 py-2 text-white text-sm no-underline"
-          >
+          <Link href="/post" className="btn-primary">
             <Plus className="h-4 w-4" />
             Post
           </Link>
@@ -95,13 +88,13 @@ export default function MobileTopBar() {
 
         {showSearch && (
           <form onSubmit={onSubmit} className="mt-3">
-            <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm">
-              <Search className="h-4 w-4 text-zinc-500" />
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 shadow-sm">
+              <Search className="h-4 w-4 text-muted-foreground" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search products & services..."
-                className="w-full bg-transparent text-sm outline-none"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
               />
 
               {/* ✅ Clear (shows only when typing) */}
@@ -109,10 +102,10 @@ export default function MobileTopBar() {
                 <button
                   type="button"
                   onClick={clear}
-                  className="rounded-md p-1 hover:bg-zinc-100"
+                  className="rounded-md p-1 hover:bg-secondary"
                   aria-label="Clear search"
                 >
-                  <X className="h-4 w-4 text-zinc-500" />
+                  <X className="h-4 w-4 text-muted-foreground" />
                 </button>
               ) : null}
             </div>

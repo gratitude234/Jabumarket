@@ -26,7 +26,6 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   return qs ? `${pathname}?${qs}` : pathname;
 }
 
-
 function currentUrl(pathname: string, sp: URLSearchParams) {
   const qs = sp.toString();
   return qs ? `${pathname}?${qs}` : pathname;
@@ -80,9 +79,9 @@ export default function TopNav() {
   }
 
   return (
-    <header className="hidden md:block border-b bg-white/80 backdrop-blur">
+    <header className="hidden md:block border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-4">
-        <Link href="/" className="font-bold text-lg no-underline text-black">
+        <Link href="/" className="font-bold text-lg no-underline">
           Jabumarket
         </Link>
 
@@ -95,8 +94,8 @@ export default function TopNav() {
                 href={l.href}
                 className={
                   active
-                    ? "font-semibold no-underline text-black"
-                    : "text-zinc-600 hover:text-black no-underline"
+                    ? "font-semibold no-underline text-foreground"
+                    : "text-muted-foreground hover:text-foreground no-underline"
                 }
               >
                 {l.label}
@@ -108,15 +107,15 @@ export default function TopNav() {
         <div className="flex items-center gap-3">
           {showSearch ? (
             <form onSubmit={onSubmit} className="hidden lg:block">
-              <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
-                <Search className="h-4 w-4 text-zinc-500" />
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder={
                     pathname.startsWith("/vendors") ? "Search vendors..." : "Search listings..."
                   }
-                  className="w-64 bg-transparent text-sm outline-none"
+                  className="w-64 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
                 />
 
                 {/* ✅ Clear */}
@@ -124,20 +123,17 @@ export default function TopNav() {
                   <button
                     type="button"
                     onClick={clear}
-                    className="rounded-md p-1 hover:bg-zinc-100"
+                    className="rounded-md p-1 hover:bg-secondary"
                     aria-label="Clear search"
                   >
-                    <X className="h-4 w-4 text-zinc-500" />
+                    <X className="h-4 w-4 text-muted-foreground" />
                   </button>
                 ) : null}
               </div>
             </form>
           ) : null}
 
-          <Link
-            href="/post"
-            className="rounded-lg bg-black px-3 py-2 text-white text-sm no-underline"
-          >
+          <Link href="/post" className="btn-primary">
             Post Listing
           </Link>
         </div>

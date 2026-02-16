@@ -39,9 +39,7 @@ export default async function DeliveryPage({
   if (listingId) {
     const { data } = await supabase
       .from("listings")
-      .select(
-        "*, vendor:vendors(id, name, whatsapp, phone, location, verified, vendor_type)"
-      )
+      .select("*, vendor:vendors(id, name, whatsapp, phone, location, verified, vendor_type)")
       .eq("id", listingId)
       .single();
 
@@ -65,9 +63,7 @@ export default async function DeliveryPage({
     listing?.vendor?.location ?? listing?.location ?? "Pickup location to be confirmed";
 
   const priceText =
-    listing?.price != null
-      ? formatNaira(listing.price)
-      : listing?.price_label ?? "Contact for price";
+    listing?.price != null ? formatNaira(listing.price) : listing?.price_label ?? "Contact for price";
 
   const message = listing
     ? [
@@ -96,9 +92,7 @@ export default async function DeliveryPage({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Delivery (Dispatch)</h1>
-            <p className="mt-1 text-sm text-zinc-600">
-              Choose a rider and message them on WhatsApp.
-            </p>
+            <p className="mt-1 text-sm text-zinc-600">Choose a rider and message them on WhatsApp.</p>
           </div>
           <Link
             href={listing ? `/listing/${listing.id}` : "/explore"}
@@ -126,11 +120,7 @@ export default async function DeliveryPage({
             className="h-10 rounded-xl border px-3 text-sm"
           />
 
-          <select
-            name="zone"
-            defaultValue={zone}
-            className="h-10 rounded-xl border px-3 text-sm"
-          >
+          <select name="zone" defaultValue={zone} className="h-10 rounded-xl border px-3 text-sm">
             <option value="all">All zones</option>
             <option value="Campus">Campus</option>
             <option value="Male Hostels">Male Hostels</option>
@@ -173,8 +163,8 @@ export default async function DeliveryPage({
           </div>
         ) : (
           riders.map((r) => {
-            const wa = r.whatsapp ?? r.phone;
-            const href = getWhatsAppLink(wa, message);
+            const wa = (r.whatsapp ?? r.phone)?.trim() || null;
+            const href = wa ? getWhatsAppLink(wa, message) : null;
 
             return (
               <div key={r.id} className="rounded-2xl border bg-white p-4">
@@ -184,10 +174,20 @@ export default async function DeliveryPage({
                     <div className="mt-1 text-xs text-zinc-500">
                       Zone: {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
                     </div>
+
                     {r.fee_note ? (
                       <div className="mt-1 text-xs text-zinc-600">{r.fee_note}</div>
                     ) : null}
-                    <div className="mt-1 text-xs text-zinc-500">Phone: +{r.phone}</div>
+
+                    <div className="mt-1 text-xs text-zinc-500">
+                      Phone: {r.phone ? `+${r.phone}` : "—"}
+                    </div>
+
+                    {!wa ? (
+                      <div className="mt-2 text-xs text-amber-700">
+                        No WhatsApp/phone number set for this rider.
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
@@ -202,10 +202,17 @@ export default async function DeliveryPage({
                     )}
 
                     <a
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
+                      href={href ?? "#"}
+                      onClick={(e) => {
+                        if (!href) e.preventDefault();
+                      }}
+                      target={href ? "_blank" : undefined}
+                      rel={href ? "noreferrer" : undefined}
+                      className={`rounded-xl px-4 py-2 text-sm no-underline ${
+                        href
+                          ? "bg-black text-white"
+                          : "bg-zinc-200 text-zinc-500 cursor-not-allowed"
+                      }`}
                     >
                       Message rider
                     </a>
