@@ -120,8 +120,8 @@ export default async function ListingPage({
         {/* Media */}
         <div className="lg:col-span-3">
           <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-            {/* mobile: more immersive image */}
-            <div className="relative aspect-[1/1] w-full bg-zinc-100 sm:aspect-[4/3]">
+            {/* ✅ FIX: stop the image from being an enormous square on mobile */}
+            <div className="relative w-full bg-zinc-100 aspect-[4/3] sm:aspect-[16/9] max-h-[55vh]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={listing.image_url ?? "https://placehold.co/1200x1200?text=Jabumarket"}
