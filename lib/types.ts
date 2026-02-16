@@ -46,3 +46,16 @@ export type CourierRow = {
   featured?: boolean | null;
   created_at: string | null;
 };
+
+// Riders (delivery guys directory / verification)
+export type RiderRow = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  zone: string | null;
+  fee_note: string | null;
+  is_available: boolean | null;
+  verified: boolean;
+  created_at: string | null;
+};
