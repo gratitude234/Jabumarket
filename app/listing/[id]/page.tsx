@@ -5,16 +5,7 @@ import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
-import {
-  ArrowLeft,
-  BadgeCheck,
-  MapPin,
-  Clock,
-  Phone,
-  Flag,
-  Store,
-  Truck,
-} from "lucide-react";
+import { ArrowLeft, BadgeCheck, MapPin, Clock, Phone, Flag, Store, Truck } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -44,16 +35,25 @@ export default async function ListingPage({
 
   const { data, error } = await supabase
     .from("listings")
-    // keep vendor join, but use only what we need
+    // NOTE: Supabase nested join returns an ARRAY by default. We normalize below.
     .select(
-      "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at,vendor_id,vendor:vendors(id,name,whatsapp,verified,vendor_type)"
+      `
+      id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at,vendor_id,
+      vendor:vendors(id,name,whatsapp,verified,vendor_type,phone,location)
+    `
     )
     .eq("id", id)
     .single();
 
   if (error || !data) return notFound();
 
-  const listing = data as ListingRow & { vendor?: VendorRow | null };
+  // ✅ Normalize `vendor` from VendorRow[] -> VendorRow | null
+  const row = data as ListingRow & { vendor?: VendorRow[] | null };
+
+  const listing: ListingRow & { vendor?: VendorRow | null } = {
+    ...(row as ListingRow),
+    vendor: row.vendor?.[0] ?? null,
+  };
 
   const priceText =
     listing.price !== null
@@ -63,7 +63,7 @@ export default async function ListingPage({
   const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
 
   const isSold = listing.status === "sold";
-  const isVerified = Boolean((listing.vendor as any)?.verified);
+  const isVerified = Boolean(listing.vendor?.verified);
 
   const sellerName = listing.vendor?.name ?? "Unknown";
   const vendorId = listing.vendor?.id ?? listing.vendor_id;
@@ -75,7 +75,7 @@ export default async function ListingPage({
 
   const isFoodListing =
     String(listing.category ?? "").toLowerCase() === "food" ||
-    String((listing.vendor as any)?.vendor_type ?? "").toLowerCase() === "food";
+    String(listing.vendor?.vendor_type ?? "").toLowerCase() === "food";
 
   // More like this (same category, excluding current)
   const { data: similarData } = await supabase
@@ -125,7 +125,7 @@ export default async function ListingPage({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={listing.image_url ?? "https://placehold.co/1200x1200?text=Jabumarket"}
-                alt={listing.title}
+                alt={listing.title ?? "Listing"}
                 className="h-full w-full object-cover"
               />
 
@@ -258,7 +258,7 @@ export default async function ListingPage({
               ) : null}
             </div>
 
-            {/* Description: mobile-friendly expand/collapse without JS */}
+            {/* Description */}
             <div className="mt-4">
               <p className="text-xs font-semibold text-zinc-700">Description</p>
               <details className="mt-2 rounded-2xl border bg-zinc-50 p-3">
@@ -266,8 +266,7 @@ export default async function ListingPage({
                   Tap to {`read ${listing.description ? "more" : "details"}`}
                 </summary>
                 <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
-                  {listing.description ??
-                    "No description yet. Contact the seller for more details."}
+                  {listing.description ?? "No description yet. Contact the seller for more details."}
                 </p>
               </details>
             </div>
@@ -358,7 +357,7 @@ export default async function ListingPage({
                 </span>
               )}
 
-              {(!isSold && isFoodListing) ? (
+              {!isSold && isFoodListing ? (
                 <Link
                   href={`/couriers?listing=${listing.id}`}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
@@ -381,16 +380,12 @@ export default async function ListingPage({
           </div>
 
           {/* Owner actions */}
-          <OwnerActions
-            listingId={listing.id}
-            listingVendorId={listing.vendor_id}
-            status={listing.status}
-          />
+          <OwnerActions listingId={listing.id} listingVendorId={listing.vendor_id} status={listing.status} />
 
           {/* Safety tips */}
           <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
             <p className="text-sm font-semibold text-zinc-900">Safety tips</p>
-            <ul className="mt-2 space-y-2 text-sm text-zinc-600 list-disc pl-5">
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-zinc-600">
               <li>Meet in a public place on/around campus.</li>
               <li>Inspect item before paying. Avoid full prepayment.</li>
               <li>For services, agree on price and timeline upfront.</li>
@@ -401,7 +396,7 @@ export default async function ListingPage({
       </div>
 
       {/* Mobile bottom action bar (doesn’t fight your bottom nav) */}
-      <div className="lg:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
+      <div className="fixed bottom-16 left-0 right-0 z-40 px-4 lg:hidden">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
           <div className="grid grid-cols-2 gap-2">
             <Link
