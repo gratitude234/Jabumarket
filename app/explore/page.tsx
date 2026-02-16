@@ -1,66 +1,64 @@
+// app/explore/page.tsx
 import Link from "next/link";
+import { Search, SlidersHorizontal, X, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase/server";
-import type { ListingRow, ListingType } from "@/lib/types";
-import ListingImage from "@/components/ListingImage";
 
-function formatNaira(amount: number) {
-  return `₦${amount.toLocaleString("en-NG")}`;
+function formatNaira(amount: number | null | undefined) {
+  const n = Number(amount ?? 0);
+  if (!Number.isFinite(n)) return "₦0";
+  return `₦${n.toLocaleString("en-NG")}`;
 }
 
-type SortKey = "newest" | "price_asc" | "price_desc";
-type StatusKey = "active" | "inactive" | "sold";
+type ListingRow = {
+  id: string;
+  title: string | null;
+  price: number | null;
+  category: string | null;
+  listing_type: string | null; // "product" | "service" etc
+  created_at: string | null;
+  image_url?: string | null;
+  status?: string | null; // "active" | "sold" | "inactive" (if your schema has it)
+};
+
+const CATEGORIES = ["All", "Phones", "Laptops", "Fashion", "Provisions", "Food", "Beauty", "Services", "Others"] as const;
+const TYPES = ["all", "product", "service"] as const;
+const SORTS = ["newest", "price_low", "price_high"] as const;
+const STATUSES = ["active", "active_sold", "active_inactive", "all"] as const;
 
 function buildExploreHref(params: {
   q?: string;
   type?: string;
   category?: string;
   sort?: string;
+  status?: string;
   page?: string | number;
-  sold?: string;
-  inactive?: string;
 }) {
   const sp = new URLSearchParams();
-
   if (params.q) sp.set("q", params.q);
   if (params.type && params.type !== "all") sp.set("type", params.type);
-  if (params.category && params.category !== "all") sp.set("category", params.category);
+  if (params.category && params.category !== "all" && params.category !== "All") sp.set("category", params.category);
   if (params.sort && params.sort !== "newest") sp.set("sort", params.sort);
-
-  // advanced toggles
-  if (params.sold === "1") sp.set("sold", "1");
-  if (params.inactive === "1") sp.set("inactive", "1");
-
-  // pagination
-  const pageStr = String(params.page ?? "");
-  if (pageStr && pageStr !== "1") sp.set("page", pageStr);
-
+  if (params.status && params.status !== "active") sp.set("status", params.status);
+  if (params.page && String(params.page) !== "1") sp.set("page", String(params.page));
   const qs = sp.toString();
   return qs ? `/explore?${qs}` : "/explore";
 }
 
-function clampPage(n: number) {
-  if (!Number.isFinite(n) || n < 1) return 1;
-  if (n > 999) return 999;
-  return Math.floor(n);
+function countActiveFilters(sp: {
+  q?: string;
+  type?: string;
+  category?: string;
+  sort?: string;
+  status?: string;
+}) {
+  let n = 0;
+  if ((sp.q ?? "").trim()) n++;
+  if ((sp.type ?? "all") !== "all") n++;
+  if ((sp.category ?? "all") !== "all" && (sp.category ?? "all") !== "All") n++;
+  if ((sp.sort ?? "newest") !== "newest") n++;
+  if ((sp.status ?? "active") !== "active") n++;
+  return n;
 }
-
-// very small escape to reduce weird LIKE behavior
-function escapeLike(input: string) {
-  return input.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
-}
-
-const CATEGORIES = [
-  "Phones",
-  "Laptops",
-  "Fashion",
-  "Provisions",
-  "Food",
-  "Beauty",
-  "Services",
-  "Repairs",
-  "Tutoring",
-  "Others",
-];
 
 export default async function ExplorePage({
   searchParams,
@@ -70,397 +68,436 @@ export default async function ExplorePage({
     type?: string;
     category?: string;
     sort?: string;
+    status?: string;
     page?: string;
-    sold?: string;
-    inactive?: string;
   }>;
 }) {
-  const sp = (searchParams ? await searchParams : {}) as {
-    q?: string;
-    type?: string;
-    category?: string;
-    sort?: string;
-    page?: string;
-    sold?: string;
-    inactive?: string;
-  };
-
+  const sp = (await searchParams) ?? {};
   const q = (sp.q ?? "").trim();
-  const type = (sp.type ?? "all") as "all" | ListingType;
+  const type = (sp.type ?? "all").trim();
   const category = (sp.category ?? "all").trim();
-  const sort = ((sp.sort ?? "newest").trim() as SortKey) || "newest";
+  const sort = (sp.sort ?? "newest").trim();
+  const status = (sp.status ?? "active").trim();
+  const page = Math.max(1, Number(sp.page ?? "1") || 1);
 
-  const includeSold = sp.sold === "1";
-  const includeInactive = sp.inactive === "1";
+  const perPage = 12;
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
 
-  const page = clampPage(Number(sp.page ?? "1"));
-  const PAGE_SIZE = 24;
-  const from = (page - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  const activeFilters = countActiveFilters({ q, type, category, sort, status });
 
-  // Base query (only fields used on this page)
+  // ---- Query
   let query = supabase
     .from("listings")
-    .select(
-      "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at",
-      { count: "exact" }
-    );
+    .select("id, title, price, category, listing_type, created_at, image_url, status", { count: "exact" });
 
-  // Filters
+  // Status filter (safe default: only active)
+  // If your table doesn't have "status", remove these filters.
+  if (status === "active") query = query.eq("status", "active");
+  else if (status === "active_sold") query = query.in("status", ["active", "sold"]);
+  else if (status === "active_inactive") query = query.in("status", ["active", "inactive"]);
+  // else "all" => no filter
+
+  // Type/category filters
   if (type !== "all") query = query.eq("listing_type", type);
-  if (category !== "all") query = query.eq("category", category);
+  if (category !== "all" && category !== "All") query = query.eq("category", category);
 
-  // Default: active only, unless toggles included
-  const statuses: StatusKey[] = ["active"];
-  if (includeInactive) statuses.push("inactive");
-  if (includeSold) statuses.push("sold");
-  query = query.in("status", statuses);
-
-  // Search (server-side)
+  // Search (title/category)
   if (q) {
-    const safe = escapeLike(q);
-    query = query.or(
-      `title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`
-    );
+    // If you have description column, add it here too
+    query = query.or(`title.ilike.%${q}%,category.ilike.%${q}%`);
   }
 
-  // SQL ordering
-  if (sort === "price_asc") {
-    // push null prices to the end by ordering price ascending (nulls last not guaranteed in PostgREST)
-    query = query.order("price", { ascending: true }).order("created_at", { ascending: false });
-  } else if (sort === "price_desc") {
-    query = query.order("price", { ascending: false }).order("created_at", { ascending: false });
-  } else {
-    query = query.order("created_at", { ascending: false });
-  }
+  // Sort
+  if (sort === "price_low") query = query.order("price", { ascending: true, nullsFirst: false });
+  else if (sort === "price_high") query = query.order("price", { ascending: false, nullsFirst: false });
+  else query = query.order("created_at", { ascending: false });
 
-  // Pagination
+  // Pagination range
   query = query.range(from, to);
 
   const { data, error, count } = await query;
-
   const listings = (data ?? []) as ListingRow[];
-  const total = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const showingFrom = total === 0 ? 0 : from + 1;
-  const showingTo = Math.min(total, to + 1);
 
-  const activeFilters = {
-    q,
-    type,
-    category,
-    sort,
-    sold: includeSold ? "1" : "",
-    inactive: includeInactive ? "1" : "",
-  };
+  const total = Number(count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const canPrev = page > 1;
+  const canNext = page < totalPages;
+
+  const clearHref = "/explore";
 
   return (
-    <div className="space-y-4">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-5 sm:pb-10 sm:pt-8">
       {/* Header */}
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Explore</h1>
-
-          {error ? (
-            <p className="mt-1 text-sm text-red-600">
-              Couldn’t load listings. Check Supabase env vars + server logs.
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-zinc-600">
-              Showing <span className="font-medium text-zinc-900">{showingFrom}</span>–
-              <span className="font-medium text-zinc-900">{showingTo}</span> of{" "}
-              <span className="font-medium text-zinc-900">{total}</span>
-              {q ? (
-                <>
-                  {" "}
-                  for <span className="font-medium text-zinc-900">“{q}”</span>
-                </>
-              ) : null}
-            </p>
-          )}
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">Explore</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Find products and services around campus.</p>
         </div>
 
-        <Link
-          href="/post"
-          className="hidden sm:inline-flex rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
-        >
-          Post Listing
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/post" className="btn-primary">
+            + Post
+          </Link>
+          <Link href="/vendors" className="btn-outline">
+            Vendors
+          </Link>
+        </div>
       </div>
 
-      {/* Sticky filters */}
-      <div className="sticky top-0 z-10 -mx-2 border-b bg-zinc-50/80 px-2 py-3 backdrop-blur">
-        <div className="space-y-3">
+      {/* Sticky mobile toolbar + Filter drawer (no JS, mobile-first) */}
+      <details className="group mt-4 rounded-3xl border bg-card shadow-sm sm:mt-6">
+        {/* Sticky toolbar */}
+        <div className="sticky top-0 z-20 rounded-3xl bg-card/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:p-4">
           {/* Search */}
-          <form method="GET" action="/explore" className="flex gap-2">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search phones, food, services…"
-              className="w-full rounded-2xl border bg-white px-4 py-2 text-sm outline-none placeholder:text-zinc-400"
-            />
-            {/* preserve filters */}
-            {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
-            {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
-            {sort !== "newest" ? <input type="hidden" name="sort" value={sort} /> : null}
-            {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
-            {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
+          <form action="/explore" method="GET" className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Keep existing filters when searching */}
+            <input type="hidden" name="type" value={type} />
+            <input type="hidden" name="category" value={category} />
+            <input type="hidden" name="sort" value={sort} />
+            <input type="hidden" name="status" value={status} />
 
-            <button className="rounded-2xl bg-black px-4 py-2 text-sm text-white">Search</button>
-          </form>
+            <div className="flex flex-1 items-center gap-2 rounded-2xl border bg-background p-2 shadow-sm">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-secondary">
+                <Search className="h-5 w-5 text-muted-foreground" />
+              </div>
 
-          {/* Row: type + sort + clear */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Pill href={buildExploreHref({ ...activeFilters, type: "all", page: 1 })} active={type === "all"} label="All" />
-              <Pill
-                href={buildExploreHref({ ...activeFilters, type: "product", page: 1 })}
-                active={type === "product"}
-                label="Products"
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Search products & services…"
+                list="explore-suggestions"
+                className="h-10 w-full bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
-              <Pill
-                href={buildExploreHref({ ...activeFilters, type: "service", page: 1 })}
-                active={type === "service"}
-                label="Services"
-              />
+
+              {q ? (
+                <Link
+                  href={buildExploreHref({ q: "", type, category, sort, status, page: 1 })}
+                  className="grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-secondary"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </Link>
+              ) : (
+                <button
+                  type="reset"
+                  className="grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-secondary"
+                  aria-label="Reset form"
+                  title="Reset"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+
+              <button type="submit" className="btn-primary h-10 px-4 py-0">
+                Search
+              </button>
+
+              <datalist id="explore-suggestions">
+                <option value="iPhone" />
+                <option value="laptop" />
+                <option value="rice" />
+                <option value="laundry" />
+                <option value="hair" />
+                <option value="repairs" />
+              </datalist>
             </div>
 
-            <div className="flex items-center gap-2">
-              <form method="GET" action="/explore" className="flex items-center gap-2">
-                {/* preserve filters */}
-                {q ? <input type="hidden" name="q" value={q} /> : null}
-                {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
-                {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
-                {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
-                {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
+            {/* Filter toggle (summary) */}
+            <summary className="list-none sm:hidden">
+              <span className="btn-outline inline-flex w-full justify-center gap-2">
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+                {activeFilters > 0 ? <span className="badge-success ml-1">+{activeFilters}</span> : null}
+              </span>
+            </summary>
 
-                <select
-                  name="sort"
-                  defaultValue={sort}
-                  className="rounded-xl border bg-white px-3 py-2 text-sm"
-                >
-                  <option value="newest">Newest</option>
-                  <option value="price_asc">Price: Low → High</option>
-                  <option value="price_desc">Price: High → Low</option>
-                </select>
-
-                <button className="rounded-xl border bg-white px-3 py-2 text-sm hover:bg-zinc-50">
-                  Apply
-                </button>
-              </form>
-
-              <Link
-                href="/explore"
-                className="rounded-xl border bg-white px-3 py-2 text-sm text-zinc-700 no-underline hover:bg-zinc-50"
-              >
+            {/* Desktop inline controls */}
+            <div className="hidden items-center gap-2 sm:flex">
+              <Link href={clearHref} className="btn-outline">
                 Clear
+              </Link>
+
+              <div className="rounded-2xl border bg-background px-3 py-2 text-sm text-muted-foreground">
+                {total.toLocaleString("en-NG")} result{total === 1 ? "" : "s"}
+              </div>
+            </div>
+          </form>
+
+          {/* Mobile: small “active filters” line */}
+          <div className="mt-3 flex items-center justify-between gap-2 sm:hidden">
+            <div className="text-xs text-muted-foreground">
+              {total.toLocaleString("en-NG")} result{total === 1 ? "" : "s"}
+              {activeFilters > 0 ? <span className="ml-2">• {activeFilters} filter(s)</span> : null}
+            </div>
+            {activeFilters > 0 ? (
+              <Link href={clearHref} className="text-xs font-medium text-primary hover:underline underline-offset-4">
+                Clear all
+              </Link>
+            ) : null}
+          </div>
+
+          {/* Category chips (horizontal scroll, mobile-first) */}
+          <div className="mt-3 -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none]">
+            <style>{`div::-webkit-scrollbar{display:none}`}</style>
+            {CATEGORIES.map((c) => {
+              const isActive =
+                (c === "All" && (category === "all" || category === "All" || !category)) || category === c;
+              return (
+                <Link
+                  key={c}
+                  href={buildExploreHref({
+                    q,
+                    type,
+                    category: c === "All" ? "all" : c,
+                    sort,
+                    status,
+                    page: 1,
+                  })}
+                  className={[
+                    "shrink-0 rounded-full border px-3 py-2 text-xs font-medium",
+                    isActive
+                      ? "bg-primary text-primary-foreground border-transparent shadow-sm"
+                      : "bg-background text-foreground hover:bg-secondary",
+                  ].join(" ")}
+                >
+                  {c}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Drawer content (opens on mobile via summary; always visible on desktop) */}
+        <div className="p-3 pt-0 sm:p-4 sm:pt-0">
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {/* Type */}
+            <div className="rounded-2xl border bg-background p-3">
+              <div className="text-sm font-semibold text-foreground">Type</div>
+              <div className="mt-2 grid gap-2">
+                {TYPES.map((t) => {
+                  const isActive = type === t;
+                  return (
+                    <Link
+                      key={t}
+                      href={buildExploreHref({ q, type: t, category, sort, status, page: 1 })}
+                      className={[
+                        "rounded-xl border px-3 py-2 text-sm",
+                        isActive ? "bg-primary text-primary-foreground border-transparent" : "hover:bg-secondary",
+                      ].join(" ")}
+                    >
+                      {t === "all" ? "All" : t === "product" ? "Products" : "Services"}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sort */}
+            <div className="rounded-2xl border bg-background p-3">
+              <div className="text-sm font-semibold text-foreground">Sort</div>
+              <div className="mt-2 grid gap-2">
+                {SORTS.map((s) => {
+                  const isActive = sort === s;
+                  const label =
+                    s === "newest" ? "Newest" : s === "price_low" ? "Price: Low → High" : "Price: High → Low";
+                  return (
+                    <Link
+                      key={s}
+                      href={buildExploreHref({ q, type, category, sort: s, status, page: 1 })}
+                      className={[
+                        "rounded-xl border px-3 py-2 text-sm",
+                        isActive ? "bg-primary text-primary-foreground border-transparent" : "hover:bg-secondary",
+                      ].join(" ")}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Status */}
+            <div className="rounded-2xl border bg-background p-3">
+              <div className="text-sm font-semibold text-foreground">Status</div>
+              <div className="mt-2 grid gap-2">
+                {STATUSES.map((st) => {
+                  const isActive = status === st;
+                  const label =
+                    st === "active"
+                      ? "Active only"
+                      : st === "active_sold"
+                      ? "Active + Sold"
+                      : st === "active_inactive"
+                      ? "Active + Inactive"
+                      : "All";
+                  return (
+                    <Link
+                      key={st}
+                      href={buildExploreHref({ q, type, category, sort, status: st, page: 1 })}
+                      className={[
+                        "rounded-xl border px-3 py-2 text-sm",
+                        isActive ? "bg-primary text-primary-foreground border-transparent" : "hover:bg-secondary",
+                      ].join(" ")}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile close row */}
+          <div className="mt-3 flex items-center justify-between sm:hidden">
+            <span className="text-xs text-muted-foreground">
+              {activeFilters > 0 ? `${activeFilters} filter(s) active` : "No filters active"}
+            </span>
+            <div className="flex gap-2">
+              <Link href={clearHref} className="btn-outline">
+                Clear
+              </Link>
+              {/* Closing details without JS: clicking summary toggles */}
+              <summary className="list-none">
+                <span className="btn-primary inline-flex justify-center">Done</span>
+              </summary>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      {/* Results */}
+      <section className="mt-6">
+        {error ? (
+          <div className="rounded-3xl border bg-card p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-secondary">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-foreground">Something went wrong</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  We couldn’t load listings right now. Try clearing filters or refreshing.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href={clearHref} className="btn-outline">
+                    Clear filters
+                  </Link>
+                  <Link href={buildExploreHref({ q, type, category, sort, status, page })} className="btn-primary">
+                    Retry
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : listings.length === 0 ? (
+          <div className="rounded-3xl border bg-card p-5 shadow-sm">
+            <h2 className="font-semibold text-foreground">No results</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Try removing filters or searching a different keyword.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href={clearHref} className="btn-primary">
+                Clear all
+              </Link>
+              <Link href={buildExploreHref({ q: "food", type: "all", category: "all", sort: "newest", status: "active", page: 1 })} className="btn-outline">
+                Try “food”
+              </Link>
+              <Link href={buildExploreHref({ q: "laundry", type: "service", category: "Services", sort: "newest", status: "active", page: 1 })} className="btn-outline">
+                Try “laundry”
               </Link>
             </div>
           </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {listings.map((l) => (
+                <Link
+                  key={l.id}
+                  href={`/listing/${l.id}`}
+                  className="group rounded-2xl border bg-card p-4 shadow-sm transition hover:bg-secondary"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-foreground">
+                        {l.title ?? "Untitled listing"}
+                      </div>
 
-          {/* Category chips */}
-          <div className="flex flex-wrap gap-2">
-            <Chip
-              href={buildExploreHref({ ...activeFilters, category: "all", page: 1 })}
-              active={category === "all"}
-              label="All categories"
-            />
-            {CATEGORIES.map((c) => (
-              <Chip
-                key={c}
-                href={buildExploreHref({ ...activeFilters, category: c, page: 1 })}
-                active={category.toLowerCase() === c.toLowerCase()}
-                label={c}
-              />
-            ))}
-          </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {l.category ? (
+                          <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 text-xs text-foreground">
+                            {l.category}
+                          </span>
+                        ) : null}
+                        {l.listing_type ? (
+                          <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 text-xs text-foreground">
+                            {l.listing_type}
+                          </span>
+                        ) : null}
+                        {l.status && l.status !== "active" ? (
+                          <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                            {l.status}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
 
-          {/* Status toggles */}
-          <div className="flex flex-wrap items-center gap-2">
-            <SmallToggle
-              href={buildExploreHref({ ...activeFilters, sold: includeSold ? "" : "1", page: 1 })}
-              active={includeSold}
-              label="Include sold"
-            />
-            <SmallToggle
-              href={buildExploreHref({ ...activeFilters, inactive: includeInactive ? "" : "1", page: 1 })}
-              active={includeInactive}
-              label="Include inactive"
-            />
-            {!includeSold && !includeInactive ? (
-              <span className="text-xs text-zinc-500">Default: active only</span>
-            ) : null}
-          </div>
-        </div>
-      </div>
+                    <div className="shrink-0 rounded-xl bg-background px-3 py-2 text-sm font-semibold text-foreground">
+                      {formatNaira(l.price)}
+                    </div>
+                  </div>
 
-      {/* Results */}
-      {listings.length === 0 ? (
-        <div className="rounded-2xl border bg-white p-6">
-          <p className="text-sm font-medium text-zinc-800">No results found</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Try a different search, or clear your filters.
-          </p>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/explore" className="rounded-xl bg-black px-4 py-2 text-sm text-white no-underline">
-              Clear filters
-            </Link>
-            <Link href="/post" className="rounded-xl border px-4 py-2 text-sm text-black no-underline">
-              Post a listing
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {listings.map((l) => (
-              <ListingCard key={l.id} listing={l} />
-            ))}
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between">
-            <Link
-              href={buildExploreHref({ ...activeFilters, page: Math.max(1, page - 1) })}
-              className={[
-                "rounded-xl border bg-white px-4 py-2 text-sm no-underline",
-                page <= 1 ? "pointer-events-none opacity-50" : "hover:bg-zinc-50",
-              ].join(" ")}
-            >
-              ← Prev
-            </Link>
-
-            <div className="text-sm text-zinc-600">
-              Page <span className="font-medium text-zinc-900">{page}</span> of{" "}
-              <span className="font-medium text-zinc-900">{totalPages}</span>
+                  <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Tap to view</span>
+                    <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                  </div>
+                </Link>
+              ))}
             </div>
 
-            <Link
-              href={buildExploreHref({ ...activeFilters, page: Math.min(totalPages, page + 1) })}
-              className={[
-                "rounded-xl border bg-white px-4 py-2 text-sm no-underline",
-                page >= totalPages ? "pointer-events-none opacity-50" : "hover:bg-zinc-50",
-              ].join(" ")}
-            >
-              Next →
-            </Link>
-          </div>
-        </>
-      )}
+            {/* Pagination */}
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <div className="text-xs text-muted-foreground">
+                Page <span className="font-medium text-foreground">{page}</span> of{" "}
+                <span className="font-medium text-foreground">{totalPages}</span>
+              </div>
 
-      {/* Mobile Post CTA */}
-      <div className="sm:hidden">
-        <Link
-          href="/post"
-          className="inline-flex w-full justify-center rounded-2xl bg-black px-4 py-3 text-sm text-white no-underline"
-        >
-          Post Listing
-        </Link>
-      </div>
-    </div>
-  );
-}
+              <div className="flex gap-2">
+                {canPrev ? (
+                  <Link
+                    href={buildExploreHref({ q, type, category, sort, status, page: page - 1 })}
+                    className="btn-outline"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Prev
+                  </Link>
+                ) : (
+                  <span className="btn-outline pointer-events-none opacity-50">
+                    <ArrowLeft className="h-4 w-4" />
+                    Prev
+                  </span>
+                )}
 
-function Pill({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "rounded-full px-3 py-2 text-sm no-underline border",
-        active ? "bg-black text-white border-black" : "bg-white text-zinc-700 hover:bg-zinc-50",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
-  );
-}
-
-function Chip({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "rounded-full px-3 py-2 text-sm no-underline border",
-        active ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-700 hover:bg-zinc-50",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
-  );
-}
-
-function SmallToggle({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "rounded-full border px-3 py-1 text-xs no-underline",
-        active ? "bg-black text-white border-black" : "bg-white text-zinc-700 hover:bg-zinc-50",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
-  );
-}
-
-function ListingCard({ listing }: { listing: ListingRow }) {
-  const priceText =
-    listing.price !== null ? formatNaira(listing.price) : listing.price_label ?? "Contact for price";
-
-  const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
-  const isSold = listing.status === "sold";
-  const isInactive = listing.status === "inactive";
-
-  return (
-    <Link
-      href={`/listing/${listing.id}`}
-      className={[
-        "group overflow-hidden rounded-2xl border bg-white no-underline transition-shadow hover:shadow-sm",
-        isSold || isInactive ? "opacity-80" : "",
-      ].join(" ")}
-    >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-100">
-        <ListingImage
-          src={listing.image_url ?? "/images/placeholder.svg"}
-          alt={listing.title}
-          className={["transition-transform", isSold || isInactive ? "" : "group-hover:scale-[1.02]"]
-            .filter(Boolean)
-            .join(" ")}
-        />
-
-        {isSold ? (
-          <div className="absolute left-3 top-3">
-            <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">SOLD</span>
-          </div>
-        ) : isInactive ? (
-          <div className="absolute left-3 top-3">
-            <span className="rounded-full bg-zinc-700 px-3 py-1 text-xs font-semibold text-white">
-              INACTIVE
-            </span>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="space-y-2 p-3">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700">{typeLabel}</span>
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700">{listing.category}</span>
-          {listing.negotiable ? (
-            <span className="ml-auto rounded-full bg-zinc-900 px-2 py-1 text-xs text-white">Negotiable</span>
-          ) : null}
-        </div>
-
-        <div>
-          <p className="line-clamp-2 text-sm font-medium text-zinc-900">{listing.title}</p>
-          <p className="mt-1 text-sm font-semibold text-zinc-900">{priceText}</p>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-zinc-500">
-          <span className="truncate">{listing.location ?? "—"}</span>
-          <span>{listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}</span>
-        </div>
-      </div>
-    </Link>
+                {canNext ? (
+                  <Link
+                    href={buildExploreHref({ q, type, category, sort, status, page: page + 1 })}
+                    className="btn-primary"
+                  >
+                    Next
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                ) : (
+                  <span className="btn-primary pointer-events-none opacity-50">
+                    Next
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+    </main>
   );
 }
