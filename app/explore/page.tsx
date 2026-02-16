@@ -3,13 +3,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, ListingType } from "@/lib/types";
 import ListingImage from "@/components/ListingImage";
-import {
-  Search,
-  SlidersHorizontal,
-  X,
-  ArrowRight,
-  ArrowLeft,
-} from "lucide-react";
+import { Search, SlidersHorizontal, X, ArrowRight, ArrowLeft } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -315,7 +309,11 @@ export default async function ExplorePage({
                     label="Include sold"
                   />
                   <SmallToggle
-                    href={buildExploreHref({ ...activeFilters, inactive: includeInactive ? "" : "1", page: 1 })}
+                    href={buildExploreHref({
+                      ...activeFilters,
+                      inactive: includeInactive ? "" : "1",
+                      page: 1,
+                    })}
                     active={includeInactive}
                     label="Include inactive"
                   />
@@ -343,10 +341,7 @@ export default async function ExplorePage({
         {hasAnyFilter ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {q ? (
-              <ActiveChip
-                label={`“${q}”`}
-                href={buildExploreHref({ ...activeFilters, q: "", page: 1 })}
-              />
+              <ActiveChip label={`“${q}”`} href={buildExploreHref({ ...activeFilters, q: "", page: 1 })} />
             ) : null}
 
             {type !== "all" ? (
@@ -371,10 +366,7 @@ export default async function ExplorePage({
             ) : null}
 
             {includeSold ? (
-              <ActiveChip
-                label="Sold"
-                href={buildExploreHref({ ...activeFilters, sold: "", page: 1 })}
-              />
+              <ActiveChip label="Sold" href={buildExploreHref({ ...activeFilters, sold: "", page: 1 })} />
             ) : null}
 
             {includeInactive ? (
@@ -418,9 +410,7 @@ export default async function ExplorePage({
       {listings.length === 0 ? (
         <div className="rounded-3xl border bg-white p-6">
           <p className="text-sm font-semibold text-zinc-900">No results found</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Try a different search, or remove a filter.
-          </p>
+          <p className="mt-1 text-sm text-zinc-600">Try a different search, or remove a filter.</p>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
@@ -603,17 +593,20 @@ function ListingCard({ listing }: { listing: ListingRow }) {
       </div>
 
       <div className="space-y-2 p-3">
-        <div className="flex items-center gap-2">
+        {/* ✅ FIX: allow wrap so Negotiable never gets cropped on mobile */}
+        <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
             {typeLabel}
           </span>
+
           {listing.category ? (
             <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
               {listing.category}
             </span>
           ) : null}
+
           {listing.negotiable ? (
-            <span className="ml-auto rounded-full bg-black px-2 py-1 text-xs font-semibold text-white">
+            <span className="sm:ml-auto shrink-0 rounded-full bg-black px-2 py-1 text-xs font-semibold text-white">
               Negotiable
             </span>
           ) : null}
