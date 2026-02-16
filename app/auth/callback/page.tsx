@@ -2,18 +2,20 @@
 
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const next = sp.get("next") ?? "/me";
 
   useEffect(() => {
     (async () => {
       // This ensures Supabase picks up the session from the magic-link redirect
       await supabase.auth.getSession();
-      router.replace("/me");
+      router.replace(next);
     })();
-  }, [router]);
+  }, [router, next]);
 
   return (
     <div className="max-w-md space-y-2">

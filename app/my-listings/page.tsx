@@ -28,6 +28,11 @@ export default function MyListingsPage() {
 
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr) {
+      const m = String(userErr.message ?? "").toLowerCase();
+      if (m.includes("auth session missing") || m.includes("session missing")) {
+        router.replace("/login");
+        return;
+      }
       setMsg(userErr.message);
       setLoading(false);
       return;

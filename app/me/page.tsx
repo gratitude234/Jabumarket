@@ -58,7 +58,17 @@ export default function MePage() {
 
     try {
       const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
+
+      // Treat "Auth session missing" as simply logged-out
+      if (userErr) {
+        const m = String(userErr?.message ?? "").toLowerCase();
+        if (m.includes("auth session missing") || m.includes("session missing")) {
+          setLoading(false);
+          router.replace("/login");
+          return;
+        }
+        throw userErr;
+      }
 
       const user = userData.user;
 

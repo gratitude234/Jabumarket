@@ -1,12 +1,38 @@
+// app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  MapPin,
+  Clock,
+  Phone,
+  Flag,
+  Store,
+  Truck,
+} from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
+}
+
+function formatDateTime(iso?: string | null) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("en-NG", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
 }
 
 export default async function ListingPage({
@@ -18,8 +44,10 @@ export default async function ListingPage({
 
   const { data, error } = await supabase
     .from("listings")
-    // ✅ include verified + vendor_type so we can display badge + gate shop link
-    .select("*, vendor:vendors(id, name, whatsapp, verified, vendor_type)")
+    // keep vendor join, but use only what we need
+    .select(
+      "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at,vendor_id,vendor:vendors(id,name,whatsapp,verified,vendor_type)"
+    )
     .eq("id", id)
     .single();
 
@@ -34,217 +62,334 @@ export default async function ListingPage({
 
   const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
 
-  const whatsapp = listing.vendor?.whatsapp ?? "2348012345678";
+  const isSold = listing.status === "sold";
+  const isVerified = Boolean((listing.vendor as any)?.verified);
+
   const sellerName = listing.vendor?.name ?? "Unknown";
   const vendorId = listing.vendor?.id ?? listing.vendor_id;
 
-  const isSold = listing.status === "sold";
+  const whatsappRaw = String(listing.vendor?.whatsapp ?? "").trim();
+  const hasWhatsApp = whatsappRaw.length >= 8; // avoid fake fallback numbers
+  const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
+  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappRaw, waText) : "";
 
   const isFoodListing =
     String(listing.category ?? "").toLowerCase() === "food" ||
     String((listing.vendor as any)?.vendor_type ?? "").toLowerCase() === "food";
 
-  // ✅ verified flag (works even if vendor row is null)
-  const isVerified = Boolean((listing.vendor as any)?.verified);
+  // More like this (same category, excluding current)
+  const { data: similarData } = await supabase
+    .from("listings")
+    .select("id,title,price,price_label,image_url,category,listing_type,location,status,created_at")
+    .eq("category", listing.category ?? "")
+    .neq("id", listing.id)
+    .in("status", ["active"])
+    .order("created_at", { ascending: false })
+    .limit(6);
 
-  const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
-  const waLink = getWhatsAppLink(whatsapp, waText);
+  const similar = (similarData ?? []) as ListingRow[];
 
+  const postedAt = formatDateTime(listing.created_at);
 
   return (
     <div className="space-y-4">
-      {/* Back + breadcrumb */}
-      <div className="flex items-center gap-3">
+      {/* Top bar */}
+      <div className="flex items-center justify-between gap-3">
         <Link
           href="/explore"
-          className="text-sm text-zinc-600 hover:text-black no-underline"
+          className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm text-zinc-800 no-underline hover:bg-zinc-50"
         >
-          ← Back to Explore
+          <ArrowLeft className="h-4 w-4" />
+          Back
         </Link>
-        <span className="text-xs text-zinc-400">/</span>
-        <span className="text-sm text-zinc-600">{listing.category}</span>
+
+        <div className="flex items-center gap-2">
+          {listing.category ? (
+            <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
+              {listing.category}
+            </span>
+          ) : null}
+          <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
+            {typeLabel}
+          </span>
+        </div>
       </div>
 
-      {/* Main grid */}
+      {/* Mobile-first layout */}
       <div className="grid gap-4 lg:grid-cols-5">
-        {/* Image */}
-        <div className="lg:col-span-3 overflow-hidden rounded-2xl border bg-white">
-          <div className="aspect-[4/3] w-full bg-zinc-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={
-                listing.image_url ??
-                "https://placehold.co/1200x900?text=Jabumarket"
-              }
-              alt={listing.title}
-              className="h-full w-full object-cover"
-            />
+        {/* Media */}
+        <div className="lg:col-span-3">
+          <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+            {/* mobile: more immersive image */}
+            <div className="relative aspect-[1/1] w-full bg-zinc-100 sm:aspect-[4/3]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={listing.image_url ?? "https://placehold.co/1200x1200?text=Jabumarket"}
+                alt={listing.title}
+                className="h-full w-full object-cover"
+              />
+
+              {/* status badge */}
+              {isSold ? (
+                <div className="absolute left-3 top-3">
+                  <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
+                    SOLD
+                  </span>
+                </div>
+              ) : null}
+
+              {/* price chip */}
+              <div className="absolute bottom-3 left-3">
+                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-zinc-900 backdrop-blur">
+                  {priceText}
+                </span>
+              </div>
+
+              {/* negotiable chip */}
+              {listing.negotiable ? (
+                <div className="absolute bottom-3 right-3">
+                  <span className="rounded-full bg-black/90 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                    Negotiable
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
+
+          {/* Similar listings */}
+          {similar.length ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">More like this</p>
+                  <p className="text-xs text-zinc-600">Newest in the same category.</p>
+                </div>
+                <Link
+                  href={`/explore?category=${encodeURIComponent(String(listing.category ?? ""))}`}
+                  className="text-xs font-medium text-zinc-800 hover:underline"
+                >
+                  See more
+                </Link>
+              </div>
+
+              <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:mx-0 lg:grid lg:grid-cols-3 lg:overflow-visible lg:px-0">
+                <style>{`div::-webkit-scrollbar{display:none}`}</style>
+                {similar.map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/listing/${s.id}`}
+                    className="min-w-[220px] overflow-hidden rounded-3xl border bg-white no-underline shadow-sm hover:bg-zinc-50 lg:min-w-0"
+                  >
+                    <div className="aspect-[4/3] bg-zinc-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={s.image_url ?? "https://placehold.co/800x600?text=Jabumarket"}
+                        alt={s.title ?? "Listing"}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <p className="line-clamp-1 text-sm font-semibold text-zinc-900">
+                        {s.title ?? "Untitled listing"}
+                      </p>
+                      <p className="text-xs font-semibold text-zinc-900">
+                        {s.price !== null ? formatNaira(s.price) : s.price_label ?? "Contact for price"}
+                      </p>
+                      <p className="line-clamp-1 text-xs text-zinc-500">{s.location ?? "—"}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Details */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="rounded-2xl border bg-white p-4">
-            {/* SOLD banner */}
+          {/* Main info card */}
+          <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
             {isSold ? (
-              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-                <p className="text-sm font-semibold text-red-700">SOLD</p>
+              <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-sm font-semibold text-red-700">This listing is sold</p>
                 <p className="text-xs text-red-700/80">
-                  This item has been marked as sold by the seller.
+                  You can browse similar items below or return to Explore.
                 </p>
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700">
+            <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
+              {listing.title ?? "Untitled listing"}
+            </h1>
+
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <p className="text-2xl font-extrabold text-zinc-900">{priceText}</p>
+              <div className="text-right text-xs text-zinc-500">
+                {listing.location ? (
+                  <div className="inline-flex items-center justify-end gap-1">
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span className="truncate">{listing.location}</span>
+                  </div>
+                ) : (
+                  <div className="truncate">—</div>
+                )}
+                {postedAt ? (
+                  <div className="mt-1 inline-flex items-center justify-end gap-1">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>{postedAt}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Chips row */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
                 {typeLabel}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700">
-                {listing.category}
-              </span>
+              {listing.category ? (
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
+                  {listing.category}
+                </span>
+              ) : null}
               {listing.negotiable ? (
-                <span className="rounded-full bg-zinc-900 px-2 py-1 text-xs text-white">
+                <span className="rounded-full bg-black px-2.5 py-1 text-xs font-semibold text-white">
                   Negotiable
                 </span>
               ) : null}
             </div>
 
-            <h1 className="mt-3 text-xl font-semibold">{listing.title}</h1>
-
-            <div className="mt-2 flex items-end justify-between">
-              <p className="text-lg font-bold">{priceText}</p>
-              <div className="text-xs text-zinc-500 text-right">
-                <div>{listing.location ?? "—"}</div>
-                <div>
-                  {listing.created_at
-                    ? new Date(listing.created_at).toLocaleString()
-                    : ""}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <p className="text-sm text-zinc-700 leading-relaxed">
-                {listing.description ??
-                  "No description yet. Contact the seller for more details."}
-              </p>
+            {/* Description: mobile-friendly expand/collapse without JS */}
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-zinc-700">Description</p>
+              <details className="mt-2 rounded-2xl border bg-zinc-50 p-3">
+                <summary className="cursor-pointer text-sm font-medium text-zinc-900">
+                  Tap to {`read ${listing.description ? "more" : "details"}`}
+                </summary>
+                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
+                  {listing.description ??
+                    "No description yet. Contact the seller for more details."}
+                </p>
+              </details>
             </div>
           </div>
 
           {/* Seller card */}
-          <div className="rounded-2xl border bg-white p-4">
-            <p className="text-sm font-semibold">Seller / Provider</p>
+          <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-zinc-700">Seller / Provider</p>
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div>
-                {/* ✅ Name + Verified badge */}
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-zinc-900">
-                    {sellerName}
-                  </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-zinc-900">{sellerName}</p>
                   {isVerified ? (
-                    <span className="rounded-full bg-zinc-900 px-2 py-1 text-[10px] text-white">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
+                      <BadgeCheck className="h-3.5 w-3.5" />
                       Verified
                     </span>
                   ) : (
-                    <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] text-zinc-700">
-                      Not verified
+                    <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-700">
+                      Unverified
                     </span>
                   )}
                 </div>
 
-                <p className="text-xs text-zinc-500">WhatsApp: +{whatsapp}</p>
+                {hasWhatsApp ? (
+                  <p className="mt-1 text-xs text-zinc-500">WhatsApp: +{whatsappRaw}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-zinc-500">Contact not available</p>
+                )}
               </div>
 
-              {/* WhatsApp CTA (hidden/disabled if sold) */}
-              {isSold ? (
-                <span className="rounded-xl bg-zinc-100 px-4 py-2 text-sm text-zinc-500">
-                  Unavailable
-                </span>
+              {/* Shop button */}
+              {vendorId && isVerified ? (
+                <Link
+                  href={`/vendors/${vendorId}`}
+                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+                >
+                  <Store className="h-4 w-4" />
+                  Shop
+                </Link>
               ) : (
+                <span className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-500">
+                  <Store className="h-4 w-4" />
+                  Shop locked
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Link
+                href={`/report?listing=${listing.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+              >
+                <Flag className="h-4 w-4" />
+                Report
+              </Link>
+
+              {!isSold && hasWhatsApp ? (
                 <a
                   href={waLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
                 >
-                  Chat on WhatsApp
+                  WhatsApp
                 </a>
+              ) : (
+                <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
+                  Unavailable
+                </span>
               )}
             </div>
 
-            <div className="mt-3 flex gap-2">
-              {/* ✅ Only show shop link if verified */}
-              {vendorId && isVerified ? (
-                <Link
-                  href={`/vendors/${vendorId}`}
-                  className="w-full rounded-xl border px-4 py-2 text-center text-sm hover:bg-zinc-50 no-underline"
-                >
-                  View Shop
-                </Link>
-              ) : (
-                <div className="w-full rounded-xl border px-4 py-2 text-center text-sm text-zinc-500">
-                  Shop page available after verification
-                </div>
-              )}
-
-              {/* Call CTA (hidden if sold) */}
-              {isSold ? null : (
+            {/* Extra actions row */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {!isSold && hasWhatsApp ? (
                 <a
-                  href={`tel:+${whatsapp}`}
-                  className="w-full rounded-xl border px-4 py-2 text-center text-sm text-black no-underline hover:bg-zinc-50"
+                  href={`tel:+${whatsappRaw}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
                 >
+                  <Phone className="h-4 w-4" />
                   Call
                 </a>
+              ) : (
+                <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
+                  Call
+                </span>
               )}
 
-              <Link
-                href={`/report?listing=${listing.id}`}
-                className="w-full rounded-xl border px-4 py-2 text-center text-sm hover:bg-zinc-50 no-underline"
-              >
-                Report
-              </Link>
+              {(!isSold && isFoodListing) ? (
+                <Link
+                  href={`/couriers?listing=${listing.id}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+                >
+                  <Truck className="h-4 w-4" />
+                  Delivery
+                </Link>
+              ) : (
+                <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
+                  Delivery
+                </span>
+              )}
             </div>
 
-            {isSold ? (
-              <p className="mt-3 text-xs text-zinc-500">
-                This listing is sold, so contact options are disabled.
+            {isFoodListing && !isSold ? (
+              <p className="mt-2 text-xs text-zinc-500">
+                Tip: tell the courier your drop-off and budget before sending.
               </p>
             ) : null}
           </div>
 
+          {/* Owner actions */}
           <OwnerActions
             listingId={listing.id}
             listingVendorId={listing.vendor_id}
             status={listing.status}
           />
 
-          {/* Courier shortcut (food only) */}
-          {!isSold && isFoodListing ? (
-            <div className="rounded-2xl border bg-white p-4">
-              <p className="text-sm font-semibold">Need delivery?</p>
-              <p className="mt-1 text-sm text-zinc-600">
-                Message a verified delivery guy to help you pick this up.
-              </p>
-
-              <div className="mt-3 flex gap-2">
-                <Link
-                  href={`/couriers?listing=${listing.id}`}
-                  className="w-full rounded-xl bg-black px-4 py-2 text-center text-sm text-white no-underline"
-                >
-                  Find delivery guys
-                </Link>
-              </div>
-
-              <p className="mt-2 text-xs text-zinc-500">
-                Tip: Replace “Drop-off” and “Budget” before sending.
-              </p>
-            </div>
-          ) : null}
-
           {/* Safety tips */}
-          <div className="rounded-2xl border bg-white p-4">
-            <p className="text-sm font-semibold">Safety tips</p>
+          <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+            <p className="text-sm font-semibold text-zinc-900">Safety tips</p>
             <ul className="mt-2 space-y-2 text-sm text-zinc-600 list-disc pl-5">
               <li>Meet in a public place on/around campus.</li>
               <li>Inspect item before paying. Avoid full prepayment.</li>
@@ -255,21 +400,35 @@ export default async function ListingPage({
         </div>
       </div>
 
-      {/* Sticky CTA (mobile) */}
-      {!isSold ? (
-        <div className="lg:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
-          <div className="mx-auto max-w-6xl">
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center rounded-2xl bg-black px-4 py-3 text-white font-medium no-underline shadow-sm"
+      {/* Mobile bottom action bar (doesn’t fight your bottom nav) */}
+      <div className="lg:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
+        <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href={`/report?listing=${listing.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
             >
-              Chat seller on WhatsApp
-            </a>
+              <Flag className="h-4 w-4" />
+              Report
+            </Link>
+
+            {!isSold && hasWhatsApp ? (
+              <a
+                href={waLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
+              >
+                WhatsApp
+              </a>
+            ) : (
+              <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
+                Unavailable
+              </span>
+            )}
           </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

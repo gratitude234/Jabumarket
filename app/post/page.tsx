@@ -50,6 +50,11 @@ export default function PostPage() {
     // Require auth
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr) {
+      const m = String(userErr.message ?? "").toLowerCase();
+      if (m.includes("auth session missing") || m.includes("session missing")) {
+        router.push("/login");
+        return;
+      }
       setErrorMsg(userErr.message);
       return;
     }
