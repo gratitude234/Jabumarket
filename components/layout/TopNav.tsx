@@ -10,7 +10,7 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
   { href: "/vendors", label: "Vendors" },
-  { href: "/delivery", label: "Delivery" }, // ✅ NEW
+  { href: "/couriers", label: "Delivery" },
 ];
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
@@ -22,7 +22,13 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
 
   const qs = copy.toString();
 
-  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/explore";
+  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
+
+function currentUrl(pathname: string, sp: URLSearchParams) {
+  const qs = sp.toString();
   return qs ? `${pathname}?${qs}` : pathname;
 }
 
@@ -32,10 +38,7 @@ export default function TopNav() {
   const sp = useSearchParams();
 
   const showSearch =
-    pathname === "/" ||
-    pathname.startsWith("/explore") ||
-    pathname.startsWith("/vendors") ||
-    pathname.startsWith("/delivery"); // ✅ NEW
+    pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/vendors");
 
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);
@@ -49,11 +52,11 @@ export default function TopNav() {
     if (!showSearch) return;
 
     const t = setTimeout(() => {
-      const nextUrl = buildNextUrl(pathname, new URLSearchParams(sp.toString()), q);
+      const spCopy = new URLSearchParams(sp.toString());
+      const nextUrl = buildNextUrl(pathname, spCopy, q);
 
-      const current = sp.toString();
-      const nextSp = nextUrl.includes("?") ? nextUrl.split("?")[1] : "";
-      if (pathname !== "/" && current === nextSp) return;
+      const cur = currentUrl(pathname, new URLSearchParams(sp.toString()));
+      if (nextUrl === cur) return;
 
       router.replace(nextUrl);
     }, 350);
@@ -65,6 +68,8 @@ export default function TopNav() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const nextUrl = buildNextUrl(pathname, new URLSearchParams(sp.toString()), q);
+    const cur = currentUrl(pathname, new URLSearchParams(sp.toString()));
+    if (nextUrl === cur) return;
     router.push(nextUrl);
   }
 
@@ -73,12 +78,6 @@ export default function TopNav() {
     const nextUrl = buildNextUrl(pathname, new URLSearchParams(sp.toString()), "");
     router.replace(nextUrl);
   }
-
-  const placeholder = pathname.startsWith("/vendors")
-    ? "Search vendors..."
-    : pathname.startsWith("/delivery")
-      ? "Search riders..."
-      : "Search listings...";
 
   return (
     <header className="hidden md:block border-b bg-white/80 backdrop-blur">
@@ -114,7 +113,9 @@ export default function TopNav() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder={placeholder}
+                  placeholder={
+                    pathname.startsWith("/vendors") ? "Search vendors..." : "Search listings..."
+                  }
                   className="w-64 bg-transparent text-sm outline-none"
                 />
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -13,11 +13,13 @@ const REASONS = [
   "Other",
 ] as const;
 
-export default function ReportPage() {
+function ReportInner() {
   const sp = useSearchParams();
   const router = useRouter();
 
   const listingId = sp.get("listing")?.trim() || "";
+  const courierId = sp.get("courier")?.trim() || "";
+  const target = courierId ? "courier" : "listing";
 
   const [reason, setReason] = useState<(typeof REASONS)[number]>("Scam / suspicious");
   const [details, setDetails] = useState("");
@@ -25,7 +27,7 @@ export default function ReportPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const canSubmit = useMemo(() => Boolean(listingId && reason), [listingId, reason]);
+  const canSubmit = useMemo(() => Boolean((listingId || courierId) && reason), [listingId, courierId, reason]);
 
   useEffect(() => {
     // if user is logged in, prefill email
@@ -41,17 +43,26 @@ export default function ReportPage() {
     setMsg(null);
 
     if (!listingId) {
-      setMsg("Missing listing id. Go back and try again.");
-      return;
+      if (!courierId) {
+        setMsg("Missing report target. Go back and try again.");
+        return;
+      }
     }
 
     setLoading(true);
-    const { error } = await supabase.from("reports").insert({
-      listing_id: listingId,
-      reason,
-      details: details.trim() || null,
-      reporter_email: email.trim() || null,
-    });
+    const { error } = target === "courier"
+      ? await supabase.from("courier_reports").insert({
+          courier_id: courierId,
+          reason,
+          details: details.trim() || null,
+          reporter_email: email.trim() || null,
+        })
+      : await supabase.from("reports").insert({
+          listing_id: listingId,
+          reason,
+          details: details.trim() || null,
+          reporter_email: email.trim() || null,
+        });
     setLoading(false);
 
     if (error) {
@@ -60,13 +71,18 @@ export default function ReportPage() {
     }
 
     setMsg("Report submitted ✅ Thanks for helping keep the market safe.");
-    setTimeout(() => router.push(`/listing/${listingId}`), 900);
+    setTimeout(() => {
+      if (target === "courier") router.push(`/couriers`);
+      else router.push(`/listing/${listingId}`);
+    }, 900);
   }
 
   return (
     <div className="max-w-xl space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">Report Listing</h1>
+        <h1 className="text-xl font-semibold">
+          {target === "courier" ? "Report Courier" : "Report Listing"}
+        </h1>
         <p className="text-sm text-zinc-600">
           Please tell us what’s wrong. We’ll review it.
         </p>
@@ -130,5 +146,13 @@ export default function ReportPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function ReportPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportInner />
+    </Suspense>
   );
 }

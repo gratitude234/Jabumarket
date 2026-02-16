@@ -31,35 +31,18 @@ export type VendorRow = {
   verification_requested?: boolean | null;
 };
 
-
-export type RiderRow = {
+// Delivery / courier directory (lightweight: no delivery "orders" in-app)
+export type CourierRow = {
   id: string;
   name: string;
-  phone: string;
-  whatsapp: string | null;
-  zone: string | null;
-  fee_note: string | null;
-  is_available: boolean;
+  whatsapp: string;
+  phone: string | null;
+  base_location: string | null;
+  areas_covered: string | null;
+  hours: string | null;
+  price_note: string | null;
   verified: boolean;
-  created_at: string | null;
-};
-
-export type DeliveryStatus =
-  | "requested"
-  | "assigned"
-  | "picked_up"
-  | "delivered"
-  | "cancelled";
-
-export type DeliveryRow = {
-  id: string;
-  listing_id: string | null;
-  vendor_id: string | null;
-  buyer_phone: string | null;
-  pickup_location: string | null;
-  dropoff_location: string | null;
-  note: string | null;
-  rider_id: string | null;
-  status: DeliveryStatus;
+  active: boolean;
+  featured?: boolean | null;
   created_at: string | null;
 };

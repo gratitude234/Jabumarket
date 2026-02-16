@@ -15,8 +15,8 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
 
   const qs = copy.toString();
 
-  // On Home, redirect searches to /explore
-  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/explore";
+  // ✅ On Home, redirect to /explore ONLY when user is searching
+  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
 
   return qs ? `${pathname}?${qs}` : pathname;
 }
@@ -44,10 +44,18 @@ export default function MobileTopBar() {
     const t = setTimeout(() => {
       const nextUrl = buildNextUrl(pathname, new URLSearchParams(sp.toString()), q);
 
-      // avoid unnecessary replaces
-      const current = sp.toString();
-      const nextSp = nextUrl.includes("?") ? nextUrl.split("?")[1] : "";
-      if (pathname !== "/" && current === nextSp) return;
+      // ✅ Avoid unnecessary replaces:
+      // - On Home: only replace when URL would actually change (/ vs /explore?...).
+      // - Elsewhere: compare querystrings.
+      if (pathname === "/") {
+        const shouldBeExplore = q.trim().length > 0;
+        const alreadyExplore = false; // you're on "/" here
+        if (!shouldBeExplore && !alreadyExplore) return;
+      } else {
+        const current = sp.toString();
+        const nextSp = nextUrl.includes("?") ? nextUrl.split("?")[1] : "";
+        if (current === nextSp) return;
+      }
 
       router.replace(nextUrl);
     }, 350);

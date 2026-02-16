@@ -3,15 +3,10 @@ import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
+import { getWhatsAppLink } from "@/lib/whatsapp";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
-}
-
-function getWhatsAppLink(phone: string, text: string) {
-  const safe = phone.replace(/[^\d]/g, "");
-  const msg = encodeURIComponent(text);
-  return `https://wa.me/${safe}?text=${msg}`;
 }
 
 export default async function ListingPage({
@@ -45,11 +40,16 @@ export default async function ListingPage({
 
   const isSold = listing.status === "sold";
 
+  const isFoodListing =
+    String(listing.category ?? "").toLowerCase() === "food" ||
+    String((listing.vendor as any)?.vendor_type ?? "").toLowerCase() === "food";
+
   // ✅ verified flag (works even if vendor row is null)
   const isVerified = Boolean((listing.vendor as any)?.verified);
 
   const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
   const waLink = getWhatsAppLink(whatsapp, waText);
+
 
   return (
     <div className="space-y-4">
@@ -173,7 +173,6 @@ export default async function ListingPage({
               )}
             </div>
 
-            {/* ✅ ACTION BUTTONS */}
             <div className="mt-3 flex gap-2">
               {/* ✅ Only show shop link if verified */}
               {vendorId && isVerified ? (
@@ -187,16 +186,6 @@ export default async function ListingPage({
                 <div className="w-full rounded-xl border px-4 py-2 text-center text-sm text-zinc-500">
                   Shop page available after verification
                 </div>
-              )}
-
-              {/* ✅ Delivery CTA (hidden if sold) */}
-              {isSold ? null : (
-                <Link
-                  href={`/delivery?listing=${listing.id}`}
-                  className="w-full rounded-xl border px-4 py-2 text-center text-sm hover:bg-zinc-50 no-underline"
-                >
-                  Request Delivery
-                </Link>
               )}
 
               {/* Call CTA (hidden if sold) */}
@@ -230,6 +219,29 @@ export default async function ListingPage({
             status={listing.status}
           />
 
+          {/* Courier shortcut (food only) */}
+          {!isSold && isFoodListing ? (
+            <div className="rounded-2xl border bg-white p-4">
+              <p className="text-sm font-semibold">Need delivery?</p>
+              <p className="mt-1 text-sm text-zinc-600">
+                Message a verified delivery guy to help you pick this up.
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <Link
+                  href={`/couriers?listing=${listing.id}`}
+                  className="w-full rounded-xl bg-black px-4 py-2 text-center text-sm text-white no-underline"
+                >
+                  Find delivery guys
+                </Link>
+              </div>
+
+              <p className="mt-2 text-xs text-zinc-500">
+                Tip: Replace “Drop-off” and “Budget” before sending.
+              </p>
+            </div>
+          ) : null}
+
           {/* Safety tips */}
           <div className="rounded-2xl border bg-white p-4">
             <p className="text-sm font-semibold">Safety tips</p>
@@ -247,23 +259,14 @@ export default async function ListingPage({
       {!isSold ? (
         <div className="lg:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
           <div className="mx-auto max-w-6xl">
-            <div className="flex gap-2">
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 flex items-center justify-center rounded-2xl bg-black px-4 py-3 text-white font-medium no-underline shadow-sm"
-              >
-                Chat seller
-              </a>
-
-              <Link
-                href={`/delivery?listing=${listing.id}`}
-                className="flex-1 flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-black font-medium no-underline shadow-sm"
-              >
-                Delivery
-              </Link>
-            </div>
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center rounded-2xl bg-black px-4 py-3 text-white font-medium no-underline shadow-sm"
+            >
+              Chat seller on WhatsApp
+            </a>
           </div>
         </div>
       ) : null}

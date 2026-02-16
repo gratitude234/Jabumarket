@@ -33,42 +33,43 @@ export default async function DeliveryPage({
   const buyerPhone = (sp.phone ?? "").trim();
   const note = (sp.note ?? "").trim();
 
-  // If coming from a listing, fetch it to build a better delivery message
+  // If coming from a listing, fetch it to build a better delivery message.
   let listing: (ListingRow & { vendor?: VendorRow | null }) | null = null;
 
   if (listingId) {
     const { data } = await supabase
       .from("listings")
-      .select("*, vendor:vendors(id, name, whatsapp, phone, location, verified, vendor_type)")
+      .select(
+        "*, vendor:vendors(id, name, whatsapp, phone, location, verified, vendor_type)"
+      )
       .eq("id", listingId)
       .single();
 
     if (data) listing = data as any;
   }
 
-  // Riders query
-  let rq = supabase.from("riders").select("*").order("verified", { ascending: false }).order("is_available", { ascending: false });
+  let ridersQuery = supabase
+    .from("riders")
+    .select("*")
+    .order("verified", { ascending: false })
+    .order("is_available", { ascending: false })
+    .order("created_at", { ascending: false });
 
-  if (q) rq = rq.ilike("name", `%${q}%`);
-  if (zone && zone !== "all") rq = rq.eq("zone", zone);
+  if (q) ridersQuery = ridersQuery.ilike("name", `%${q}%`);
+  if (zone && zone !== "all") ridersQuery = ridersQuery.eq("zone", zone);
 
-  // You can decide if you only want verified riders:
-  // rq = rq.eq("verified", true);
-
-  const { data: ridersData } = await rq;
+  const { data: ridersData } = await ridersQuery;
   const riders = (ridersData ?? []) as RiderRow[];
 
   const pickupLocation =
-    listing?.vendor?.location ??
-    listing?.location ??
-    "Pickup location to be confirmed";
+    listing?.vendor?.location ?? listing?.location ?? "Pickup location to be confirmed";
 
   const priceText =
     listing?.price != null
       ? formatNaira(listing.price)
       : listing?.price_label ?? "Contact for price";
 
-  const baseMessage = listing
+  const message = listing
     ? [
         "Hi, I need delivery for an order on JABU MARKET.",
         `Item: ${listing.title}`,
@@ -92,19 +93,26 @@ export default async function DeliveryPage({
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border bg-white p-4">
-        <h1 className="text-2xl font-bold">Delivery (Dispatch Riders)</h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Pick a rider and message them on WhatsApp. {listing ? "Order details will be included automatically." : ""}
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Delivery (Dispatch)</h1>
+            <p className="mt-1 text-sm text-zinc-600">
+              Choose a rider and message them on WhatsApp.
+            </p>
+          </div>
+          <Link
+            href={listing ? `/listing/${listing.id}` : "/explore"}
+            className="text-sm text-zinc-600 hover:text-black no-underline"
+          >
+            {listing ? "← Back to listing" : "← Back"}
+          </Link>
+        </div>
 
         {listing ? (
           <div className="mt-3 rounded-xl border bg-zinc-50 p-3 text-sm">
-            <div className="font-medium">Ordering:</div>
+            <div className="font-medium">Order:</div>
             <div className="text-zinc-700">{listing.title}</div>
             <div className="text-zinc-500">Pickup: {pickupLocation}</div>
-            <Link className="text-sm underline" href={`/listing/${listing.id}`}>
-              Back to listing
-            </Link>
           </div>
         ) : null}
 
@@ -160,12 +168,13 @@ export default async function DeliveryPage({
       <div className="grid gap-3 md:grid-cols-2">
         {riders.length === 0 ? (
           <div className="rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-            No riders found. Add riders in Supabase (table: <span className="font-medium">riders</span>).
+            No riders found yet. Add riders in Supabase (table:{" "}
+            <span className="font-medium">riders</span>).
           </div>
         ) : (
           riders.map((r) => {
             const wa = r.whatsapp ?? r.phone;
-            const href = getWhatsAppLink(wa, baseMessage);
+            const href = getWhatsAppLink(wa, message);
 
             return (
               <div key={r.id} className="rounded-2xl border bg-white p-4">
@@ -198,7 +207,7 @@ export default async function DeliveryPage({
                       rel="noreferrer"
                       className="rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
                     >
-                      Message Rider
+                      Message rider
                     </a>
                   </div>
                 </div>
@@ -206,6 +215,15 @@ export default async function DeliveryPage({
             );
           })
         )}
+      </div>
+
+      <div className="rounded-2xl border bg-white p-4">
+        <p className="text-sm font-semibold">How it works</p>
+        <ul className="mt-2 space-y-2 text-sm text-zinc-600 list-disc pl-5">
+          <li>Pick a rider and message them on WhatsApp with your order details.</li>
+          <li>Confirm delivery fee and ETA directly with the rider.</li>
+          <li>Pay safely—avoid full prepayment unless you trust the vendor/rider.</li>
+        </ul>
       </div>
     </div>
   );
