@@ -1,308 +1,300 @@
-// app/admin/vendors/page.tsx
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { VendorRow } from "@/lib/types";
+// app/vendors/page.tsx
 import Link from "next/link";
+import { supabase } from "@/lib/supabase/server";
+import {
+  Search,
+  BadgeCheck,
+  MapPin,
+  Phone,
+  MessageCircle,
+  Store,
+} from "lucide-react";
 
-type AdminVendor = VendorRow & {
+type VendorRow = {
   id: string;
-  verified?: boolean | null;
-  location?: string | null;
-  whatsapp?: string | null;
-  vendor_type?: string | null;
-  verification_requested?: boolean | null;
+  name: string | null;
+  whatsapp: string | null;
+  phone: string | null;
+  location: string | null;
+  verified: boolean;
+  vendor_type: "food" | "mall" | "student" | "other";
 };
 
-export default function AdminVendorsPage() {
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+const LABELS: Record<VendorRow["vendor_type"], string> = {
+  food: "Food Vendors",
+  mall: "JABU Mall Shops",
+  student: "Verified Students",
+  other: "Other Vendors",
+};
 
-  const [vendors, setVendors] = useState<AdminVendor[]>([]);
-  const [tab, setTab] = useState<"pending" | "all">("pending");
-  const [q, setQ] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+const TYPE_ORDER: VendorRow["vendor_type"][] = ["food", "mall", "student", "other"];
 
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    let list = vendors;
+function normalizePhone(input?: string | null) {
+  if (!input) return "";
+  return input.replace(/[^\d+]/g, "").trim();
+}
 
-    // ✅ Pending now means: requested AND not verified
-    if (tab === "pending") {
-      list = list.filter((v) => !v.verified && Boolean(v.verification_requested));
-    }
+function getWhatsAppLink(phone: string, text: string) {
+  const safe = phone.replace(/[^\d]/g, "");
+  const msg = encodeURIComponent(text);
+  return safe ? `https://wa.me/${safe}?text=${msg}` : "";
+}
 
-    if (!query) return list;
+export default async function VendorsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ q?: string }>;
+}) {
+  const sp = (searchParams ? await searchParams : {}) as { q?: string };
+  const q = (sp.q ?? "").trim();
 
-    return list.filter((v) => {
-      const name = (v.name ?? "").toLowerCase();
-      const phone = (v.whatsapp ?? "").toLowerCase();
-      const loc = (v.location ?? "").toLowerCase();
-      const type = (v.vendor_type ?? "").toLowerCase();
-      return (
-        name.includes(query) ||
-        phone.includes(query) ||
-        loc.includes(query) ||
-        type.includes(query)
-      );
-    });
-  }, [vendors, tab, q]);
+  // ✅ Always enforce verified-only at query level (even if RLS policy is too permissive)
+  let query = supabase
+    .from("vendors")
+    .select("id, name, whatsapp, phone, location, verified, vendor_type")
+    .eq("verified", true)
+    .order("vendor_type", { ascending: true })
+    .order("name", { ascending: true });
 
-  async function checkAdminAndLoad() {
-    setLoading(true);
-    setMsg(null);
-
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData.user;
-
-    if (!user) {
-      setIsAdmin(false);
-      setUserEmail(null);
-      setVendors([]);
-      setLoading(false);
-      return;
-    }
-
-    setUserEmail(user.email ?? null);
-
-    // Check admin table
-    const { data: adminRow, error: adminErr } = await supabase
-      .from("admins")
-      .select("user_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (adminErr || !adminRow) {
-      setIsAdmin(false);
-      setVendors([]);
-      setLoading(false);
-      return;
-    }
-
-    setIsAdmin(true);
-
-    // Load vendors
-    const { data, error } = await supabase
-      .from("vendors")
-      .select("id, name, whatsapp, location, verified, vendor_type, verification_requested")
-      .order("verified", { ascending: true });
-
-    if (error) {
-      setMsg(error.message);
-      setVendors([]);
-    } else {
-      setVendors((data ?? []) as AdminVendor[]);
-    }
-
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    checkAdminAndLoad();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function setVerified(vendorId: string, next: boolean) {
-    setMsg(null);
-
-    // ✅ Verify clears request, unverify does NOT auto-request
-    const payload = next
-      ? { verified: true, verification_requested: false }
-      : { verified: false };
-
-    const { error } = await supabase.from("vendors").update(payload).eq("id", vendorId);
-
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-
-    setVendors((prev) =>
-      prev.map((v) =>
-        v.id === vendorId
-          ? {
-              ...v,
-              ...(next
-                ? { verified: true, verification_requested: false }
-                : { verified: false }),
-            }
-          : v
-      )
+  if (q) {
+    // Search name/location/phone/whatsapp
+    const escaped = q.replace(/[%_]/g, "\\$&");
+    query = query.or(
+      `name.ilike.%${escaped}%,location.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`
     );
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Vendor Verification</h1>
-        <p className="text-sm text-zinc-600">Loading…</p>
-      </div>
-    );
-  }
+  const { data, error } = await query;
 
-  // Not logged in
-  if (!userEmail) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Vendor Verification</h1>
-        <p className="text-sm text-zinc-600">You must be logged in.</p>
-        <Link
-          href="/login"
-          className="inline-block rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
-        >
-          Go to login
-        </Link>
-      </div>
-    );
-  }
+  const vendors = (data ?? []) as VendorRow[];
 
-  // Logged in but not admin
-  if (!isAdmin) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Vendor Verification</h1>
-        <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm font-medium">Access denied</p>
-          <p className="text-sm text-zinc-600 mt-1">
-            Your account isn’t an admin.
-          </p>
-        </div>
-      </div>
-    );
+  // Group by type, in a stable order
+  const grouped = new Map<VendorRow["vendor_type"], VendorRow[]>();
+  for (const t of TYPE_ORDER) grouped.set(t, []);
+  for (const v of vendors) {
+    const t = v.vendor_type ?? "other";
+    if (!grouped.has(t)) grouped.set(t, []);
+    grouped.get(t)!.push(v);
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Admin • Vendor Verification</h1>
-          <p className="text-sm text-zinc-600">
-            Signed in as <span className="font-medium">{userEmail}</span>
-          </p>
+    <div className="mx-auto w-full max-w-6xl space-y-5 px-4 pb-10 pt-4 sm:px-6">
+      {/* Header */}
+      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Vendors Directory
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600">
+              Browse verified vendors around campus.
+            </p>
+          </div>
+
+          <Link
+            href="/vendors/new"
+            className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+          >
+            <Store className="mr-2 h-4 w-4" />
+            Become a vendor
+          </Link>
         </div>
 
-        <button
-          onClick={checkAdminAndLoad}
-          className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-        >
-          Refresh
-        </button>
+        {/* Search */}
+        <form action="/vendors" className="mt-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Search vendors by name, location, phone..."
+                className="w-full rounded-2xl border bg-white px-10 py-2.5 text-sm outline-none ring-0 transition focus:border-zinc-400"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+              >
+                Search
+              </button>
+
+              {q ? (
+                <Link
+                  href="/vendors"
+                  className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+                >
+                  Clear
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+            <span className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              Verified only
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1">
+              <Store className="h-3.5 w-3.5" />
+              {vendors.length} vendor{vendors.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {error ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              Could not load vendors. {error.message}
+            </div>
+          ) : null}
+        </form>
       </div>
 
-      {msg ? (
-        <div className="rounded-2xl border bg-white p-3 text-sm text-red-600">
-          {msg}
+      {/* Empty state */}
+      {!error && vendors.length === 0 ? (
+        <div className="rounded-3xl border bg-white p-6 text-center shadow-sm">
+          <p className="text-base font-medium">No verified vendors found.</p>
+          <p className="mt-1 text-sm text-zinc-600">
+            Try a different search, or clear filters.
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            {q ? (
+              <Link
+                href="/vendors"
+                className="rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              >
+                Clear search
+              </Link>
+            ) : null}
+            <Link
+              href="/vendors/new"
+              className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              Become a vendor
+            </Link>
+          </div>
         </div>
       ) : null}
 
-      <div className="rounded-2xl border bg-white p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setTab("pending")}
-            className={`rounded-full px-3 py-1 text-sm border ${
-              tab === "pending"
-                ? "bg-black text-white border-black"
-                : "hover:bg-zinc-50"
-            }`}
-          >
-            Pending
-          </button>
-          <button
-            onClick={() => setTab("all")}
-            className={`rounded-full px-3 py-1 text-sm border ${
-              tab === "all" ? "bg-black text-white border-black" : "hover:bg-zinc-50"
-            }`}
-          >
-            All
-          </button>
-
-          <div className="flex-1" />
-
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, WhatsApp, location…"
-            className="w-full sm:w-72 rounded-xl border px-3 py-2 text-sm"
-          />
-        </div>
-
-        <p className="text-xs text-zinc-500">
-          Showing <span className="font-medium">{filtered.length}</span> vendors
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {filtered.map((v) => {
-          const verified = Boolean(v.verified);
+      {/* Groups */}
+      <div className="space-y-6">
+        {TYPE_ORDER.map((t) => {
+          const items = grouped.get(t) ?? [];
+          if (!items.length) return null;
 
           return (
-            <div key={v.id} className="rounded-2xl border bg-white p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{v.name ?? "Unnamed vendor"}</p>
-                    {verified ? (
-                      <span className="rounded-full bg-zinc-900 px-2 py-1 text-[10px] text-white">
-                        Verified
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] text-zinc-700">
-                        Not verified
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-sm text-zinc-600">
-                    WhatsApp:{" "}
-                    <span className="font-medium">+{v.whatsapp ?? "—"}</span>
-                  </p>
-                  <p className="text-sm text-zinc-600">
-                    Location:{" "}
-                    <span className="font-medium">{v.location ?? "—"}</span>
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    Type: {v.vendor_type ?? "—"} • Requested:{" "}
-                    {v.verification_requested ? "Yes" : "No"}
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  {verified ? (
-                    <button
-                      onClick={() => setVerified(v.id, false)}
-                      className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-                    >
-                      Unverify
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setVerified(v.id, true)}
-                      className="rounded-xl bg-black px-3 py-2 text-sm text-white"
-                    >
-                      Verify
-                    </button>
-                  )}
-
-                  <Link
-                    href={`/vendors/${v.id}`}
-                    className="rounded-xl border px-3 py-2 text-sm text-center no-underline hover:bg-zinc-50"
-                    target="_blank"
-                  >
-                    View shop
-                  </Link>
-                </div>
+            <section key={t} className="space-y-3">
+              <div className="flex items-end justify-between">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {LABELS[t]}
+                </h2>
+                <span className="text-xs text-zinc-600">
+                  {items.length} vendor{items.length === 1 ? "" : "s"}
+                </span>
               </div>
-            </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map((v) => {
+                  const name = (v.name ?? "Unnamed vendor").trim();
+                  const location = (v.location ?? "").trim();
+                  const phone = normalizePhone(v.phone);
+                  const wa = normalizePhone(v.whatsapp) || phone;
+
+                  const waHref = wa
+                    ? getWhatsAppLink(wa, `Hi ${name}, I found you on JabuMarket.`)
+                    : "";
+
+                  return (
+                    <div
+                      key={v.id}
+                      className="group rounded-3xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/vendors/${v.id}`}
+                            className="block truncate text-base font-semibold tracking-tight hover:underline"
+                          >
+                            {name}
+                          </Link>
+
+                          {location ? (
+                            <div className="mt-1 flex items-center gap-1.5 text-sm text-zinc-600">
+                              <MapPin className="h-4 w-4" />
+                              <span className="truncate">{location}</span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-sm text-zinc-500">
+                              Location not set
+                            </div>
+                          )}
+                        </div>
+
+                        <span className="inline-flex items-center gap-1 rounded-full border bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                          <BadgeCheck className="h-3.5 w-3.5" />
+                          Verified
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Link
+                          href={`/vendors/${v.id}`}
+                          className="inline-flex items-center justify-center rounded-2xl border bg-white px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+                        >
+                          View
+                        </Link>
+
+                        {waHref ? (
+                          <a
+                            href={waHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center justify-center rounded-2xl bg-black px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
+                          >
+                            <MessageCircle className="mr-2 h-4 w-4" />
+                            WhatsApp
+                          </a>
+                        ) : phone ? (
+                          <a
+                            href={`tel:${phone}`}
+                            className="inline-flex items-center justify-center rounded-2xl bg-black px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
+                          >
+                            <Phone className="mr-2 h-4 w-4" />
+                            Call
+                          </a>
+                        ) : (
+                          <button
+                            disabled
+                            className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl bg-zinc-200 px-3 py-2 text-sm font-medium text-zinc-600"
+                          >
+                            No contact
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-3 text-xs text-zinc-500">
+                        Tip: Click <span className="font-medium">View</span> to see more details.
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           );
         })}
+      </div>
 
-        {filtered.length === 0 ? (
-          <div className="rounded-2xl border bg-white p-6 text-sm text-zinc-600">
-            No vendors found.
-          </div>
-        ) : null}
+      {/* Footer note */}
+      <div className="rounded-3xl border bg-white p-4 text-sm text-zinc-600 shadow-sm">
+        Seeing an unverified vendor here means either:
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>Your RLS has a permissive SELECT policy (like <code>using (true)</code>), or</li>
+          <li>You’re using a service role key somewhere by mistake.</li>
+        </ul>
+        <p className="mt-2">
+          This page is already enforcing <span className="font-medium">verified-only</span> in the query.
+        </p>
       </div>
     </div>
   );

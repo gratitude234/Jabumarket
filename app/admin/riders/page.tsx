@@ -1,299 +1,417 @@
+// app/admin/riders/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import type { RiderRow } from "@/lib/types";
-import Link from "next/link";
+import { CheckCircle2, Loader2, Search, X, RefreshCcw, AlertTriangle } from "lucide-react";
 
 type AdminRider = RiderRow;
 
+type Banner = { type: "success" | "error" | "info"; text: string } | null;
+
+const PAGE_SIZE = 25;
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function BannerView({ banner, onClose }: { banner: Banner; onClose: () => void }) {
+  if (!banner) return null;
+  const cls =
+    banner.type === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : banner.type === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : "border-zinc-200 bg-zinc-50 text-zinc-800";
+
+  return (
+    <div className={cn("rounded-2xl border p-3 text-sm flex items-start justify-between gap-3", cls)} role="status">
+      <span>{banner.text}</span>
+      <button onClick={onClose} className="rounded-xl border bg-white/70 p-2 hover:bg-white" aria-label="Close">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export default function AdminRidersPage() {
+  const mounted = useRef(true);
+
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [rows, setRows] = useState<AdminRider[]>([]);
+  const [banner, setBanner] = useState<Banner>(null);
 
-  const [riders, setRiders] = useState<AdminRider[]>([]);
-  const [tab, setTab] = useState<"pending" | "all">("pending");
   const [q, setQ] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [tab, setTab] = useState<"pending" | "verified" | "all">("pending");
+  const [availability, setAvailability] = useState<"all" | "available" | "busy">("all");
 
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    let list = riders;
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-    if (tab === "pending") {
-      list = list.filter((r) => !r.verified);
-    }
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const selectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
 
-    if (!query) return list;
+  const [workingIds, setWorkingIds] = useState<Record<string, boolean>>({});
 
-    return list.filter((r) => {
-      const name = (r.name ?? "").toLowerCase();
-      const phone = (r.phone ?? "").toLowerCase();
-      const wa = (r.whatsapp ?? "").toLowerCase();
-      const zone = (r.zone ?? "").toLowerCase();
-      const fee = (r.fee_note ?? "").toLowerCase();
-      return (
-        name.includes(query) ||
-        phone.includes(query) ||
-        wa.includes(query) ||
-        zone.includes(query) ||
-        fee.includes(query)
-      );
-    });
-  }, [riders, tab, q]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
-  async function checkAdminAndLoad() {
+  async function fetchPage(nextPage = page) {
     setLoading(true);
-    setMsg(null);
+    setBanner(null);
 
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData.user;
+    const from = (nextPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
 
-    if (!user) {
-      setIsAdmin(false);
-      setUserEmail(null);
-      setRiders([]);
-      setLoading(false);
-      return;
-    }
-
-    setUserEmail(user.email ?? null);
-
-    // Check admins table (same pattern as vendors admin page)
-    const { data: adminRow, error: adminErr } = await supabase
-      .from("admins")
-      .select("user_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (adminErr || !adminRow) {
-      setIsAdmin(false);
-      setRiders([]);
-      setLoading(false);
-      return;
-    }
-
-    setIsAdmin(true);
-
-    const { data, error } = await supabase
+    let query = supabase
       .from("riders")
-      .select("id, name, phone, whatsapp, zone, fee_note, is_available, verified, created_at")
-      .order("verified", { ascending: true })
-      .order("created_at", { ascending: false });
+      .select("id, name, phone, whatsapp, zone, fee_note, is_available, verified, created_at", { count: "exact" });
+
+    if (tab === "pending") query = query.eq("verified", false);
+    if (tab === "verified") query = query.eq("verified", true);
+
+    if (availability === "available") query = query.eq("is_available", true);
+    if (availability === "busy") query = query.eq("is_available", false);
+
+    const needle = q.trim();
+    if (needle) query = query.or(`name.ilike.%${needle}%,phone.ilike.%${needle}%,whatsapp.ilike.%${needle}%`);
+
+    const { data, error, count } = await query.order("created_at", { ascending: false }).range(from, to);
+
+    if (!mounted.current) return;
 
     if (error) {
-      setMsg(error.message);
-      setRiders([]);
-    } else {
-      setRiders((data ?? []) as AdminRider[]);
+      setBanner({ type: "error", text: error.message });
+      setRows([]);
+      setTotal(0);
+      setLoading(false);
+      return;
     }
 
+    setRows((data ?? []) as AdminRider[]);
+    setTotal(count ?? 0);
     setLoading(false);
   }
 
   useEffect(() => {
-    checkAdminAndLoad();
+    fetchPage(1);
+    setPage(1);
+    setSelected({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tab, availability]);
 
-  async function setVerified(riderId: string, next: boolean) {
-    setMsg(null);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      fetchPage(1);
+      setPage(1);
+      setSelected({});
+    }, 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
-    const { error } = await supabase
-      .from("riders")
-      .update({ verified: next })
-      .eq("id", riderId);
+  function toggleAll(checked: boolean) {
+    if (!checked) return setSelected({});
+    const next: Record<string, boolean> = {};
+    rows.forEach((r) => (next[r.id] = true));
+    setSelected(next);
+  }
 
-    if (error) {
-      setMsg(error.message);
-      return;
+  async function bulkUpdate(ids: string[], patch: Partial<AdminRider>, successText: string) {
+    if (!ids.length) return;
+    setBanner(null);
+
+    const nextWorking: Record<string, boolean> = {};
+    ids.forEach((id) => (nextWorking[id] = true));
+    setWorkingIds((p) => ({ ...p, ...nextWorking }));
+
+    try {
+      const { error } = await supabase.from("riders").update(patch).in("id", ids);
+      if (error) throw error;
+      setBanner({ type: "success", text: successText });
+      setSelected({});
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Update failed" });
+    } finally {
+      setWorkingIds((prev) => {
+        const copy = { ...prev };
+        ids.forEach((id) => delete copy[id]);
+        return copy;
+      });
     }
-
-    setRiders((prev) =>
-      prev.map((r) => (r.id === riderId ? { ...r, verified: next } : r))
-    );
   }
 
-  async function setAvailability(riderId: string, next: boolean) {
-    setMsg(null);
-
-    const { error } = await supabase
-      .from("riders")
-      .update({ is_available: next })
-      .eq("id", riderId);
-
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-
-    setRiders((prev) =>
-      prev.map((r) => (r.id === riderId ? { ...r, is_available: next } : r))
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Riders</h1>
-        <p className="text-sm text-zinc-600">Loading…</p>
-      </div>
-    );
-  }
-
-  if (!userEmail) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Riders</h1>
-        <p className="text-sm text-zinc-600">You must be logged in.</p>
-        <Link
-          href="/login"
-          className="inline-block rounded-xl bg-black px-4 py-2 text-sm text-white no-underline"
-        >
-          Go to login
-        </Link>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="max-w-3xl space-y-3">
-        <h1 className="text-xl font-semibold">Admin • Riders</h1>
-        <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm font-medium">Access denied</p>
-          <p className="text-sm text-zinc-600 mt-1">
-            Your account isn’t an admin.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Admin • Riders</h1>
-          <p className="text-sm text-zinc-600">
-            Signed in as <span className="font-medium">{userEmail}</span>
-          </p>
+    <div className="space-y-4 pb-24 md:pb-6">
+      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-zinc-900">Riders</p>
+            <p className="mt-1 text-sm text-zinc-600">Verify riders and manage their availability in the directory.</p>
+          </div>
+
+          <button
+            onClick={() => fetchPage(page)}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Refresh
+          </button>
         </div>
 
-        <button
-          onClick={checkAdminAndLoad}
-          className="rounded-xl border px-4 py-2 text-sm hover:bg-zinc-50"
-        >
-          Refresh
-        </button>
+        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_200px]">
+          <div className="flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5">
+            <Search className="h-4 w-4 text-zinc-500" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name / phone / WhatsApp…"
+              className="w-full bg-transparent text-sm outline-none"
+            />
+          </div>
+
+          <select
+            value={availability}
+            onChange={(e) => setAvailability(e.target.value as any)}
+            className="rounded-2xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900"
+          >
+            <option value="all">All availability</option>
+            <option value="available">Available</option>
+            <option value="busy">Busy</option>
+          </select>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl border bg-white p-1">
+          {(["pending", "verified", "all"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "rounded-xl px-3 py-2 text-xs font-semibold capitalize",
+                tab === t ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {msg ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {msg}
+      <BannerView banner={banner} onClose={() => setBanner(null)} />
+
+      {selectedIds.length ? (
+        <div className="rounded-3xl border bg-white p-3 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-zinc-900">{selectedIds.length} selected</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => bulkUpdate(selectedIds, { verified: true }, "Verified ✅")}
+                className="rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Verify
+              </button>
+              <button
+                onClick={() => bulkUpdate(selectedIds, { verified: false }, "Unverified ✅")}
+                className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Unverify
+              </button>
+              <button
+                onClick={() => bulkUpdate(selectedIds, { is_available: true }, "Marked Available ✅")}
+                className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Set Available
+              </button>
+              <button
+                onClick={() => bulkUpdate(selectedIds, { is_available: false }, "Marked Busy ✅")}
+                className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Set Busy
+              </button>
+              <button
+                onClick={() => setSelected({})}
+                className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 
-      <div className="rounded-2xl border bg-white p-4 space-y-3">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTab("pending")}
-              className={[
-                "rounded-xl px-3 py-2 text-sm border",
-                tab === "pending" ? "bg-black text-white border-black" : "hover:bg-zinc-50",
-              ].join(" ")}
-            >
-              Pending
-            </button>
-            <button
-              onClick={() => setTab("all")}
-              className={[
-                "rounded-xl px-3 py-2 text-sm border",
-                tab === "all" ? "bg-black text-white border-black" : "hover:bg-zinc-50",
-              ].join(" ")}
-            >
-              All
-            </button>
-          </div>
-
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search riders…"
-            className="h-10 rounded-xl border px-3 text-sm outline-none"
-          />
+      <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b bg-white px-4 py-3">
+          <p className="text-sm font-semibold text-zinc-900">
+            Results <span className="text-xs text-zinc-500">({total})</span>
+          </p>
+          {loading ? (
+            <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </span>
+          ) : null}
         </div>
 
-        <div className="text-xs text-zinc-500">
-          {filtered.length} rider{filtered.length === 1 ? "" : "s"} shown
+        <div className="overflow-x-auto">
+          <table className="min-w-[980px] w-full text-left">
+            <thead className="bg-zinc-50 text-xs text-zinc-600">
+              <tr>
+                <th className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={rows.length > 0 && rows.every((r) => selected[r.id])}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                  />
+                </th>
+                <th className="px-4 py-3">Rider</th>
+                <th className="px-4 py-3">Zone</th>
+                <th className="px-4 py-3">Phone</th>
+                <th className="px-4 py-3">WhatsApp</th>
+                <th className="px-4 py-3">Availability</th>
+                <th className="px-4 py-3">Verified</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody className="text-sm">
+              {!loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-zinc-600">
+                    No riders found for this filter.
+                  </td>
+                </tr>
+              ) : null}
+
+              {rows.map((r) => {
+                const isSelected = !!selected[r.id];
+                const isWorking = !!workingIds[r.id];
+
+                return (
+                  <tr key={r.id} className="border-t">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => setSelected((p) => ({ ...p, [r.id]: e.target.checked }))}
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-zinc-900">{r.name ?? "Unnamed rider"}</div>
+                      <div className="text-xs text-zinc-500">{r.fee_note ?? ""}</div>
+                    </td>
+
+                    <td className="px-4 py-3">{r.zone ?? "-"}</td>
+                    <td className="px-4 py-3">{r.phone ?? "-"}</td>
+                    <td className="px-4 py-3">{r.whatsapp ?? "-"}</td>
+
+                    <td className="px-4 py-3">
+                      {r.is_available ? (
+                        <span className="inline-flex items-center gap-2 text-emerald-700">
+                          <CheckCircle2 className="h-4 w-4" /> Available
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 text-amber-700">
+                          <AlertTriangle className="h-4 w-4" /> Busy
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {r.verified ? (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                          Verified
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
+                          Pending
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => bulkUpdate([r.id], { verified: !r.verified }, r.verified ? "Unverified ✅" : "Verified ✅")}
+                          disabled={isWorking}
+                          className={cn(
+                            "rounded-2xl border px-3 py-2 text-xs font-semibold",
+                            r.verified ? "bg-white text-zinc-900 hover:bg-zinc-50" : "bg-black text-white hover:bg-zinc-800",
+                            "disabled:opacity-50"
+                          )}
+                        >
+                          {isWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          {r.verified ? "Unverify" : "Verify"}
+                        </button>
+
+                        <button
+                          onClick={() => bulkUpdate([r.id], { is_available: !r.is_available }, "Updated ✅")}
+                          disabled={isWorking}
+                          className="rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          Toggle availability
+                        </button>
+
+                        <Link
+                          href={r.whatsapp ? `https://wa.me/${String(r.whatsapp).replace(/[^\d]/g, "")}` : "#"}
+                          target={r.whatsapp ? "_blank" : undefined}
+                          className={cn(
+                            "rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 no-underline",
+                            !r.whatsapp && "pointer-events-none opacity-50"
+                          )}
+                        >
+                          WhatsApp
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <div className="space-y-3">
-        {filtered.length === 0 ? (
-          <div className="rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-            No riders found.
+        <div className="flex items-center justify-between border-t px-4 py-3">
+          <p className="text-xs text-zinc-500">
+            Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => {
+                const p = Math.max(1, page - 1);
+                setPage(p);
+                setSelected({});
+                fetchPage(p);
+              }}
+              className="rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              disabled={page >= Math.max(1, Math.ceil(total / PAGE_SIZE)) || loading}
+              onClick={() => {
+                const p = Math.min(Math.max(1, Math.ceil(total / PAGE_SIZE)), page + 1);
+                setPage(p);
+                setSelected({});
+                fetchPage(p);
+              }}
+              className="rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
-        ) : (
-          filtered.map((r) => (
-            <div key={r.id} className="rounded-2xl border bg-white p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold">{r.name}</div>
-                  <div className="mt-1 text-xs text-zinc-500">
-                    Phone: +{r.phone}
-                    {r.whatsapp ? ` • WhatsApp: +${r.whatsapp}` : ""}
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-500">
-                    Zone: {r.zone ?? "—"} • Availability:{" "}
-                    {r.is_available ? "Available" : "Busy"}
-                  </div>
-                  {r.fee_note ? (
-                    <div className="mt-1 text-xs text-zinc-600">{r.fee_note}</div>
-                  ) : null}
-                  <div className="mt-1 text-[11px] text-zinc-400">
-                    Applied:{" "}
-                    {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-end gap-2">
-                  <span
-                    className={[
-                      "rounded-full px-2 py-1 text-[10px]",
-                      r.verified ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700",
-                    ].join(" ")}
-                  >
-                    {r.verified ? "Verified" : "Not verified"}
-                  </span>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setVerified(r.id, !r.verified)}
-                      className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-                    >
-                      {r.verified ? "Unverify" : "Verify"}
-                    </button>
-
-                    <button
-                      onClick={() => setAvailability(r.id, !r.is_available)}
-                      className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-                    >
-                      {r.is_available ? "Set Busy" : "Set Available"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-        Tip: Share this link with riders to apply:{" "}
-        <span className="font-medium">/rider/apply</span>
+        </div>
       </div>
     </div>
   );
