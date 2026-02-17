@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { ListingRow } from "@/lib/types";
 import {
@@ -40,9 +40,15 @@ function isNumericLike(v: string) {
   return /^\d+$/.test(v.trim());
 }
 
-export default function EditListingPage({ params }: { params: { id: string } }) {
+function isUuid(v?: string | null) {
+  if (!v) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+export default function EditListingPage() {
   const router = useRouter();
-  const id = params.id;
+  const params = useParams<{ id?: string }>();
+  const id = typeof params?.id === "string" ? params.id : undefined;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -84,6 +90,14 @@ export default function EditListingPage({ params }: { params: { id: string } }) 
       setBanner(null);
       setErrors({});
       setLoading(true);
+
+      // Guard against undefined/invalid ids (prevents Postgres "invalid input syntax for type uuid: \"undefined\""
+      // when Supabase builds the query).
+      if (!isUuid(id)) {
+        setBanner("Can’t open edit page — invalid listing id.");
+        setLoading(false);
+        return;
+      }
 
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
