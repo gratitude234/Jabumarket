@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { ListingRow } from "@/lib/types";
 import {
@@ -208,9 +208,20 @@ function Modal({
   );
 }
 
-export default function EditListingPage({ params }: { params: { id: string } }) {
+export default function EditListingPage() {
   const router = useRouter();
-  const id = params.id;
+  const routeParams = useParams<{ id?: string | string[] }>();
+  const id = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
+
+  if (!id) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <div className="rounded-3xl border bg-white p-6 text-sm text-zinc-700">
+          Invalid listing URL.
+        </div>
+      </div>
+    );
+  }
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
