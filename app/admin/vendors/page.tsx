@@ -96,7 +96,9 @@ export default function AdminVendorsPage() {
   const [banner, setBanner] = useState<Banner>(null);
 
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<"pending" | "verified" | "all">("pending");
+  // "requests" = vendors who explicitly clicked "Request verification" in /me
+  // "pending"  = all unverified vendors (includes new signups who haven't requested yet)
+  const [tab, setTab] = useState<"requests" | "pending" | "verified" | "all">("requests");
   const [type, setType] = useState<"all" | VendorType>("all");
 
   const [page, setPage] = useState(1);
@@ -126,6 +128,7 @@ export default function AdminVendorsPage() {
       .from("vendors")
       .select("id, name, whatsapp, phone, location, verified, vendor_type, created_at", { count: "exact" });
 
+    if (tab === "requests") query = query.eq("verification_requested", true).eq("verified", false);
     if (tab === "pending") query = query.eq("verified", false);
     if (tab === "verified") query = query.eq("verified", true);
 
@@ -237,7 +240,7 @@ export default function AdminVendorsPage() {
           <div>
             <p className="text-lg font-semibold text-zinc-900">Vendors</p>
             <p className="mt-1 text-sm text-zinc-600">
-              Review pending vendors and verify them so they appear in the public directory.
+              Approve verification requests. New signups are also <span className="font-semibold">Pending</span> until verified.
             </p>
           </div>
 
@@ -285,7 +288,7 @@ export default function AdminVendorsPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-2xl border bg-white p-1">
-            {(["pending", "verified", "all"] as const).map((k) => (
+            {(["requests", "pending", "verified", "all"] as const).map((k) => (
               <button
                 key={k}
                 onClick={() => setTab(k)}
@@ -294,7 +297,13 @@ export default function AdminVendorsPage() {
                   tab === k ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
                 )}
               >
-                {k === "pending" ? "Pending" : k === "verified" ? "Verified" : "All"}
+                {k === "requests"
+                  ? "Requests"
+                  : k === "pending"
+                  ? "Pending"
+                  : k === "verified"
+                  ? "Verified"
+                  : "All"}
               </button>
             ))}
           </div>
