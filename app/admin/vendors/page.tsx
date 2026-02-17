@@ -1,300 +1,535 @@
-// app/vendors/page.tsx
+// app/admin/vendors/page.tsx
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabase";
+import type { VendorRow, VendorType } from "@/lib/types";
 import {
+  CheckCircle2,
+  Loader2,
   Search,
-  BadgeCheck,
-  MapPin,
-  Phone,
-  MessageCircle,
+  X,
+  RefreshCcw,
+  AlertTriangle,
   Store,
+  MapPin,
 } from "lucide-react";
 
-type VendorRow = {
+type AdminVendor = {
   id: string;
   name: string | null;
   whatsapp: string | null;
   phone: string | null;
   location: string | null;
-  verified: boolean;
-  vendor_type: "food" | "mall" | "student" | "other";
+  verified: boolean | null;
+  vendor_type: VendorType | null;
+  created_at?: string | null;
 };
 
-const LABELS: Record<VendorRow["vendor_type"], string> = {
-  food: "Food Vendors",
-  mall: "JABU Mall Shops",
-  student: "Verified Students",
-  other: "Other Vendors",
+type Banner = { type: "success" | "error" | "info"; text: string } | null;
+
+const PAGE_SIZE = 25;
+
+const TYPE_LABEL: Record<VendorType, string> = {
+  food: "Food",
+  mall: "Mall",
+  student: "Student",
+  other: "Other",
 };
 
-const TYPE_ORDER: VendorRow["vendor_type"][] = ["food", "mall", "student", "other"];
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
 
 function normalizePhone(input?: string | null) {
   if (!input) return "";
   return input.replace(/[^\d+]/g, "").trim();
 }
 
-function getWhatsAppLink(phone: string, text: string) {
-  const safe = phone.replace(/[^\d]/g, "");
-  const msg = encodeURIComponent(text);
-  return safe ? `https://wa.me/${safe}?text=${msg}` : "";
-}
+function BannerView({ banner, onClose }: { banner: Banner; onClose: () => void }) {
+  if (!banner) return null;
 
-export default async function VendorsPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ q?: string }>;
-}) {
-  const sp = (searchParams ? await searchParams : {}) as { q?: string };
-  const q = (sp.q ?? "").trim();
-
-  // ✅ Always enforce verified-only at query level (even if RLS policy is too permissive)
-  let query = supabase
-    .from("vendors")
-    .select("id, name, whatsapp, phone, location, verified, vendor_type")
-    .eq("verified", true)
-    .order("vendor_type", { ascending: true })
-    .order("name", { ascending: true });
-
-  if (q) {
-    // Search name/location/phone/whatsapp
-    const escaped = q.replace(/[%_]/g, "\\$&");
-    query = query.or(
-      `name.ilike.%${escaped}%,location.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`
-    );
-  }
-
-  const { data, error } = await query;
-
-  const vendors = (data ?? []) as VendorRow[];
-
-  // Group by type, in a stable order
-  const grouped = new Map<VendorRow["vendor_type"], VendorRow[]>();
-  for (const t of TYPE_ORDER) grouped.set(t, []);
-  for (const v of vendors) {
-    const t = v.vendor_type ?? "other";
-    if (!grouped.has(t)) grouped.set(t, []);
-    grouped.get(t)!.push(v);
-  }
+  const cls =
+    banner.type === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : banner.type === "error"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : "border-zinc-200 bg-zinc-50 text-zinc-800";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 px-4 pb-10 pt-4 sm:px-6">
-      {/* Header */}
-      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn("rounded-2xl border p-3 text-sm flex items-start justify-between gap-3", cls)}
+      role="status"
+    >
+      <span>{banner.text}</span>
+      <button
+        onClick={onClose}
+        className="rounded-xl border bg-white/70 p-2 hover:bg-white"
+        aria-label="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function StatusPill({ verified }: { verified: boolean }) {
+  return verified ? (
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
+      <CheckCircle2 className="h-3.5 w-3.5" />
+      Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+      <AlertTriangle className="h-3.5 w-3.5" />
+      Pending
+    </span>
+  );
+}
+
+export default function AdminVendorsPage() {
+  const mounted = useRef(true);
+
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<AdminVendor[]>([]);
+  const [banner, setBanner] = useState<Banner>(null);
+
+  const [q, setQ] = useState("");
+  const [tab, setTab] = useState<"pending" | "verified" | "all">("pending");
+  const [type, setType] = useState<"all" | VendorType>("all");
+
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const selectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
+  const [workingIds, setWorkingIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function fetchPage(nextPage = page) {
+    setLoading(true);
+    setBanner(null);
+
+    const from = (nextPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    // NOTE:
+    // - "created_at" is optional: if your table doesn't have it, remove it from select/order.
+    let query = supabase
+      .from("vendors")
+      .select("id, name, whatsapp, phone, location, verified, vendor_type, created_at", { count: "exact" });
+
+    if (tab === "pending") query = query.eq("verified", false);
+    if (tab === "verified") query = query.eq("verified", true);
+
+    if (type !== "all") query = query.eq("vendor_type", type);
+
+    const needle = q.trim();
+    if (needle) {
+      query = query.or(
+        `name.ilike.%${needle}%,location.ilike.%${needle}%,phone.ilike.%${needle}%,whatsapp.ilike.%${needle}%`
+      );
+    }
+
+    const { data, error, count } = await query
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (!mounted.current) return;
+
+    if (error) {
+      // If your vendors table DOESN'T have created_at, this is the most likely error.
+      // Fix: remove created_at from select() and order().
+      setBanner({ type: "error", text: error.message });
+      setRows([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
+
+    setRows((data ?? []) as AdminVendor[]);
+    setTotal(count ?? 0);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    fetchPage(1);
+    setPage(1);
+    setSelected({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, type]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      fetchPage(1);
+      setPage(1);
+      setSelected({});
+    }, 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  function toggleAll(checked: boolean) {
+    if (!checked) return setSelected({});
+    const next: Record<string, boolean> = {};
+    rows.forEach((r) => (next[r.id] = true));
+    setSelected(next);
+  }
+
+  async function bulkUpdate(ids: string[], patch: Partial<AdminVendor>, successText: string) {
+    if (!ids.length) return;
+    setBanner(null);
+
+    const nextWorking: Record<string, boolean> = {};
+    ids.forEach((id) => (nextWorking[id] = true));
+    setWorkingIds((p) => ({ ...p, ...nextWorking }));
+
+    try {
+      const { error } = await supabase.from("vendors").update(patch).in("id", ids);
+      if (error) throw error;
+      setBanner({ type: "success", text: successText });
+      setSelected({});
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Update failed" });
+    } finally {
+      setWorkingIds((prev) => {
+        const copy = { ...prev };
+        ids.forEach((id) => delete copy[id]);
+        return copy;
+      });
+    }
+  }
+
+  async function singleUpdate(id: string, patch: Partial<AdminVendor>, successText: string) {
+    setBanner(null);
+    setWorkingIds((p) => ({ ...p, [id]: true }));
+    try {
+      const { error } = await supabase.from("vendors").update(patch).eq("id", id);
+      if (error) throw error;
+      setBanner({ type: "success", text: successText });
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Update failed" });
+    } finally {
+      setWorkingIds((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+    }
+  }
+
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const anySelected = selectedIds.length > 0;
+
+  return (
+    <div className="space-y-4 pb-24 md:pb-6">
+      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Vendors Directory
-            </h1>
+            <p className="text-lg font-semibold text-zinc-900">Vendors</p>
             <p className="mt-1 text-sm text-zinc-600">
-              Browse verified vendors around campus.
+              Review pending vendors and verify them so they appear in the public directory.
             </p>
           </div>
 
-          <Link
-            href="/vendors/new"
-            className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+          <button
+            onClick={() => fetchPage(page)}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
           >
-            <Store className="mr-2 h-4 w-4" />
-            Become a vendor
-          </Link>
+            <RefreshCcw className="h-4 w-4" />
+            Refresh
+          </button>
         </div>
 
-        {/* Search */}
-        <form action="/vendors" className="mt-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <input
-                name="q"
-                defaultValue={q}
-                placeholder="Search vendors by name, location, phone..."
-                className="w-full rounded-2xl border bg-white px-10 py-2.5 text-sm outline-none ring-0 transition focus:border-zinc-400"
-              />
-            </div>
-
-            <div className="flex gap-2">
+        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_220px]">
+          <div className="flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5">
+            <Search className="h-4 w-4 text-zinc-500" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name / location / phone / WhatsApp…"
+              className="w-full bg-transparent text-sm outline-none"
+            />
+            {q ? (
               <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                onClick={() => setQ("")}
+                className="rounded-xl border bg-white px-2 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
               >
-                Search
+                Clear
               </button>
-
-              {q ? (
-                <Link
-                  href="/vendors"
-                  className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
-                >
-                  Clear
-                </Link>
-              ) : null}
-            </div>
+            ) : null}
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-            <span className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1">
-              <BadgeCheck className="h-3.5 w-3.5" />
-              Verified only
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1">
-              <Store className="h-3.5 w-3.5" />
-              {vendors.length} vendor{vendors.length === 1 ? "" : "s"}
-            </span>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as any)}
+            className="rounded-2xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 outline-none"
+          >
+            <option value="all">All types</option>
+            <option value="food">Food</option>
+            <option value="mall">Mall</option>
+            <option value="student">Student</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-2xl border bg-white p-1">
+            {(["pending", "verified", "all"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={cn(
+                  "rounded-xl px-3 py-1.5 text-sm font-semibold transition",
+                  tab === k ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+                )}
+              >
+                {k === "pending" ? "Pending" : k === "verified" ? "Verified" : "All"}
+              </button>
+            ))}
           </div>
 
-          {error ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              Could not load vendors. {error.message}
-            </div>
-          ) : null}
-        </form>
+          <div className="text-sm text-zinc-600">
+            {loading ? "Loading…" : `${total} vendor${total === 1 ? "" : "s"}`}
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <BannerView banner={banner} onClose={() => setBanner(null)} />
+        </div>
+
+        {/* Bulk actions */}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-zinc-600">
+            {anySelected ? (
+              <span className="font-semibold text-zinc-900">{selectedIds.length} selected</span>
+            ) : (
+              <span>Select vendors to bulk verify/unverify.</span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => bulkUpdate(selectedIds, { verified: true }, "Vendors verified.")}
+              disabled={!anySelected || loading}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Verify selected
+            </button>
+
+            <button
+              onClick={() => bulkUpdate(selectedIds, { verified: false }, "Vendors moved to pending.")}
+              disabled={!anySelected || loading}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Mark pending
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Empty state */}
-      {!error && vendors.length === 0 ? (
-        <div className="rounded-3xl border bg-white p-6 text-center shadow-sm">
-          <p className="text-base font-medium">No verified vendors found.</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Try a different search, or clear filters.
-          </p>
-          <div className="mt-4 flex justify-center gap-2">
-            {q ? (
-              <Link
-                href="/vendors"
-                className="rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              >
-                Clear search
-              </Link>
-            ) : null}
-            <Link
-              href="/vendors/new"
-              className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              Become a vendor
-            </Link>
-          </div>
-        </div>
-      ) : null}
+      {/* Table */}
+      <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[880px] w-full text-left text-sm">
+            <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-600">
+              <tr>
+                <th className="w-[48px] px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={rows.length > 0 && rows.every((r) => selected[r.id])}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    className="h-4 w-4 rounded border-zinc-300"
+                    aria-label="Select all"
+                  />
+                </th>
+                <th className="px-4 py-3">Vendor</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Contact</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
 
-      {/* Groups */}
-      <div className="space-y-6">
-        {TYPE_ORDER.map((t) => {
-          const items = grouped.get(t) ?? [];
-          if (!items.length) return null;
-
-          return (
-            <section key={t} className="space-y-3">
-              <div className="flex items-end justify-between">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  {LABELS[t]}
-                </h2>
-                <span className="text-xs text-zinc-600">
-                  {items.length} vendor{items.length === 1 ? "" : "s"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map((v) => {
+            <tbody className="divide-y">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10">
+                    <div className="flex items-center justify-center gap-2 text-zinc-600">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Loading vendors…
+                    </div>
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10">
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-zinc-900">No vendors found</p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Try switching tabs, clearing search, or changing the type filter.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                rows.map((v) => {
                   const name = (v.name ?? "Unnamed vendor").trim();
-                  const location = (v.location ?? "").trim();
-                  const phone = normalizePhone(v.phone);
-                  const wa = normalizePhone(v.whatsapp) || phone;
+                  const verified = Boolean(v.verified);
 
-                  const waHref = wa
-                    ? getWhatsAppLink(wa, `Hi ${name}, I found you on JabuMarket.`)
-                    : "";
+                  const phone = normalizePhone(v.phone);
+                  const wa = normalizePhone(v.whatsapp);
+
+                  const isWorking = Boolean(workingIds[v.id]);
 
                   return (
-                    <div
-                      key={v.id}
-                      className="group rounded-3xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
+                    <tr key={v.id} className="hover:bg-zinc-50/60">
+                      <td className="px-4 py-4 align-top">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selected[v.id])}
+                          onChange={(e) => setSelected((p) => ({ ...p, [v.id]: e.target.checked }))}
+                          className="h-4 w-4 rounded border-zinc-300"
+                          aria-label={`Select ${name}`}
+                        />
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl border bg-white">
+                            <Store className="h-4 w-4 text-zinc-700" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-zinc-900">{name}</div>
+                            <div className="mt-0.5 text-xs text-zinc-500">ID: {v.id}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        <span className="inline-flex rounded-full border bg-white px-2 py-1 text-xs font-semibold text-zinc-800">
+                          {v.vendor_type ? TYPE_LABEL[v.vendor_type] : "—"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        {v.location ? (
+                          <div className="flex items-start gap-2 text-zinc-800">
+                            <MapPin className="mt-0.5 h-4 w-4 text-zinc-500" />
+                            <span className="line-clamp-2">{v.location}</span>
+                          </div>
+                        ) : (
+                          <span className="text-zinc-500">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        <div className="space-y-1 text-xs text-zinc-700">
+                          <div>
+                            <span className="text-zinc-500">Phone:</span> {phone || "—"}
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">WhatsApp:</span> {wa || "—"}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        <StatusPill verified={verified} />
+                      </td>
+
+                      <td className="px-4 py-4 align-top">
+                        <div className="flex justify-end gap-2">
                           <Link
                             href={`/vendors/${v.id}`}
-                            className="block truncate text-base font-semibold tracking-tight hover:underline"
+                            className="rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
                           >
-                            {name}
+                            View
                           </Link>
 
-                          {location ? (
-                            <div className="mt-1 flex items-center gap-1.5 text-sm text-zinc-600">
-                              <MapPin className="h-4 w-4" />
-                              <span className="truncate">{location}</span>
-                            </div>
+                          {verified ? (
+                            <button
+                              onClick={() => singleUpdate(v.id, { verified: false }, "Vendor marked as pending.")}
+                              disabled={isWorking}
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+                            >
+                              {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+                              Pending
+                            </button>
                           ) : (
-                            <div className="mt-1 text-sm text-zinc-500">
-                              Location not set
-                            </div>
+                            <button
+                              onClick={() => singleUpdate(v.id, { verified: true }, "Vendor verified.")}
+                              disabled={isWorking}
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                            >
+                              {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                              Verify
+                            </button>
                           )}
                         </div>
-
-                        <span className="inline-flex items-center gap-1 rounded-full border bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-                          <BadgeCheck className="h-3.5 w-3.5" />
-                          Verified
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Link
-                          href={`/vendors/${v.id}`}
-                          className="inline-flex items-center justify-center rounded-2xl border bg-white px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
-                        >
-                          View
-                        </Link>
-
-                        {waHref ? (
-                          <a
-                            href={waHref}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center justify-center rounded-2xl bg-black px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
-                          >
-                            <MessageCircle className="mr-2 h-4 w-4" />
-                            WhatsApp
-                          </a>
-                        ) : phone ? (
-                          <a
-                            href={`tel:${phone}`}
-                            className="inline-flex items-center justify-center rounded-2xl bg-black px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
-                          >
-                            <Phone className="mr-2 h-4 w-4" />
-                            Call
-                          </a>
-                        ) : (
-                          <button
-                            disabled
-                            className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl bg-zinc-200 px-3 py-2 text-sm font-medium text-zinc-600"
-                          >
-                            No contact
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="mt-3 text-xs text-zinc-500">
-                        Tip: Click <span className="font-medium">View</span> to see more details.
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   );
-                })}
-              </div>
-            </section>
-          );
-        })}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="flex flex-col gap-2 border-t bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-zinc-600">
+            Page <span className="font-semibold text-zinc-900">{page}</span> of{" "}
+            <span className="font-semibold text-zinc-900">{pages}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const next = Math.max(1, page - 1);
+                setPage(next);
+                setSelected({});
+                fetchPage(next);
+              }}
+              disabled={loading || page <= 1}
+              className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => {
+                const next = Math.min(pages, page + 1);
+                setPage(next);
+                setSelected({});
+                fetchPage(next);
+              }}
+              disabled={loading || page >= pages}
+              className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Footer note */}
+      {/* Reminder */}
       <div className="rounded-3xl border bg-white p-4 text-sm text-zinc-600 shadow-sm">
-        Seeing an unverified vendor here means either:
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Your RLS has a permissive SELECT policy (like <code>using (true)</code>), or</li>
-          <li>You’re using a service role key somewhere by mistake.</li>
-        </ul>
-        <p className="mt-2">
-          This page is already enforcing <span className="font-medium">verified-only</span> in the query.
-        </p>
+        If you still can’t see pending vendors after this update, it’s your RLS SELECT policy.
+        You need: <span className="font-semibold">Admins can SELECT all vendors</span> (using your{" "}
+        <code className="rounded bg-zinc-100 px-1 py-0.5">public.admins</code> table).
       </div>
     </div>
   );
