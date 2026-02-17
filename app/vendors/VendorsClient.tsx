@@ -1,4 +1,3 @@
-// app/vendors/VendorsClient.tsx
 "use client";
 
 import Link from "next/link";
@@ -39,7 +38,7 @@ const LABELS: Record<VendorType, string> = {
 const SECTION_TITLES: Record<VendorType, string> = {
   food: "Food Vendors",
   mall: "JABU Mall Shops",
-  student: "Verified Students",
+  student: "Students",
   other: "Other Vendors",
 };
 
@@ -202,11 +201,13 @@ export default function VendorsClient() {
         const start = (pageParam - 1) * PER_PAGE;
         const end = start + PER_PAGE - 1;
 
+        // ✅ Only VERIFIED vendors are allowed on this page
         let query = supabase
           .from("vendors")
           .select("id, name, whatsapp, phone, location, verified, vendor_type", {
             count: "exact",
-          });
+          })
+          .eq("verified", true);
 
         if (typeParam !== "all") query = query.eq("vendor_type", typeParam);
 
@@ -261,7 +262,9 @@ export default function VendorsClient() {
             <p className="mt-1 text-sm text-zinc-600">
               {loading
                 ? "Loading…"
-                : `${total.toLocaleString()} vendor${total === 1 ? "" : "s"} found`}
+                : `${total.toLocaleString()} verified vendor${
+                    total === 1 ? "" : "s"
+                  } found`}
               {qParam ? (
                 <>
                   {" "}
@@ -295,13 +298,14 @@ export default function VendorsClient() {
                 const next = e.target.value;
                 setQ(next);
 
-                if (debouncedRef.current) window.clearTimeout(debouncedRef.current);
+                if (debouncedRef.current)
+                  window.clearTimeout(debouncedRef.current);
                 debouncedRef.current = window.setTimeout(
                   () => applySearch(next),
                   350
                 );
               }}
-              placeholder="Search vendors by name or location…"
+              placeholder="Search verified vendors by name or location…"
               className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
             />
             {q?.trim() ? (
@@ -376,7 +380,7 @@ export default function VendorsClient() {
         ) : total === 0 ? (
           <div className="rounded-3xl border bg-white p-6 text-center">
             <p className="text-sm font-semibold text-zinc-900">
-              No vendors found
+              No verified vendors found
             </p>
             <p className="mt-1 text-sm text-zinc-600">
               Try a different search, or switch the vendor type filter.
@@ -387,7 +391,7 @@ export default function VendorsClient() {
                 onClick={() => setType("all")}
                 className="rounded-2xl border px-4 py-2 text-sm hover:bg-zinc-50"
               >
-                View all
+                View all types
               </button>
               {qParam ? (
                 <button
@@ -441,12 +445,10 @@ export default function VendorsClient() {
                                   {LABELS[v.vendor_type]}
                                 </span>
 
-                                {v.verified ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                                    <BadgeCheck className="h-3.5 w-3.5" />
-                                    Verified
-                                  </span>
-                                ) : null}
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                  <BadgeCheck className="h-3.5 w-3.5" />
+                                  Verified
+                                </span>
                               </div>
                             </div>
                           </div>
