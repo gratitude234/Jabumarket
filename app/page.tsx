@@ -143,7 +143,7 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export default async function HomePage() {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { data: latestListings } = await supabase
     .from("listings")

@@ -22,7 +22,7 @@ export default async function DeliveryPage({
     note?: string;
   }>;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const sp = (await searchParams) ?? {};
   const q = (sp.q ?? "").trim();

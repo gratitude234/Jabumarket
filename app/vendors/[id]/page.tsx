@@ -142,7 +142,7 @@ export default async function VendorProfilePage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<{ q?: string; sort?: SortKey; page?: string }>;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { id } = await params;
   const sp = (searchParams ? await searchParams : {}) as {

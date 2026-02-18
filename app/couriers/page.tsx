@@ -9,7 +9,7 @@ export default async function CouriersPage({
 }: {
   searchParams?: Promise<{ listing?: string }>;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const sp = (await searchParams) ?? {};
   const listingId = (sp.listing ?? "").trim();

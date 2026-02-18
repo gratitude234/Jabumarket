@@ -94,7 +94,7 @@ export default async function ListingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const { id } = await params;
 

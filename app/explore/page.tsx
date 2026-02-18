@@ -80,7 +80,7 @@ export default async function ExplorePage({
     inactive?: string;
   }>;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const sp = (searchParams ? await searchParams : {}) as {
     q?: string;
