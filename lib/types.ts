@@ -70,7 +70,7 @@ export type VendorVerificationDocRow = {
   created_at: string;
 };
 
-// Delivery / courier directory (lightweight: no delivery "orders" in-app)
+// Campus transport directory (lightweight: no in-app ride/orders tracking)
 export type CourierRow = {
   id: string;
   name: string;
@@ -86,7 +86,7 @@ export type CourierRow = {
   created_at: string | null;
 };
 
-// Riders (delivery guys directory / verification)
+// Delivery Agents (errands/deliveries directory / verification)
 export type RiderRow = {
   id: string;
   name: string | null;

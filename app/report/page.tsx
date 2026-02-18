@@ -81,7 +81,7 @@ function ReportInner() {
     <div className="max-w-xl space-y-4">
       <div>
         <h1 className="text-xl font-semibold">
-          {target === "courier" ? "Report Courier" : "Report Listing"}
+          {target === "courier" ? "Report Driver" : "Report Listing"}
         </h1>
         <p className="text-sm text-zinc-600">
           Please tell us what’s wrong. We’ll review it.

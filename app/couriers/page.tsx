@@ -43,9 +43,9 @@ export default async function CouriersPage({
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Couriers (Delivery guys)</h1>
+            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Campus Transport (Cars & Keke)</h1>
             <p className="mt-1 text-sm text-zinc-600">
-              Message a verified courier on WhatsApp. No delivery tracking inside Jabumarket.
+              Message a verified driver on WhatsApp for rides to the gate or errands outside school. No tracking inside Jabumarket.
             </p>
           </div>
 
