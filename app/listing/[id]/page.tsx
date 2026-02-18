@@ -60,6 +60,8 @@ export async function generateMetadata({
 }) {
   const { id } = await params;
 
+  const supabase = await createSupabaseServerClient();
+
   const { data } = await supabase
     .from("listings")
     .select("id,title,description,image_url,price_label")
