@@ -3,7 +3,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, ListingType } from "@/lib/types";
 import ListingImage from "@/components/ListingImage";
-import { Search, SlidersHorizontal, ArrowRight, ArrowLeft } from "lucide-react";
+import { Search, SlidersHorizontal, X, ArrowRight, ArrowLeft } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -23,20 +23,15 @@ function buildExploreHref(params: {
 }) {
   const sp = new URLSearchParams();
 
-  const q = (params.q ?? "").trim();
-  const type = (params.type ?? "all").trim();
-  const category = (params.category ?? "all").trim();
-  const sort = (params.sort ?? "newest").trim();
-  const pageStr = String(params.page ?? "").trim();
-
-  if (q) sp.set("q", q);
-  if (type && type !== "all") sp.set("type", type);
-  if (category && category !== "all") sp.set("category", category);
-  if (sort && sort !== "newest") sp.set("sort", sort);
+  if (params.q) sp.set("q", params.q);
+  if (params.type && params.type !== "all") sp.set("type", params.type);
+  if (params.category && params.category !== "all") sp.set("category", params.category);
+  if (params.sort && params.sort !== "newest") sp.set("sort", params.sort);
 
   if (params.sold === "1") sp.set("sold", "1");
   if (params.inactive === "1") sp.set("inactive", "1");
 
+  const pageStr = String(params.page ?? "");
   if (pageStr && pageStr !== "1") sp.set("page", pageStr);
 
   const qs = sp.toString();
@@ -90,8 +85,7 @@ export default async function ExplorePage({
     inactive?: string;
   };
 
-  const qRaw = (sp.q ?? "").trim();
-  const q = qRaw; // keep original for UI
+  const q = (sp.q ?? "").trim();
   const type = (sp.type ?? "all") as "all" | ListingType;
   const category = (sp.category ?? "all").trim();
   const sort = ((sp.sort ?? "newest").trim() as SortKey) || "newest";
@@ -119,21 +113,15 @@ export default async function ExplorePage({
   if (includeSold) statuses.push("sold");
   query = query.in("status", statuses);
 
-  // ✅ Avoid heavy ilike for tiny queries
-  if (qRaw && qRaw.length >= 2) {
-    const safe = escapeLike(qRaw);
+  if (q) {
+    const safe = escapeLike(q);
     query = query.or(`title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`);
   }
 
-  // ✅ Better ordering with null prices pushed to the end
   if (sort === "price_asc") {
-    query = query
-      .order("price", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    query = query.order("price", { ascending: true }).order("created_at", { ascending: false });
   } else if (sort === "price_desc") {
-    query = query
-      .order("price", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    query = query.order("price", { ascending: false }).order("created_at", { ascending: false });
   } else {
     query = query.order("created_at", { ascending: false });
   }
@@ -165,11 +153,9 @@ export default async function ExplorePage({
     includeSold ||
     includeInactive;
 
-  const clearSearchHref = buildExploreHref({ ...activeFilters, q: "", page: 1 });
-
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Top header (mobile-first) */}
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-zinc-900">Explore</h1>
@@ -201,8 +187,8 @@ export default async function ExplorePage({
         </Link>
       </div>
 
-      {/* Sticky controls */}
-      <div className="sticky top-0 z-10 -mx-4 border-b bg-white/90 px-4 py-3 backdrop-blur">
+      {/* Sticky controls: compact on mobile, “filters drawer” via details */}
+      <div className="sticky top-0 z-10 -mx-4 border-b bg-white/85 px-4 py-3 backdrop-blur">
         {/* Search row */}
         <div className="flex items-center gap-2">
           <form method="GET" action="/explore" className="flex w-full items-center gap-2">
@@ -225,24 +211,14 @@ export default async function ExplorePage({
               {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
               {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
 
-              {/* ✅ Clear now removes q from URL (not just input reset) */}
-              {q ? (
-                <Link
-                  href={clearSearchHref}
-                  className="grid h-10 w-10 place-items-center rounded-xl text-zinc-600 hover:bg-zinc-100"
-                  aria-label="Clear search"
-                  title="Clear search"
-                >
-                  ×
-                </Link>
-              ) : (
-                <span
-                  className="grid h-10 w-10 place-items-center rounded-xl text-zinc-300"
-                  aria-hidden="true"
-                >
-                  ×
-                </span>
-              )}
+              <button
+                type="reset"
+                className="h-10 rounded-xl px-3 text-sm text-zinc-600 hover:bg-zinc-100"
+                aria-label="Clear search input"
+                title="Clear"
+              >
+                ×
+              </button>
 
               <button
                 type="submit"
@@ -253,7 +229,7 @@ export default async function ExplorePage({
             </div>
           </form>
 
-          {/* ✅ Filters: accessible collapsible (no broken X button) */}
+          {/* Filters drawer toggle (no JS needed) */}
           <details className="relative shrink-0">
             <summary className="list-none">
               <span className="inline-flex h-[52px] items-center gap-2 rounded-2xl border bg-white px-3 text-sm font-medium text-zinc-900 shadow-sm hover:bg-zinc-50">
@@ -263,93 +239,99 @@ export default async function ExplorePage({
               </span>
             </summary>
 
-            <div className="absolute right-0 mt-2 w-[min(92vw,560px)] overflow-hidden rounded-3xl border bg-white shadow-lg">
-              <div className="border-b bg-zinc-50 p-4">
-                <p className="text-sm font-semibold text-zinc-900">Filters</p>
-                <p className="mt-1 text-xs text-zinc-600">
-                  Tip: tap the Filters button again to close.
-                </p>
+            {/* Drawer panel */}
+            <div className="absolute right-0 mt-2 w-[min(92vw,520px)] rounded-3xl border bg-white p-4 shadow-lg">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">Filters</p>
+                  <p className="text-xs text-zinc-600">Refine results without losing your place.</p>
+                </div>
+                <span className="rounded-full border bg-white p-2 text-zinc-700">
+                  <X className="h-4 w-4" />
+                </span>
               </div>
 
-              <div className="p-4">
-                {/* Type pills */}
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-zinc-700">Type</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Pill
-                      href={buildExploreHref({ ...activeFilters, type: "all", page: 1 })}
-                      active={type === "all"}
-                      label="All"
-                    />
-                    <Pill
-                      href={buildExploreHref({ ...activeFilters, type: "product", page: 1 })}
-                      active={type === "product"}
-                      label="Products"
-                    />
-                    <Pill
-                      href={buildExploreHref({ ...activeFilters, type: "service", page: 1 })}
-                      active={type === "service"}
-                      label="Services"
-                    />
-                  </div>
+              {/* Type pills */}
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-medium text-zinc-700">Type</p>
+                <div className="flex flex-wrap gap-2">
+                  <Pill
+                    href={buildExploreHref({ ...activeFilters, type: "all", page: 1 })}
+                    active={type === "all"}
+                    label="All"
+                  />
+                  <Pill
+                    href={buildExploreHref({ ...activeFilters, type: "product", page: 1 })}
+                    active={type === "product"}
+                    label="Products"
+                  />
+                  <Pill
+                    href={buildExploreHref({ ...activeFilters, type: "service", page: 1 })}
+                    active={type === "service"}
+                    label="Services"
+                  />
                 </div>
+              </div>
 
-                {/* Sort */}
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-medium text-zinc-700">Sort</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <SortLink
-                      href={buildExploreHref({ ...activeFilters, sort: "newest", page: 1 })}
-                      active={sort === "newest"}
-                      label="Newest"
-                    />
-                    <SortLink
-                      href={buildExploreHref({ ...activeFilters, sort: "price_asc", page: 1 })}
-                      active={sort === "price_asc"}
-                      label="Price ↑"
-                    />
-                    <SortLink
-                      href={buildExploreHref({ ...activeFilters, sort: "price_desc", page: 1 })}
-                      active={sort === "price_desc"}
-                      label="Price ↓"
-                    />
-                  </div>
-                </div>
+              {/* Sort */}
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium text-zinc-700">Sort</p>
+                <form method="GET" action="/explore" className="flex items-center gap-2">
+                  {q ? <input type="hidden" name="q" value={q} /> : null}
+                  {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
+                  {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
+                  {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
+                  {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
 
-                {/* Status toggles */}
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-medium text-zinc-700">Visibility</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SmallToggle
-                      href={buildExploreHref({ ...activeFilters, sold: includeSold ? "" : "1", page: 1 })}
-                      active={includeSold}
-                      label="Include sold"
-                    />
-                    <SmallToggle
-                      href={buildExploreHref({
-                        ...activeFilters,
-                        inactive: includeInactive ? "" : "1",
-                        page: 1,
-                      })}
-                      active={includeInactive}
-                      label="Include inactive"
-                    />
-                    {!includeSold && !includeInactive ? (
-                      <span className="text-xs text-zinc-500">Default: active only</span>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Clear */}
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <Link
-                    href="/explore"
-                    className="rounded-2xl border bg-white px-4 py-2 text-sm text-zinc-800 no-underline hover:bg-zinc-50"
+                  <select
+                    name="sort"
+                    defaultValue={sort}
+                    className="w-full rounded-2xl border bg-white px-3 py-2 text-sm"
                   >
-                    Reset all
-                  </Link>
-                  <span className="text-xs text-zinc-500">Categories are below</span>
+                    <option value="newest">Newest</option>
+                    <option value="price_asc">Price: Low → High</option>
+                    <option value="price_desc">Price: High → Low</option>
+                  </select>
+
+                  <button className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
+                    Apply
+                  </button>
+                </form>
+              </div>
+
+              {/* Status toggles */}
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium text-zinc-700">Visibility</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SmallToggle
+                    href={buildExploreHref({ ...activeFilters, sold: includeSold ? "" : "1", page: 1 })}
+                    active={includeSold}
+                    label="Include sold"
+                  />
+                  <SmallToggle
+                    href={buildExploreHref({
+                      ...activeFilters,
+                      inactive: includeInactive ? "" : "1",
+                      page: 1,
+                    })}
+                    active={includeInactive}
+                    label="Include inactive"
+                  />
+                  {!includeSold && !includeInactive ? (
+                    <span className="text-xs text-zinc-500">Default: active only</span>
+                  ) : null}
                 </div>
+              </div>
+
+              {/* Clear */}
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <Link
+                  href="/explore"
+                  className="rounded-2xl border bg-white px-4 py-2 text-sm text-zinc-800 no-underline hover:bg-zinc-50"
+                >
+                  Reset all
+                </Link>
+                <span className="text-xs text-zinc-500">Tip: categories are below</span>
               </div>
             </div>
           </details>
@@ -358,7 +340,9 @@ export default async function ExplorePage({
         {/* Active filter chips row */}
         {hasAnyFilter ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {q ? <ActiveChip label={`“${q}”`} href={clearSearchHref} /> : null}
+            {q ? (
+              <ActiveChip label={`“${q}”`} href={buildExploreHref({ ...activeFilters, q: "", page: 1 })} />
+            ) : null}
 
             {type !== "all" ? (
               <ActiveChip
@@ -401,14 +385,9 @@ export default async function ExplorePage({
           </div>
         ) : null}
 
-        {/* Categories: mobile horizontal scroll (with subtle edge fade) */}
-        <div className="relative mt-3 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+        {/* Categories: mobile horizontal scroll */}
+        <div className="mt-3 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
           <style>{`div::-webkit-scrollbar{display:none}`}</style>
-
-          {/* fades */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-white/90 to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white/90 to-transparent" />
-
           <div className="flex w-max items-center gap-2">
             <Chip
               href={buildExploreHref({ ...activeFilters, category: "all", page: 1 })}
@@ -431,12 +410,7 @@ export default async function ExplorePage({
       {listings.length === 0 ? (
         <div className="rounded-3xl border bg-white p-6">
           <p className="text-sm font-semibold text-zinc-900">No results found</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Try a different search, or remove a filter.
-            {qRaw && qRaw.length < 2 ? (
-              <span className="ml-1 text-xs text-zinc-500">(Tip: use at least 2 characters.)</span>
-            ) : null}
-          </p>
+          <p className="mt-1 text-sm text-zinc-600">Try a different search, or remove a filter.</p>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
@@ -527,20 +501,6 @@ function Pill({ href, label, active }: { href: string; label: string; active: bo
   );
 }
 
-function SortLink({ href, label, active }: { href: string; label: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "rounded-2xl border px-3 py-2 text-sm font-medium no-underline text-center",
-        active ? "bg-black text-white border-black" : "bg-white text-zinc-900 hover:bg-zinc-50",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
-  );
-}
-
 function Chip({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (
     <Link
@@ -592,24 +552,21 @@ function ListingCard({ listing }: { listing: ListingRow }) {
   const isSold = listing.status === "sold";
   const isInactive = listing.status === "inactive";
 
-  const desc = (listing.description ?? "").trim();
-
   return (
     <Link
       href={`/listing/${listing.id}`}
       className={[
         "group overflow-hidden rounded-3xl border bg-white no-underline transition-shadow hover:shadow-sm",
-        isSold || isInactive ? "opacity-90" : "",
+        isSold || isInactive ? "opacity-85" : "",
       ].join(" ")}
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-100">
         <ListingImage
           src={listing.image_url ?? "/images/placeholder.svg"}
-          alt={listing.title ?? "Listing"}
-          className={[
-            "transition-transform",
-            isSold || isInactive ? "" : "group-hover:scale-[1.02]",
-          ].join(" ")}
+          alt={listing.title}
+          className={["transition-transform", isSold || isInactive ? "" : "group-hover:scale-[1.02]"]
+            .filter(Boolean)
+            .join(" ")}
         />
 
         {/* Status badge */}
@@ -627,7 +584,7 @@ function ListingCard({ listing }: { listing: ListingRow }) {
           </div>
         ) : null}
 
-        {/* Price badge */}
+        {/* Price badge (helps mobile scanning) */}
         <div className="absolute bottom-3 left-3">
           <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-zinc-900 backdrop-blur">
             {priceText}
@@ -636,7 +593,7 @@ function ListingCard({ listing }: { listing: ListingRow }) {
       </div>
 
       <div className="space-y-2 p-3">
-        {/* tags */}
+        {/* ✅ FIX: allow wrap so Negotiable never gets cropped on mobile */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
             {typeLabel}
@@ -659,18 +616,11 @@ function ListingCard({ listing }: { listing: ListingRow }) {
           <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
             {listing.title ?? "Untitled listing"}
           </p>
-
-          {/* ✅ extra context (helps services a lot) */}
-          {desc ? (
-            <p className="mt-1 line-clamp-2 text-xs text-zinc-600">{desc}</p>
-          ) : null}
         </div>
 
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
           <span className="truncate">{listing.location ?? "—"}</span>
-          <span>
-            {listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}
-          </span>
+          <span>{listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}</span>
         </div>
       </div>
     </Link>

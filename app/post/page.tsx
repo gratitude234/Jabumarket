@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { createNotification } from "@/lib/notifications";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -407,21 +406,6 @@ export default function PostPage() {
 
       const { data: created, error: cErr } = await supabase.from("listings").insert(payload).select("id").single();
       if (cErr) throw cErr;
-
-      // In-app notification (best effort)
-      try {
-        if (created?.id) {
-          await createNotification(supabase as any, {
-            user_id: user.id,
-            type: "listing",
-            title: "Listing posted ✅",
-            body: `Your listing “${title.trim()}” is now live.`,
-            href: `/listing/${created.id}`,
-          });
-        }
-      } catch {
-        // ignore if notifications table isn't set up yet
-      }
 
       // Clear draft on success
       try {

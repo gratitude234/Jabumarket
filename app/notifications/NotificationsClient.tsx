@@ -43,15 +43,19 @@ export default function NotificationsClient() {
 
   async function loadNotifications(uid: string) {
     setLoading(true);
-    const { data } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false })
-      .limit(60);
-
-    setRows((data as NotificationRow[]) ?? []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(60);
+      setRows((data as NotificationRow[]) ?? []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function markAllRead() {
@@ -64,7 +68,8 @@ export default function NotificationsClient() {
   }
 
   async function markRead(id: string) {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    if (!userId) return;
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", userId);
   }
 
   useEffect(() => {
@@ -83,12 +88,7 @@ export default function NotificationsClient() {
       .channel(`notifications:list:${userId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${userId}`,
-        },
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
         () => loadNotifications(userId)
       )
       .subscribe();
@@ -96,6 +96,7 @@ export default function NotificationsClient() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   if (!userId && !loading) {
@@ -103,9 +104,7 @@ export default function NotificationsClient() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <div className="rounded-3xl border bg-white p-5">
           <h1 className="text-xl font-bold">Notifications</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            You need to be logged in to see notifications.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">You need to be logged in to see notifications.</p>
           <Link href="/login" className="btn-primary mt-4 inline-flex">
             Go to login
           </Link>
@@ -127,9 +126,7 @@ export default function NotificationsClient() {
           </Link>
           <div>
             <h1 className="text-xl font-bold">Notifications</h1>
-            <p className="text-xs text-muted-foreground">
-              {unread > 0 ? `${unread} unread` : "All caught up"}
-            </p>
+            <p className="text-xs text-muted-foreground">{unread > 0 ? `${unread} unread` : "All caught up"}</p>
           </div>
         </div>
 
@@ -152,20 +149,13 @@ export default function NotificationsClient() {
             <div className="mt-2 h-3 w-56 rounded bg-zinc-100" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-3xl border bg-white p-6 text-sm text-muted-foreground">
-            No notifications yet.
-          </div>
+          <div className="rounded-3xl border bg-white p-6 text-sm text-muted-foreground">No notifications yet.</div>
         ) : (
           rows.map((n) => {
             const Wrapper: any = n.href ? Link : "div";
             const wrapperProps = n.href
-              ? {
-                  href: n.href,
-                  onClick: () => markRead(n.id),
-                }
-              : {
-                  onClick: () => markRead(n.id),
-                };
+              ? { href: n.href, onClick: () => markRead(n.id) }
+              : { onClick: () => markRead(n.id) };
 
             return (
               <Wrapper
@@ -178,9 +168,7 @@ export default function NotificationsClient() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold">{n.title}</p>
-                    {n.body ? (
-                      <p className="mt-1 text-sm text-muted-foreground">{n.body}</p>
-                    ) : null}
+                    {n.body ? <p className="mt-1 text-sm text-muted-foreground">{n.body}</p> : null}
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(n.created_at)}</span>
                 </div>

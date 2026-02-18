@@ -6,64 +6,52 @@ import { Bell } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-type Props = {
-  className?: string;
-};
-
-export default function NotificationBell({ className }: Props) {
+export default function NotificationBell({ className }: { className?: string }) {
   const [userId, setUserId] = useState<string | null>(null);
-  const [count, setCount] = useState<number>(0);
+  const [count, setCount] = useState(0);
   const [ready, setReady] = useState(false);
 
-  async function loadUser() {
-    const { data } = await supabase.auth.getUser();
-    setUserId(data.user?.id ?? null);
-    setReady(true);
-  }
-
-  async function refreshCount(uid: string) {
-    const { count } = await supabase
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", uid)
-      .eq("is_read", false);
-
-    setCount(count ?? 0);
+  async function refresh(uid: string) {
+    try {
+      const { count } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", uid)
+        .eq("is_read", false);
+      setCount(count ?? 0);
+    } catch {
+      // if table isn't created yet
+      setCount(0);
+    }
   }
 
   useEffect(() => {
-    loadUser();
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id ?? null;
+      setUserId(uid);
+      setReady(true);
+      if (uid) {
+        await refresh(uid);
+
+        const channel = supabase
+          .channel(`notifications:${uid}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
+            () => refresh(uid)
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      }
+    })();
   }, []);
 
-  // fetch count + realtime updates
-  useEffect(() => {
-    if (!userId) return;
-
-    refreshCount(userId);
-
-    const channel = supabase
-      .channel(`notifications:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          refreshCount(userId);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId]);
-
-  const icon = useMemo(() => {
-    return (
+  const icon = useMemo(
+    () => (
       <span className="relative inline-flex items-center justify-center">
         <Bell className="h-5 w-5" />
         {count > 0 ? (
@@ -72,10 +60,10 @@ export default function NotificationBell({ className }: Props) {
           </span>
         ) : null}
       </span>
-    );
-  }, [count]);
+    ),
+    [count]
+  );
 
-  // If auth isn't ready yet, render a stable button.
   if (!ready) {
     return (
       <button
@@ -88,12 +76,9 @@ export default function NotificationBell({ className }: Props) {
     );
   }
 
-  // If user not logged in, send them to login.
-  const href = userId ? "/notifications" : "/login";
-
   return (
     <Link
-      href={href}
+      href={userId ? "/notifications" : "/login"}
       className={`inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2 shadow-sm hover:bg-secondary ${className ?? ""}`}
       aria-label="Notifications"
     >
