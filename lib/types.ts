@@ -18,17 +18,56 @@ export type ListingRow = {
 
 export type VendorType = "food" | "mall" | "student" | "other";
 
+export type VendorVerificationStatus =
+  | "unverified"
+  | "requested"
+  | "under_review"
+  | "verified"
+  | "rejected"
+  | "suspended";
+
 // Vendors can be joined in different places with different column sets,
 // so most fields are optional here for flexibility.
 export type VendorRow = {
   id: string;
+  user_id?: string | null;
   name?: string | null;
   whatsapp?: string | null;
   phone?: string | null;
   location?: string | null;
-  verified?: boolean | null;
   vendor_type?: VendorType | null;
-  verification_requested?: boolean | null;
+
+  // Legacy flag (keep for backwards compatibility)
+  verified?: boolean | null;
+
+  // New verification system
+  verification_status?: VendorVerificationStatus | null;
+  verification_requested_at?: string | null;
+  verified_at?: string | null;
+  rejected_at?: string | null;
+  rejection_reason?: string | null;
+  reviewed_by?: string | null;
+  suspended_at?: string | null;
+  suspension_reason?: string | null;
+};
+
+export type VendorVerificationRequestRow = {
+  id: string;
+  vendor_id: string;
+  status: "requested" | "under_review" | "approved" | "rejected";
+  note: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+};
+
+export type VendorVerificationDocRow = {
+  id: string;
+  vendor_id: string;
+  doc_type: string;
+  file_path: string;
+  created_at: string;
 };
 
 // Delivery / courier directory (lightweight: no delivery "orders" in-app)

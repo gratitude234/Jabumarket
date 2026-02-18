@@ -24,19 +24,14 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <Link
-      href={href}
-      className="block rounded-3xl border bg-white p-4 shadow-sm hover:bg-zinc-50 no-underline"
-    >
+    <Link href={href} className="block rounded-3xl border bg-white p-4 shadow-sm hover:bg-zinc-50 no-underline">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium text-zinc-600">{title}</p>
           <p className="mt-1 text-2xl font-bold text-zinc-900">{value}</p>
           <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
         </div>
-        <div className="grid h-12 w-12 place-items-center rounded-2xl border bg-zinc-50">
-          {icon}
-        </div>
+        <div className="grid h-12 w-12 place-items-center rounded-2xl border bg-zinc-50">{icon}</div>
       </div>
 
       <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-zinc-900">
@@ -65,25 +60,28 @@ export default function AdminHomePage() {
 
       // Vendors
       const vAll = await supabase.from("vendors").select("id", { count: "exact", head: true });
-      const vPending = await supabase
-        .from("vendors")
+
+      // Pending = requests waiting or under review (fallbacks to legacy columns if needed)
+      let vPending = await supabase
+        .from("vendor_verification_requests")
         .select("id", { count: "exact", head: true })
-        .eq("verification_requested", true)
-        .eq("verified", false);
+        .in("status", ["requested", "under_review"]);
+
+      if (vPending.error) {
+        vPending = await supabase
+          .from("vendors")
+          .select("id", { count: "exact", head: true })
+          .eq("verification_requested", true)
+          .eq("verified", false);
+      }
 
       // Riders
       const rAll = await supabase.from("riders").select("id", { count: "exact", head: true });
-      const rPending = await supabase
-        .from("riders")
-        .select("id", { count: "exact", head: true })
-        .eq("verified", false);
+      const rPending = await supabase.from("riders").select("id", { count: "exact", head: true }).eq("verified", false);
 
       // Couriers
       const cAll = await supabase.from("couriers").select("id", { count: "exact", head: true });
-      const cPending = await supabase
-        .from("couriers")
-        .select("id", { count: "exact", head: true })
-        .eq("verified", false);
+      const cPending = await supabase.from("couriers").select("id", { count: "exact", head: true }).eq("verified", false);
 
       if (!mounted) return;
 
@@ -134,46 +132,14 @@ export default function AdminHomePage() {
   return (
     <div className="space-y-4 pb-24 md:pb-6">
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <p className="text-lg font-semibold text-zinc-900">Overview</p>
-        <p className="mt-1 text-sm text-zinc-600">
-          Review pending requests, verify users, and manage directory visibility.
-        </p>
+        <p className="text-lg font-semibold text-zinc-900">Admin dashboard</p>
+        <p className="mt-1 text-sm text-zinc-600">Quick stats + shortcuts.</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className={cn("grid gap-3", "sm:grid-cols-2", "lg:grid-cols-3")}>
         {cards.map((c) => (
-          <StatCard key={c.title} {...c} />
+          <StatCard key={c.title} title={c.title} value={c.value} subtitle={c.subtitle} href={c.href} icon={c.icon} />
         ))}
-      </div>
-
-      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <p className="text-sm font-semibold text-zinc-900">Quick actions</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <Link
-            href="/admin/vendors"
-            className={cn(
-              "rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
-            )}
-          >
-            Review vendors
-          </Link>
-          <Link
-            href="/admin/riders"
-            className={cn(
-              "rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
-            )}
-          >
-            Review riders
-          </Link>
-          <Link
-            href="/admin/couriers"
-            className={cn(
-              "rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
-            )}
-          >
-            Review couriers
-          </Link>
-        </div>
       </div>
     </div>
   );

@@ -204,10 +204,10 @@ export default function VendorsClient() {
         // ✅ Only VERIFIED vendors are allowed on this page
         let query = supabase
           .from("vendors")
-          .select("id, name, whatsapp, phone, location, verified, vendor_type", {
+          .select("id, name, whatsapp, phone, location, verified, verification_status, vendor_type", {
             count: "exact",
           })
-          .eq("verified", true);
+          .or("verification_status.eq.verified,verified.eq.true");
 
         if (typeParam !== "all") query = query.eq("vendor_type", typeParam);
 

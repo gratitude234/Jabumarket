@@ -160,7 +160,7 @@ export default async function VendorProfilePage({
   // Vendor
   const { data: vendorData, error: vErr } = await supabase
     .from("vendors")
-    .select("id,name,whatsapp,phone,location,verified,vendor_type")
+    .select("id,name,whatsapp,phone,location,verified,verification_status,vendor_type")
     .eq("id", id)
     .single();
 
@@ -198,6 +198,8 @@ export default async function VendorProfilePage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const name = vendor.name ?? "Vendor";
+  const isVerified =
+    (vendor as any).verification_status === "verified" || vendor.verified === true;
   const safeWA = String(vendor.whatsapp ?? "").trim().replace(/[^\d]/g, "");
   const safePhone = String(vendor.phone ?? "").trim().replace(/[^\d]/g, "");
   const hasWA = safeWA.length >= 8;
@@ -243,7 +245,7 @@ export default async function VendorProfilePage({
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="truncate text-lg font-bold text-zinc-900 sm:text-2xl">{name}</h1>
 
-                  {vendor.verified ? (
+                  {isVerified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
                       <BadgeCheck className="h-3.5 w-3.5" />
                       Verified

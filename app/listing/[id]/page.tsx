@@ -1,21 +1,20 @@
 // app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
-import ListingImage from "@/components/ListingImage";
 import {
   ArrowLeft,
   BadgeCheck,
-  Clock,
-  Flag,
   MapPin,
+  Clock,
   Phone,
+  Flag,
   Store,
   Truck,
-  Share2,
 } from "lucide-react";
 
 function formatNaira(amount: number) {
@@ -37,55 +36,82 @@ function formatDateTime(iso?: string | null) {
   }
 }
 
-function cleanDigits(value: string | null | undefined) {
-  return String(value ?? "").replace(/[^\d]/g, "");
+function safeText(s: unknown) {
+  return String(s ?? "").trim();
 }
 
-function isFoodLike(listing: ListingRow, vendor?: VendorRow | null) {
-  const cat = String((listing as any).category ?? "").toLowerCase();
-  const vt = String(vendor?.vendor_type ?? "").toLowerCase();
-  return cat === "food" || vt === "food";
+function digitsOnly(s: string) {
+  return s.replace(/[^\d]/g, "");
 }
 
-function truncateText(input: string, max = 160) {
-  const s = String(input ?? "").trim();
-  if (s.length <= max) return s;
-  return s.slice(0, max).trimEnd() + "…";
+function pickImage(url?: string | null) {
+  const u = safeText(url);
+  if (!u) return "https://placehold.co/1200x900?text=Jabumarket";
+  return u;
 }
 
+function listingMetaDesc(listing: ListingRow) {
+  const desc = safeText(listing.description);
+  if (!desc) return "View listing details on Jabumarket.";
+  const oneLine = desc.replace(/\s+/g, " ").trim();
+  return oneLine.length > 160 ? `${oneLine.slice(0, 157)}…` : oneLine;
+}
+
+// ✅ Optional SEO (safe + lightweight)
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
-}) {
+}): Promise<Metadata> {
   const { id } = await params;
 
   const { data } = await supabase
     .from("listings")
-    .select("id,title,description,image_url,price_label")
+    .select("id,title,description,image_url,price,price_label,location,category")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (!data) return { title: "Listing — Jabumarket" };
+  if (!data) {
+    return {
+      title: "Listing not found — Jabumarket",
+      description: "This listing may have been removed or does not exist.",
+    };
+  }
 
-  const title = data.title
-    ? `${data.title} — Jabumarket`
-    : "Listing — Jabumarket";
-  const description = data.description
-    ? truncateText(data.description, 160)
-    : "See listing details on Jabumarket.";
+  const listing = data as ListingRow;
 
-  const images = data.image_url ? [data.image_url] : undefined;
+  const title = safeText(listing.title) || "Listing";
+  const priceText =
+    listing.price !== null
+      ? formatNaira(listing.price)
+      : safeText(listing.price_label) || "Contact for price";
 
+  const location = safeText(listing.location);
+  const category = safeText(listing.category);
+
+  const metaTitle = `${title} — Jabumarket`;
+  const metaDesc = listingMetaDesc(listing);
+
+  // NOTE: We avoid assuming a canonical site URL.
   return {
-    title,
-    description,
-    openGraph: images
-      ? { title, description, images }
-      : { title, description },
-    twitter: images
-      ? { card: "summary_large_image", title, description, images }
-      : undefined,
+    title: metaTitle,
+    description: metaDesc,
+    openGraph: {
+      title: metaTitle,
+      description: metaDesc,
+      images: [{ url: pickImage(listing.image_url) }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: metaTitle,
+      description: metaDesc,
+      images: [pickImage(listing.image_url)],
+    },
+    other: {
+      "x-price": priceText,
+      "x-location": location || "—",
+      "x-category": category || "—",
+    },
   };
 }
 
@@ -101,82 +127,88 @@ export default async function ListingPage({
     .select(
       `
       id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at,vendor_id,
-      vendor:vendors(id,name,whatsapp,phone,verified,vendor_type,location)
+      vendor:vendors(id,name,whatsapp,verified,vendor_type,phone,location)
     `
     )
     .eq("id", id)
     .single();
 
+  // Keep behavior simple: not found -> 404
   if (error || !data) return notFound();
 
-  // Supabase join returns `vendor: VendorRow[]` for some schemas — normalize safely.
+  // ✅ Normalize vendor from VendorRow[] -> VendorRow | null
   const row = data as ListingRow & { vendor?: VendorRow[] | null };
-  const vendor = row.vendor?.[0] ?? null;
-
   const listing: ListingRow & { vendor?: VendorRow | null } = {
     ...(row as ListingRow),
-    vendor,
+    vendor: row.vendor?.[0] ?? null,
   };
 
-  const isSold = listing.status === "sold";
-  const isInactive = listing.status === "inactive";
-  const isActive = listing.status === "active";
-  const isVerified = Boolean(vendor?.verified);
-
-  const sellerName = vendor?.name ?? "Unknown";
-  const vendorId = vendor?.id ?? listing.vendor_id ?? null;
-
-  const whatsappRaw = cleanDigits(vendor?.whatsapp);
-  const phoneRaw = cleanDigits(vendor?.phone);
-  const contactPhone = phoneRaw || whatsappRaw; // best effort fallback
-
-  const hasWhatsApp = whatsappRaw.length >= 8;
-  const hasPhone = contactPhone.length >= 8;
-
-  const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
-  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappRaw, waText) : "";
-
-  const postedAt = formatDateTime(listing.created_at);
+  const title = safeText(listing.title) || "Untitled listing";
 
   const priceText =
     listing.price !== null
       ? formatNaira(listing.price)
-      : listing.price_label?.trim() || "Contact for price";
+      : safeText(listing.price_label) || "Contact for price";
 
   const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
-  const isFoodListing = isFoodLike(listing, vendor);
 
-  const heroSrc = listing.image_url?.trim() || "/images/placeholder.svg";
+  const isSold = listing.status === "sold";
+  const isInactive = listing.status === "inactive";
 
-  // Better "similar": if category is missing/empty, fallback to latest active listings.
-  const categorySafe = String((listing as any).category ?? "").trim();
+  const vendor = listing.vendor ?? null;
+  const isVerified = Boolean(vendor?.verified);
+
+  const sellerName = safeText(vendor?.name) || "Unknown";
+  const vendorId = vendor?.id ?? listing.vendor_id ?? null;
+
+  // WhatsApp + Call logic (prefer dedicated phone for tel:, WhatsApp for wa.me)
+  const whatsappRaw = safeText(vendor?.whatsapp);
+  const phoneRaw = safeText(vendor?.phone);
+
+  const whatsappDigits = digitsOnly(whatsappRaw);
+  const phoneDigits = digitsOnly(phoneRaw);
+
+  const hasWhatsApp = whatsappDigits.length >= 8;
+  const hasPhone = phoneDigits.length >= 8;
+
+  const waText = `Hi, I'm interested in: ${title} (on Jabumarket). Is it still available?`;
+  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappDigits, waText) : "";
+
+  // Call should use phone if present; fallback to WhatsApp number only if no phone
+  const callDigits = hasPhone ? phoneDigits : whatsappDigits;
+  const canCall = !isSold && callDigits.length >= 8;
+
+  const isFoodListing =
+    safeText(listing.category).toLowerCase() === "food" ||
+    safeText(vendor?.vendor_type).toLowerCase() === "food";
+
+  const postedAt = formatDateTime(listing.created_at);
+
+  // ✅ Better "similar listings" logic:
+  // - If category exists: fetch same category
+  // - Else: fetch latest active listings
+  const category = safeText(listing.category);
   const similarQuery = supabase
     .from("listings")
     .select(
       "id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable"
     )
     .neq("id", listing.id)
-    .eq("status", "active")
+    .in("status", ["active"])
     .order("created_at", { ascending: false })
     .limit(6);
 
-  const { data: similarData } =
-    categorySafe.length > 0
-      ? await similarQuery.eq("category", categorySafe)
-      : await similarQuery;
+  const { data: similarData } = category
+    ? await similarQuery.eq("category", category)
+    : await similarQuery;
 
   const similar = (similarData ?? []) as ListingRow[];
 
-  // Share link (works even without client-side Web Share API)
-  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "";
-  const listingUrl = base ? `${base}/listing/${listing.id}` : `/listing/${listing.id}`;
-  const shareText = `Check this on Jabumarket: ${listing.title}\n${listingUrl}`;
-  const waShareLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-
-  const desc = String(listing.description ?? "").trim();
-  const longDesc = desc.length > 220;
+  const desc = safeText(listing.description);
+  const descLong = desc.length > 220;
 
   return (
+    // ✅ prevent any horizontal overshoot on real phones
     <div className="space-y-4 pb-28 lg:pb-0 overflow-x-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
@@ -189,9 +221,9 @@ export default async function ListingPage({
         </Link>
 
         <div className="flex items-center gap-2">
-          {categorySafe ? (
-            <span className="max-w-[42vw] truncate rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
-              {categorySafe}
+          {category ? (
+            <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
+              {category}
             </span>
           ) : null}
           <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
@@ -202,14 +234,20 @@ export default async function ListingPage({
 
       {/* Mobile-first layout */}
       <div className="grid gap-4 lg:grid-cols-5">
-        {/* Media + similar */}
+        {/* Media */}
         <div className="lg:col-span-3 min-w-0">
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="relative w-full bg-zinc-100 overflow-hidden h-[40svh] max-h-[260px] min-h-[200px] sm:h-[340px] sm:max-h-none lg:h-[420px]">
-              <ListingImage
-                src={heroSrc}
-                alt={listing.title ?? "Listing image"}
-                className="h-full w-full max-w-full object-cover"
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pickImage(listing.image_url)}
+                alt={`${title} photo`}
+                loading="eager"
+                decoding="async"
+                className={[
+                  "h-full w-full max-w-full object-cover",
+                  isSold || isInactive ? "" : "transition-transform duration-200",
+                ].join(" ")}
               />
 
               {isSold ? (
@@ -241,48 +279,51 @@ export default async function ListingPage({
           </div>
 
           {/* Similar listings */}
-          <div className="mt-4 space-y-2">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">
-                  {similar.length ? "More like this" : "Explore more"}
-                </p>
-                <p className="text-xs text-zinc-600">
-                  {similar.length
-                    ? categorySafe
+          {similar.length ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">
+                    {category ? "More like this" : "Latest listings"}
+                  </p>
+                  <p className="text-xs text-zinc-600">
+                    {category
                       ? "Newest in the same category."
-                      : "Newest listings right now."
-                    : "No similar listings yet — try Explore."}
-                </p>
+                      : "Fresh items from the marketplace."}
+                  </p>
+                </div>
+
+                {category ? (
+                  <Link
+                    href={`/explore?category=${encodeURIComponent(category)}`}
+                    className="text-xs font-medium text-zinc-800 hover:underline"
+                  >
+                    See more
+                  </Link>
+                ) : (
+                  <Link
+                    href="/explore"
+                    className="text-xs font-medium text-zinc-800 hover:underline"
+                  >
+                    Explore
+                  </Link>
+                )}
               </div>
 
-              {categorySafe ? (
-                <Link
-                  href={`/explore?category=${encodeURIComponent(categorySafe)}`}
-                  className="text-xs font-medium text-zinc-800 hover:underline"
-                >
-                  See more
-                </Link>
-              ) : (
-                <Link
-                  href="/explore"
-                  className="text-xs font-medium text-zinc-800 hover:underline"
-                >
-                  Explore
-                </Link>
-              )}
-            </div>
-
-            {similar.length ? (
+              {/* ✅ remove negative margins; hide scrollbars safely */}
               <div className="flex gap-3 overflow-x-auto pb-1 pr-4 [scrollbar-width:none] lg:grid lg:grid-cols-3 lg:overflow-visible lg:pr-0">
                 <style>{`div::-webkit-scrollbar{display:none}`}</style>
 
                 {similar.map((s) => {
-                  const sType =
-                    s.listing_type === "product" ? "Product" : "Service";
+                  const sType = s.listing_type === "product" ? "Product" : "Service";
                   const sSold = s.status === "sold";
                   const sInactive2 = s.status === "inactive";
-                  const sImg = s.image_url?.trim() || "/images/placeholder.svg";
+
+                  const sTitle = safeText(s.title) || "Untitled listing";
+                  const sPrice =
+                    s.price !== null
+                      ? formatNaira(s.price)
+                      : safeText(s.price_label) || "Contact for price";
 
                   return (
                     <Link
@@ -294,9 +335,12 @@ export default async function ListingPage({
                       ].join(" ")}
                     >
                       <div className="relative aspect-[4/3] bg-zinc-100 overflow-hidden">
-                        <ListingImage
-                          src={sImg}
-                          alt={s.title ?? "Listing image"}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={pickImage(s.image_url)}
+                          alt={`${sTitle} photo`}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-cover"
                         />
 
@@ -329,36 +373,19 @@ export default async function ListingPage({
 
                       <div className="space-y-1 p-3">
                         <p className="line-clamp-1 text-sm font-semibold text-zinc-900">
-                          {s.title ?? "Untitled listing"}
+                          {sTitle}
                         </p>
-                        <p className="text-xs font-semibold text-zinc-900">
-                          {s.price !== null
-                            ? formatNaira(s.price)
-                            : s.price_label?.trim() || "Contact for price"}
-                        </p>
+                        <p className="text-xs font-semibold text-zinc-900">{sPrice}</p>
                         <p className="line-clamp-1 text-xs text-zinc-500">
-                          {s.location ?? "—"}
+                          {safeText(s.location) || "—"}
                         </p>
                       </div>
                     </Link>
                   );
                 })}
               </div>
-            ) : (
-              <div className="rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-                <p className="font-semibold text-zinc-900">Nothing similar yet.</p>
-                <p className="mt-1 text-xs">
-                  Try browsing Explore to find more listings.
-                </p>
-                <Link
-                  href="/explore"
-                  className="mt-3 inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-2 text-xs font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                >
-                  Go to Explore
-                </Link>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Details */}
@@ -373,19 +400,10 @@ export default async function ListingPage({
                   Browse similar items below or return to Explore.
                 </p>
               </div>
-            ) : isInactive ? (
-              <div className="mb-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2">
-                <p className="text-sm font-semibold text-zinc-800">
-                  This listing is inactive
-                </p>
-                <p className="text-xs text-zinc-600">
-                  It may be temporarily unavailable.
-                </p>
-              </div>
             ) : null}
 
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
-              {listing.title ?? "Untitled listing"}
+              {title}
             </h1>
 
             <div className="mt-2 flex items-end justify-between gap-3">
@@ -395,9 +413,7 @@ export default async function ListingPage({
                 {listing.location ? (
                   <div className="inline-flex items-center justify-end gap-1">
                     <MapPin className="h-3.5 w-3.5" />
-                    <span className="max-w-[44vw] truncate sm:max-w-none">
-                      {listing.location}
-                    </span>
+                    <span className="truncate">{listing.location}</span>
                   </div>
                 ) : (
                   <div className="truncate">—</div>
@@ -416,9 +432,9 @@ export default async function ListingPage({
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
                 {typeLabel}
               </span>
-              {categorySafe ? (
+              {category ? (
                 <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
-                  {categorySafe}
+                  {category}
                 </span>
               ) : null}
               {listing.negotiable ? (
@@ -433,19 +449,14 @@ export default async function ListingPage({
 
               {desc ? (
                 <div className="mt-2 rounded-2xl border bg-zinc-50 p-3">
-                  <p
-                    className={[
-                      "text-sm leading-relaxed text-zinc-700",
-                      longDesc ? "line-clamp-5" : "",
-                    ].join(" ")}
-                  >
+                  <p className="text-sm leading-relaxed text-zinc-700 whitespace-pre-line line-clamp-4">
                     {desc}
                   </p>
 
-                  {longDesc ? (
+                  {descLong ? (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-sm font-semibold text-zinc-900">
-                        Read full description
+                        Read more
                       </summary>
                       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
                         {desc}
@@ -454,35 +465,15 @@ export default async function ListingPage({
                   ) : null}
                 </div>
               ) : (
-                <div className="mt-2 rounded-2xl border bg-zinc-50 p-3 text-sm text-zinc-600">
-                  No description yet. Contact the seller for more details.
+                <div className="mt-2 rounded-2xl border bg-zinc-50 p-3">
+                  <p className="text-sm text-zinc-700">
+                    No description yet. Contact the seller for more details.
+                  </p>
                 </div>
               )}
             </div>
-
-            {/* Quick share */}
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <a
-                href={waShareLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Share2 className="h-4 w-4" />
-                Share
-              </a>
-
-              <Link
-                href={`/report?listing=${listing.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Flag className="h-4 w-4" />
-                Report
-              </Link>
-            </div>
           </div>
 
-          {/* Seller */}
           <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -494,6 +485,7 @@ export default async function ListingPage({
                   <p className="truncate text-sm font-semibold text-zinc-900">
                     {sellerName}
                   </p>
+
                   {isVerified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
                       <BadgeCheck className="h-3.5 w-3.5" />
@@ -506,26 +498,13 @@ export default async function ListingPage({
                   )}
                 </div>
 
-                {hasWhatsApp ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    WhatsApp: +{whatsappRaw}
-                  </p>
-                ) : hasPhone ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Phone: +{contactPhone}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Contact not available
-                  </p>
-                )}
-
-                {!isVerified ? (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Tip: For unverified sellers, avoid full prepayment. Meet in a
-                    public place.
-                  </p>
-                ) : null}
+                <div className="mt-1 space-y-1 text-xs text-zinc-500">
+                  {hasWhatsApp ? <p>WhatsApp: +{whatsappDigits}</p> : <p>WhatsApp: —</p>}
+                  {hasPhone ? <p>Phone: +{phoneDigits}</p> : <p>Phone: —</p>}
+                  {safeText(vendor?.location) ? (
+                    <p className="line-clamp-1">Location: {vendor?.location}</p>
+                  ) : null}
+                </div>
               </div>
 
               {vendorId && isVerified ? (
@@ -545,7 +524,15 @@ export default async function ListingPage({
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
-              {!isSold && isActive && hasWhatsApp ? (
+              <Link
+                href={`/report?listing=${listing.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+              >
+                <Flag className="h-4 w-4" />
+                Report
+              </Link>
+
+              {!isSold && hasWhatsApp ? (
                 <a
                   href={waLink}
                   target="_blank"
@@ -556,13 +543,15 @@ export default async function ListingPage({
                 </a>
               ) : (
                 <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
-                  WhatsApp
+                  Unavailable
                 </span>
               )}
+            </div>
 
-              {!isSold && isActive && hasPhone ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {canCall ? (
                 <a
-                  href={`tel:+${contactPhone}`}
+                  href={`tel:+${callDigits}`}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
                 >
                   <Phone className="h-4 w-4" />
@@ -570,34 +559,29 @@ export default async function ListingPage({
                 </a>
               ) : (
                 <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
-                  <Phone className="h-4 w-4" />
                   Call
+                </span>
+              )}
+
+              {!isSold && isFoodListing ? (
+                <Link
+                  href={`/couriers?listing=${listing.id}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+                >
+                  <Truck className="h-4 w-4" />
+                  Delivery
+                </Link>
+              ) : (
+                <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
+                  Delivery
                 </span>
               )}
             </div>
 
-            <div className="mt-2">
-              {!isSold && isActive && isFoodListing ? (
-                <Link
-                  href={`/couriers?listing=${listing.id}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                >
-                  <Truck className="h-4 w-4" />
-                  Request Delivery
-                </Link>
-              ) : (
-                <div className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
-                  <Truck className="h-4 w-4" />
-                  Delivery not available
-                </div>
-              )}
-
-              {isFoodListing && !isSold && isActive ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Tip: tell the courier your drop-off and budget before sending.
-                </p>
-              ) : null}
-            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              Tip: Meet in a public place. Inspect items before paying. Avoid full
+              prepayment.
+            </p>
           </div>
 
           <OwnerActions
@@ -622,7 +606,15 @@ export default async function ListingPage({
       <div className="fixed bottom-16 left-0 right-0 z-40 px-4 lg:hidden">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
           <div className="grid grid-cols-2 gap-2">
-            {!isSold && isActive && hasWhatsApp ? (
+            <Link
+              href={`/report?listing=${listing.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+            >
+              <Flag className="h-4 w-4" />
+              Report
+            </Link>
+
+            {!isSold && hasWhatsApp ? (
               <a
                 href={waLink}
                 target="_blank"
@@ -633,26 +625,8 @@ export default async function ListingPage({
               </a>
             ) : (
               <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
-                WhatsApp
+                Unavailable
               </span>
-            )}
-
-            {!isSold && isActive && hasPhone ? (
-              <a
-                href={`tel:+${contactPhone}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Phone className="h-4 w-4" />
-                Call
-              </a>
-            ) : (
-              <Link
-                href={`/report?listing=${listing.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Flag className="h-4 w-4" />
-                Report
-              </Link>
             )}
           </div>
         </div>

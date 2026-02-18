@@ -2,9 +2,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import type { VendorRow, VendorType } from "@/lib/types";
+import Link from "next/link";
 import {
   CheckCircle2,
   Loader2,
@@ -14,22 +13,47 @@ import {
   AlertTriangle,
   Store,
   MapPin,
+  Phone,
+  BadgeCheck,
+  ShieldAlert,
+  FileText,
+  Eye,
 } from "lucide-react";
 
-type AdminVendor = {
+type VendorType = "food" | "mall" | "student" | "other";
+
+type RequestRow = {
   id: string;
-  name: string | null;
-  whatsapp: string | null;
-  phone: string | null;
-  location: string | null;
-  verified: boolean | null;
-  vendor_type: VendorType | null;
-  created_at?: string | null;
+  vendor_id: string;
+  status: "requested" | "under_review" | "approved" | "rejected";
+  note: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  vendors?: {
+    id: string;
+    name: string | null;
+    whatsapp: string | null;
+    phone: string | null;
+    location: string | null;
+    vendor_type: VendorType | null;
+    verified: boolean | null;
+    verification_status: string | null;
+  } | null;
+};
+
+type DocRow = {
+  id: string;
+  vendor_id: string;
+  doc_type: string;
+  file_path: string;
+  created_at: string;
 };
 
 type Banner = { type: "success" | "error" | "info"; text: string } | null;
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 20;
 
 const TYPE_LABEL: Record<VendorType, string> = {
   food: "Food",
@@ -58,33 +82,56 @@ function BannerView({ banner, onClose }: { banner: Banner; onClose: () => void }
       : "border-zinc-200 bg-zinc-50 text-zinc-800";
 
   return (
-    <div
-      className={cn("rounded-2xl border p-3 text-sm flex items-start justify-between gap-3", cls)}
-      role="status"
-    >
+    <div className={cn("rounded-2xl border p-3 text-sm flex items-start justify-between gap-3", cls)} role="status">
       <span>{banner.text}</span>
-      <button
-        onClick={onClose}
-        className="rounded-xl border bg-white/70 p-2 hover:bg-white"
-        aria-label="Close"
-      >
+      <button onClick={onClose} className="rounded-xl border bg-white/70 p-2 hover:bg-white" aria-label="Close" type="button">
         <X className="h-4 w-4" />
       </button>
     </div>
   );
 }
 
-function StatusPill({ verified }: { verified: boolean }) {
+function StatusPill({ status }: { status: RequestRow["status"] }) {
+  if (status === "approved") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Approved
+      </span>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        Rejected
+      </span>
+    );
+  }
+  if (status === "under_review") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+        <Eye className="h-3.5 w-3.5" />
+        Under review
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-800">
+      <ShieldAlert className="h-3.5 w-3.5" />
+      Requested
+    </span>
+  );
+}
+
+function MiniBadge({ verified }: { verified: boolean }) {
   return verified ? (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
-      <CheckCircle2 className="h-3.5 w-3.5" />
+    <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
+      <BadgeCheck className="h-3.5 w-3.5" />
       Verified
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
-      <AlertTriangle className="h-3.5 w-3.5" />
-      Pending
-    </span>
+    <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-700">Unverified</span>
   );
 }
 
@@ -92,21 +139,23 @@ export default function AdminVendorsPage() {
   const mounted = useRef(true);
 
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<AdminVendor[]>([]);
+  const [rows, setRows] = useState<RequestRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+
   const [banner, setBanner] = useState<Banner>(null);
 
   const [q, setQ] = useState("");
-  // "requests" = vendors who explicitly clicked "Request verification" in /me
-  // "pending"  = all unverified vendors (includes new signups who haven't requested yet)
-  const [tab, setTab] = useState<"requests" | "pending" | "verified" | "all">("requests");
+  const [tab, setTab] = useState<"inbox" | "under_review" | "approved" | "rejected" | "all">("inbox");
   const [type, setType] = useState<"all" | VendorType>("all");
 
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [active, setActive] = useState<RequestRow | null>(null);
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
 
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
-  const [workingIds, setWorkingIds] = useState<Record<string, boolean>>({});
+  const [working, setWorking] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   useEffect(() => {
     mounted.current = true;
@@ -115,57 +164,79 @@ export default function AdminVendorsPage() {
     };
   }, []);
 
-  async function fetchPage(nextPage = page) {
+  async function fetchPage(nextPage = 1) {
     setLoading(true);
     setBanner(null);
 
     const from = (nextPage - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // NOTE:
-    // - "created_at" is optional: if your table doesn't have it, remove it from select/order.
-    let query = supabase
-      .from("vendors")
-      .select("id, name, whatsapp, phone, location, verified, vendor_type, created_at", { count: "exact" });
+    try {
+      let query = supabase
+        .from("vendor_verification_requests")
+        .select(
+          "id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by,vendors:vendors(id,name,whatsapp,phone,location,vendor_type,verified,verification_status)",
+          { count: "exact" }
+        );
 
-    if (tab === "requests") query = query.eq("verification_requested", true).eq("verified", false);
-    if (tab === "pending") query = query.eq("verified", false);
-    if (tab === "verified") query = query.eq("verified", true);
+      if (tab === "inbox") query = query.eq("status", "requested");
+      if (tab === "under_review") query = query.eq("status", "under_review");
+      if (tab === "approved") query = query.eq("status", "approved");
+      if (tab === "rejected") query = query.eq("status", "rejected");
 
-    if (type !== "all") query = query.eq("vendor_type", type);
+      if (type !== "all") query = query.eq("vendors.vendor_type", type);
 
-    const needle = q.trim();
-    if (needle) {
-      query = query.or(
-        `name.ilike.%${needle}%,location.ilike.%${needle}%,phone.ilike.%${needle}%,whatsapp.ilike.%${needle}%`
-      );
-    }
+      const needle = q.trim();
+      if (needle) {
+        // Search vendor fields via embedded relationship filters
+        // (PostgREST supports filtering on embedded resources in select)
+        query = query.or(
+          `vendors.name.ilike.%${needle}%,vendors.location.ilike.%${needle}%,vendors.phone.ilike.%${needle}%,vendors.whatsapp.ilike.%${needle}%`
+        );
+      }
 
-    const { data, error, count } = await query
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      const { data, error, count } = await query.order("created_at", { ascending: false }).range(from, to);
+      if (error) throw error;
 
-    if (!mounted.current) return;
-
-    if (error) {
-      // If your vendors table DOESN'T have created_at, this is the most likely error.
-      // Fix: remove created_at from select() and order().
-      setBanner({ type: "error", text: error.message });
+      if (!mounted.current) return;
+      setRows((data ?? []) as any);
+      setTotal(count ?? 0);
+      setLoading(false);
+    } catch (e: any) {
+      if (!mounted.current) return;
+      setBanner({ type: "error", text: e?.message ?? "Failed to load requests." });
       setRows([]);
       setTotal(0);
       setLoading(false);
-      return;
     }
+  }
 
-    setRows((data ?? []) as AdminVendor[]);
-    setTotal(count ?? 0);
-    setLoading(false);
+  async function openDrawer(r: RequestRow) {
+    setActive(r);
+    setDrawerOpen(true);
+    setRejectReason("");
+
+    setDocsLoading(true);
+    setDocs([]);
+    try {
+      const { data, error } = await supabase
+        .from("vendor_verification_docs")
+        .select("id,vendor_id,doc_type,file_path,created_at")
+        .eq("vendor_id", r.vendor_id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      if (!mounted.current) return;
+      setDocs((data ?? []) as any);
+    } catch {
+      // docs table/bucket may not exist yet
+    } finally {
+      if (mounted.current) setDocsLoading(false);
+    }
   }
 
   useEffect(() => {
     fetchPage(1);
     setPage(1);
-    setSelected({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, type]);
 
@@ -173,81 +244,158 @@ export default function AdminVendorsPage() {
     const t = window.setTimeout(() => {
       fetchPage(1);
       setPage(1);
-      setSelected({});
     }, 350);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  function toggleAll(checked: boolean) {
-    if (!checked) return setSelected({});
-    const next: Record<string, boolean> = {};
-    rows.forEach((r) => (next[r.id] = true));
-    setSelected(next);
-  }
-
-  async function bulkUpdate(ids: string[], patch: Partial<AdminVendor>, successText: string) {
-    if (!ids.length) return;
-    setBanner(null);
-
-    const nextWorking: Record<string, boolean> = {};
-    ids.forEach((id) => (nextWorking[id] = true));
-    setWorkingIds((p) => ({ ...p, ...nextWorking }));
-
-    try {
-      const { error } = await supabase.from("vendors").update(patch).in("id", ids);
-      if (error) throw error;
-      setBanner({ type: "success", text: successText });
-      setSelected({});
-      await fetchPage(page);
-    } catch (e: any) {
-      setBanner({ type: "error", text: e?.message ?? "Update failed" });
-    } finally {
-      setWorkingIds((prev) => {
-        const copy = { ...prev };
-        ids.forEach((id) => delete copy[id]);
-        return copy;
-      });
-    }
-  }
-
-  async function singleUpdate(id: string, patch: Partial<AdminVendor>, successText: string) {
-    setBanner(null);
-    setWorkingIds((p) => ({ ...p, [id]: true }));
-    try {
-      const { error } = await supabase.from("vendors").update(patch).eq("id", id);
-      if (error) throw error;
-      setBanner({ type: "success", text: successText });
-      await fetchPage(page);
-    } catch (e: any) {
-      setBanner({ type: "error", text: e?.message ?? "Update failed" });
-    } finally {
-      setWorkingIds((prev) => {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      });
-    }
-  }
-
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const anySelected = selectedIds.length > 0;
+
+  async function tryRpc(name: string, args: any) {
+    const { error } = await supabase.rpc(name, args);
+    if (!error) return { ok: true as const };
+
+    // function missing
+    const msg = String(error.message ?? "");
+    if (msg.toLowerCase().includes("function") && msg.toLowerCase().includes("does not exist")) {
+      return { ok: false as const, missing: true as const, error };
+    }
+
+    return { ok: false as const, missing: false as const, error };
+  }
+
+  async function markUnderReview() {
+    if (!active) return;
+    setWorking(true);
+    setBanner(null);
+
+    try {
+      // Prefer RPC
+      const r1 = await tryRpc("mark_vendor_under_review", { p_request_id: active.id });
+      if (!r1.ok && r1.missing) {
+        // Fallback (non-atomic)
+        const { error: e1 } = await supabase
+          .from("vendor_verification_requests")
+          .update({ status: "under_review" })
+          .eq("id", active.id);
+        if (e1) throw e1;
+
+        await supabase.from("vendors").update({ verification_status: "under_review" }).eq("id", active.vendor_id);
+      } else if (!r1.ok) {
+        throw r1.error;
+      }
+
+      setBanner({ type: "success", text: "Marked as under review." });
+      setDrawerOpen(false);
+      setActive(null);
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Update failed." });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function approve() {
+    if (!active) return;
+    setWorking(true);
+    setBanner(null);
+
+    try {
+      const r1 = await tryRpc("approve_vendor_verification", { p_request_id: active.id });
+      if (!r1.ok && r1.missing) {
+        // Fallback (non-atomic)
+        const { error: e1 } = await supabase
+          .from("vendor_verification_requests")
+          .update({ status: "approved", reviewed_at: new Date().toISOString(), reviewed_by: null, rejection_reason: null })
+          .eq("id", active.id);
+        if (e1) throw e1;
+
+        const { error: e2 } = await supabase
+          .from("vendors")
+          .update({ verification_status: "verified", verified: true, verified_at: new Date().toISOString(), rejection_reason: null, rejected_at: null })
+          .eq("id", active.vendor_id);
+        if (e2) throw e2;
+      } else if (!r1.ok) {
+        throw r1.error;
+      }
+
+      setBanner({ type: "success", text: "Approved." });
+      setDrawerOpen(false);
+      setActive(null);
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Approve failed." });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function reject() {
+    if (!active) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setBanner({ type: "error", text: "Enter a rejection reason." });
+      return;
+    }
+
+    setWorking(true);
+    setBanner(null);
+
+    try {
+      const r1 = await tryRpc("reject_vendor_verification", { p_request_id: active.id, p_reason: reason });
+      if (!r1.ok && r1.missing) {
+        const { error: e1 } = await supabase
+          .from("vendor_verification_requests")
+          .update({ status: "rejected", reviewed_at: new Date().toISOString(), reviewed_by: null, rejection_reason: reason })
+          .eq("id", active.id);
+        if (e1) throw e1;
+
+        const { error: e2 } = await supabase
+          .from("vendors")
+          .update({ verification_status: "rejected", verified: false, rejected_at: new Date().toISOString(), rejection_reason: reason })
+          .eq("id", active.vendor_id);
+        if (e2) throw e2;
+      } else if (!r1.ok) {
+        throw r1.error;
+      }
+
+      setBanner({ type: "success", text: "Rejected." });
+      setDrawerOpen(false);
+      setActive(null);
+      await fetchPage(page);
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Reject failed." });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function openDoc(path: string) {
+    try {
+      const bucket = "vendor-verification";
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60);
+      if (error) throw error;
+      if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Could not open document." });
+    }
+  }
 
   return (
     <div className="space-y-4 pb-24 md:pb-6">
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-semibold text-zinc-900">Vendors</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Approve verification requests. New signups are also <span className="font-semibold">Pending</span> until verified.
-            </p>
+            <p className="text-lg font-semibold text-zinc-900">Vendor Verification</p>
+            <p className="mt-1 text-sm text-zinc-600">Review requests, check docs, approve or reject with reasons.</p>
           </div>
 
           <button
             onClick={() => fetchPage(page)}
             disabled={loading}
             className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+            type="button"
           >
             <RefreshCcw className="h-4 w-4" />
             Refresh
@@ -260,15 +408,12 @@ export default function AdminVendorsPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name / location / phone / WhatsApp…"
               className="w-full bg-transparent text-sm outline-none"
+              placeholder="Search by name, location, phone…"
             />
             {q ? (
-              <button
-                onClick={() => setQ("")}
-                className="rounded-xl border bg-white px-2 py-1 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-              >
-                Clear
+              <button onClick={() => setQ("")} className="rounded-xl border bg-white p-2 hover:bg-zinc-50" type="button">
+                <X className="h-4 w-4" />
               </button>
             ) : null}
           </div>
@@ -276,7 +421,7 @@ export default function AdminVendorsPage() {
           <select
             value={type}
             onChange={(e) => setType(e.target.value as any)}
-            className="rounded-2xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 outline-none"
+            className="h-11 rounded-2xl border bg-white px-3 text-sm"
           >
             <option value="all">All types</option>
             <option value="food">Food</option>
@@ -286,260 +431,305 @@ export default function AdminVendorsPage() {
           </select>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-2xl border bg-white p-1">
-            {(["requests", "pending", "verified", "all"] as const).map((k) => (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(
+            [
+              { k: "inbox", label: "Requested" },
+              { k: "under_review", label: "Under review" },
+              { k: "approved", label: "Approved" },
+              { k: "rejected", label: "Rejected" },
+              { k: "all", label: "All" },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.k;
+            return (
               <button
-                key={k}
-                onClick={() => setTab(k)}
+                key={t.k}
+                onClick={() => setTab(t.k)}
                 className={cn(
-                  "rounded-xl px-3 py-1.5 text-sm font-semibold transition",
-                  tab === k ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
+                  "focus:outline-none focus:ring-2 focus:ring-black/10",
+                  active
+                    ? "border-zinc-900 bg-zinc-900 text-white"
+                    : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
                 )}
+                type="button"
               >
-                {k === "requests"
-                  ? "Requests"
-                  : k === "pending"
-                  ? "Pending"
-                  : k === "verified"
-                  ? "Verified"
-                  : "All"}
+                {t.label}
               </button>
-            ))}
-          </div>
-
-          <div className="text-sm text-zinc-600">
-            {loading ? "Loading…" : `${total} vendor${total === 1 ? "" : "s"}`}
-          </div>
+            );
+          })}
         </div>
 
-        <div className="mt-3">
+        <div className="mt-4">
           <BannerView banner={banner} onClose={() => setBanner(null)} />
-        </div>
-
-        {/* Bulk actions */}
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-zinc-600">
-            {anySelected ? (
-              <span className="font-semibold text-zinc-900">{selectedIds.length} selected</span>
-            ) : (
-              <span>Select vendors to bulk verify/unverify.</span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => bulkUpdate(selectedIds, { verified: true }, "Vendors verified.")}
-              disabled={!anySelected || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Verify selected
-            </button>
-
-            <button
-              onClick={() => bulkUpdate(selectedIds, { verified: false }, "Vendors moved to pending.")}
-              disabled={!anySelected || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              Mark pending
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[880px] w-full text-left text-sm">
-            <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-600">
-              <tr>
-                <th className="w-[48px] px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={rows.length > 0 && rows.every((r) => selected[r.id])}
-                    onChange={(e) => toggleAll(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300"
-                    aria-label="Select all"
-                  />
-                </th>
-                <th className="px-4 py-3">Vendor</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Contact</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
+      {/* List */}
+      <section className="space-y-3">
+        {loading ? (
+          <div className="grid gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-3xl border bg-white p-4">
+                <div className="h-4 w-1/2 rounded bg-zinc-100" />
+                <div className="mt-2 h-3 w-1/3 rounded bg-zinc-100" />
+                <div className="mt-4 h-10 w-full rounded-2xl bg-zinc-100" />
+              </div>
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="rounded-3xl border bg-white p-6 text-center">
+            <p className="text-sm font-semibold text-zinc-900">No requests found</p>
+            <p className="mt-1 text-sm text-zinc-600">Try changing filters or search.</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {rows.map((r) => {
+              const v = r.vendors;
+              const name = v?.name ?? "Vendor";
+              const phone = normalizePhone(v?.phone ?? v?.whatsapp ?? "");
+              const loc = v?.location ?? "Location not set";
+              const vt = v?.vendor_type ? TYPE_LABEL[v.vendor_type] : "Unknown";
+              const isVerified = (v?.verification_status ?? "") === "verified" || v?.verified === true;
 
-            <tbody className="divide-y">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10">
-                    <div className="flex items-center justify-center gap-2 text-zinc-600">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      Loading vendors…
-                    </div>
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10">
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-zinc-900">No vendors found</p>
-                      <p className="mt-1 text-sm text-zinc-600">
-                        Try switching tabs, clearing search, or changing the type filter.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                rows.map((v) => {
-                  const name = (v.name ?? "Unnamed vendor").trim();
-                  const verified = Boolean(v.verified);
-
-                  const phone = normalizePhone(v.phone);
-                  const wa = normalizePhone(v.whatsapp);
-
-                  const isWorking = Boolean(workingIds[v.id]);
-
-                  return (
-                    <tr key={v.id} className="hover:bg-zinc-50/60">
-                      <td className="px-4 py-4 align-top">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(selected[v.id])}
-                          onChange={(e) => setSelected((p) => ({ ...p, [v.id]: e.target.checked }))}
-                          className="h-4 w-4 rounded border-zinc-300"
-                          aria-label={`Select ${name}`}
-                        />
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl border bg-white">
-                            <Store className="h-4 w-4 text-zinc-700" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-zinc-900">{name}</div>
-                            <div className="mt-0.5 text-xs text-zinc-500">ID: {v.id}</div>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <span className="inline-flex rounded-full border bg-white px-2 py-1 text-xs font-semibold text-zinc-800">
-                          {v.vendor_type ? TYPE_LABEL[v.vendor_type] : "—"}
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => openDrawer(r)}
+                  className="text-left rounded-3xl border bg-white p-4 shadow-sm transition hover:bg-zinc-50"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-base font-semibold text-zinc-900">{name}</p>
+                        <MiniBadge verified={isVerified} />
+                        <span className="rounded-full border bg-white px-2 py-1 text-[10px] font-semibold text-zinc-700">
+                          {vt}
                         </span>
-                      </td>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-zinc-600">
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" />
+                          {loc}
+                        </span>
+                        {phone ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="h-3.5 w-3.5" />
+                            {phone}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
 
-                      <td className="px-4 py-4 align-top">
-                        {v.location ? (
-                          <div className="flex items-start gap-2 text-zinc-800">
-                            <MapPin className="mt-0.5 h-4 w-4 text-zinc-500" />
-                            <span className="line-clamp-2">{v.location}</span>
-                          </div>
-                        ) : (
-                          <span className="text-zinc-500">—</span>
-                        )}
-                      </td>
+                    <div className="flex flex-col items-end gap-2">
+                      <StatusPill status={r.status} />
+                      <span className="text-xs text-zinc-500">
+                        {new Date(r.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+                      </span>
+                    </div>
+                  </div>
 
-                      <td className="px-4 py-4 align-top">
-                        <div className="space-y-1 text-xs text-zinc-700">
-                          <div>
-                            <span className="text-zinc-500">Phone:</span> {phone || "—"}
-                          </div>
-                          <div>
-                            <span className="text-zinc-500">WhatsApp:</span> {wa || "—"}
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <StatusPill verified={verified} />
-                      </td>
-
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            href={`/vendors/${v.id}`}
-                            className="rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                          >
-                            View
-                          </Link>
-
-                          {verified ? (
-                            <button
-                              onClick={() => singleUpdate(v.id, { verified: false }, "Vendor marked as pending.")}
-                              disabled={isWorking}
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
-                            >
-                              {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
-                              Pending
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => singleUpdate(v.id, { verified: true }, "Vendor verified.")}
-                              disabled={isWorking}
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
-                            >
-                              {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                              Verify
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  {r.rejection_reason ? (
+                    <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                      Reason: {r.rejection_reason}
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Pagination */}
-        <div className="flex flex-col gap-2 border-t bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-zinc-600">
-            Page <span className="font-semibold text-zinc-900">{page}</span> of{" "}
-            <span className="font-semibold text-zinc-900">{pages}</span>
-          </div>
-
+        <div className="flex items-center justify-between rounded-3xl border bg-white p-3">
+          <p className="text-xs text-zinc-600">
+            Page <span className="font-semibold text-zinc-900">{page}</span> of {pages} • {total} total
+          </p>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => {
                 const next = Math.max(1, page - 1);
                 setPage(next);
-                setSelected({});
                 fetchPage(next);
               }}
-              disabled={loading || page <= 1}
-              className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+              disabled={page <= 1 || loading}
+              className="rounded-2xl border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50 disabled:opacity-60"
             >
               Prev
             </button>
             <button
+              type="button"
               onClick={() => {
                 const next = Math.min(pages, page + 1);
                 setPage(next);
-                setSelected({});
                 fetchPage(next);
               }}
-              disabled={loading || page >= pages}
-              className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+              disabled={page >= pages || loading}
+              className="rounded-2xl border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50 disabled:opacity-60"
             >
               Next
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Reminder */}
-      <div className="rounded-3xl border bg-white p-4 text-sm text-zinc-600 shadow-sm">
-        If you still can’t see pending vendors after this update, it’s your RLS SELECT policy.
-        You need: <span className="font-semibold">Admins can SELECT all vendors</span> (using your{" "}
-        <code className="rounded bg-zinc-100 px-1 py-0.5">public.admins</code> table).
-      </div>
+      {/* Drawer */}
+      {drawerOpen && active ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white shadow-2xl">
+            <div className="sticky top-0 border-b bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-zinc-900">{active.vendors?.name ?? "Vendor"}</p>
+                  <p className="mt-1 text-xs text-zinc-600">Request ID: {active.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDrawerOpen(false)}
+                  className="rounded-2xl border bg-white p-2 hover:bg-zinc-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <StatusPill status={active.status} />
+                <span className="rounded-full border bg-white px-2 py-1 text-[10px] font-semibold text-zinc-700">
+                  <Store className="mr-1 inline h-3.5 w-3.5" />
+                  {active.vendors?.vendor_type ? TYPE_LABEL[active.vendors.vendor_type] : "Unknown"}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <BannerView banner={banner} onClose={() => setBanner(null)} />
+
+              <div className="rounded-3xl border bg-white p-4">
+                <p className="text-sm font-semibold text-zinc-900">Vendor details</p>
+
+                <div className="mt-3 space-y-2 text-sm text-zinc-700">
+                  <p className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    <span>{active.vendors?.location ?? "Location not set"}</span>
+                  </p>
+                  {active.vendors?.phone || active.vendors?.whatsapp ? (
+                    <p className="flex items-center gap-2">
+                      <Phone className="h-4 w-4" />
+                      <span>{active.vendors?.phone ?? active.vendors?.whatsapp}</span>
+                    </p>
+                  ) : null}
+
+                  <div className="pt-2">
+                    <Link
+                      href={`/vendors/${active.vendor_id}`}
+                      className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                    >
+                      View public profile
+                      <ArrowRightIcon />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border bg-white p-4">
+                <p className="text-sm font-semibold text-zinc-900">Documents</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Bucket: <span className="font-semibold">vendor-verification</span>
+                </p>
+
+                {docsLoading ? (
+                  <div className="mt-3 space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="h-12 rounded-2xl bg-zinc-100" />
+                    ))}
+                  </div>
+                ) : docs.length === 0 ? (
+                  <p className="mt-3 text-sm text-zinc-600">No docs uploaded.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {docs.map((d) => (
+                      <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border bg-white p-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-zinc-900">{d.doc_type}</p>
+                          <p className="truncate text-xs text-zinc-600">{d.file_path}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openDoc(d.file_path)}
+                          className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Open
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-3xl border bg-white p-4">
+                <p className="text-sm font-semibold text-zinc-900">Admin actions</p>
+                <p className="mt-1 text-xs text-zinc-600">Use RPC functions for atomic updates (recommended).</p>
+
+                <div className="mt-3 grid gap-2">
+                  <button
+                    type="button"
+                    onClick={markUnderReview}
+                    disabled={working || active.status !== "requested"}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                    Mark under review
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={approve}
+                    disabled={working || (active.status !== "requested" && active.status !== "under_review")}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+                  >
+                    {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Approve
+                  </button>
+
+                  <div className="rounded-2xl border bg-white p-3">
+                    <p className="text-xs font-semibold text-zinc-700">Reject with reason</p>
+                    <textarea
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      className="mt-2 w-full rounded-2xl border bg-white p-3 text-sm outline-none"
+                      rows={3}
+                      placeholder="e.g. Document unclear, phone mismatch, incomplete profile…"
+                    />
+                    <button
+                      type="button"
+                      onClick={reject}
+                      disabled={working || (active.status !== "requested" && active.status !== "under_review")}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-900 hover:bg-rose-100 disabled:opacity-60"
+                    >
+                      {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+                      Reject
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border bg-zinc-50 p-3 text-xs text-zinc-700">
+                  If RPC functions are missing, this page falls back to direct updates (less safe). Run the SQL file in
+                  <span className="font-semibold"> /supabase/vendor_verification_system.sql</span>.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function ArrowRightIcon() {
+  return <span className="inline-flex h-4 w-4 items-center justify-center">→</span>;
 }
