@@ -19,6 +19,7 @@ import {
   FileText,
   Eye,
 } from "lucide-react";
+import { createNotification } from "@/lib/notifications";
 
 type VendorType = "food" | "mall" | "student" | "other";
 
@@ -33,6 +34,7 @@ type RequestRow = {
   reviewed_by: string | null;
   vendors?: {
     id: string;
+    user_id: string | null;
     name: string | null;
     whatsapp: string | null;
     phone: string | null;
@@ -175,7 +177,7 @@ export default function AdminVendorsPage() {
       let query = supabase
         .from("vendor_verification_requests")
         .select(
-          "id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by,vendors:vendors(id,name,whatsapp,phone,location,vendor_type,verified,verification_status)",
+          "id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by,vendors:vendors(id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status)",
           { count: "exact" }
         );
 
@@ -286,6 +288,23 @@ export default function AdminVendorsPage() {
       }
 
       setBanner({ type: "success", text: "Marked as under review." });
+
+      // Notify vendor (best effort)
+      try {
+        const targetUserId = active.vendors?.user_id ?? null;
+        if (targetUserId) {
+          await createNotification(supabase as any, {
+            user_id: targetUserId,
+            type: "vendor_verification",
+            title: "Verification under review",
+            body: "An admin is reviewing your verification request.",
+            href: "/me",
+          });
+        }
+      } catch {
+        // ignore
+      }
+
       setDrawerOpen(false);
       setActive(null);
       await fetchPage(page);
@@ -321,6 +340,23 @@ export default function AdminVendorsPage() {
       }
 
       setBanner({ type: "success", text: "Approved." });
+
+      // Notify vendor (best effort)
+      try {
+        const targetUserId = active.vendors?.user_id ?? null;
+        if (targetUserId) {
+          await createNotification(supabase as any, {
+            user_id: targetUserId,
+            type: "vendor_verification",
+            title: "You’re verified ✅",
+            body: "Your vendor profile has been verified. You now appear as a verified vendor.",
+            href: "/me",
+          });
+        }
+      } catch {
+        // ignore
+      }
+
       setDrawerOpen(false);
       setActive(null);
       await fetchPage(page);
@@ -361,6 +397,23 @@ export default function AdminVendorsPage() {
       }
 
       setBanner({ type: "success", text: "Rejected." });
+
+      // Notify vendor (best effort)
+      try {
+        const targetUserId = active.vendors?.user_id ?? null;
+        if (targetUserId) {
+          await createNotification(supabase as any, {
+            user_id: targetUserId,
+            type: "vendor_verification",
+            title: "Verification rejected",
+            body: `Reason: ${reason}`,
+            href: "/me",
+          });
+        }
+      } catch {
+        // ignore
+      }
+
       setDrawerOpen(false);
       setActive(null);
       await fetchPage(page);

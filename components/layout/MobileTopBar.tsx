@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, Plus, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   const copy = new URLSearchParams(sp.toString());
@@ -80,10 +81,13 @@ export default function MobileTopBar() {
             Jabumarket
           </Link>
 
-          <Link href="/post" className="btn-primary">
-            <Plus className="h-4 w-4" />
-            Post
-          </Link>
+          <div className="flex items-center gap-2">
+            <NotificationBell className="h-10 w-10" />
+            <Link href="/post" className="btn-primary">
+              <Plus className="h-4 w-4" />
+              Post
+            </Link>
+          </div>
         </div>
 
         {showSearch && (

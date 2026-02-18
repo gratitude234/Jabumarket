@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 const links = [
   { href: "/", label: "Home" },
@@ -105,6 +106,7 @@ export default function TopNav() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <NotificationBell />
           {showSearch ? (
             <form onSubmit={onSubmit} className="hidden lg:block">
               <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
