@@ -1,6 +1,6 @@
 // app/couriers/page.tsx
 import Link from "next/link";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabase/server";
 import type { CourierRow, ListingRow } from "@/lib/types";
 import CouriersClient from "./CouriersClient";
 
@@ -9,8 +9,6 @@ export default async function CouriersPage({
 }: {
   searchParams?: Promise<{ listing?: string }>;
 }) {
-  const supabase = await createSupabaseServerClient();
-
   const sp = (await searchParams) ?? {};
   const listingId = (sp.listing ?? "").trim();
 

@@ -1,7 +1,7 @@
 // app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
@@ -60,8 +60,6 @@ export async function generateMetadata({
 }) {
   const { id } = await params;
 
-  const supabase = await createSupabaseServerClient();
-
   const { data } = await supabase
     .from("listings")
     .select("id,title,description,image_url,price_label")
@@ -96,8 +94,6 @@ export default async function ListingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const supabase = await createSupabaseServerClient();
-
   const { id } = await params;
 
   const { data, error } = await supabase
