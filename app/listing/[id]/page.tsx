@@ -109,14 +109,28 @@ export default async function ListingPage({
 
   if (error || !data) return notFound();
 
-  // Supabase join returns `vendor: VendorRow[]` for some schemas — normalize safely.
-  const row = data as ListingRow & { vendor?: VendorRow[] | null };
-  const vendor = row.vendor?.[0] ?? null;
+  // Supabase join shape can vary by schema:
+// - sometimes `vendor` comes back as an object
+// - sometimes as an array (rare)
+// Normalize defensively, and if it's missing, try a direct fetch by vendor_id.
+const row = data as ListingRow & { vendor?: any };
+const joinedVendor = (row as any).vendor;
+let vendor: VendorRow | null =
+  Array.isArray(joinedVendor) ? joinedVendor[0] ?? null : joinedVendor ?? null;
 
-  const listing: ListingRow & { vendor?: VendorRow | null } = {
-    ...(row as ListingRow),
-    vendor,
-  };
+if (!vendor && (row as any).vendor_id) {
+  const { data: v2 } = await supabase
+    .from("vendors")
+    .select("id,name,whatsapp,phone,verified,vendor_type,location")
+    .eq("id", (row as any).vendor_id)
+    .maybeSingle();
+  vendor = (v2 as any) ?? null;
+}
+
+const listing: ListingRow & { vendor?: VendorRow | null } = {
+  ...(row as ListingRow),
+  vendor,
+};
 
   const isSold = listing.status === "sold";
   const isInactive = listing.status === "inactive";
