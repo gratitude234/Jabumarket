@@ -91,7 +91,7 @@ export default function DeliveryClient({
     const parts = [
       initial.listingTitle
         ? `Hi, I need delivery for an order on JABU MARKET.\nItem: ${initial.listingTitle}\nPickup: ${initial.pickupLocation}`
-        : `Hi, I need a delivery rider.`,
+        : `Hi, I need a delivery agent.`,
       dropoff ? `Drop-off: ${dropoff}` : `Drop-off: (my location)`,
       buyerPhone ? `My Phone: ${buyerPhone}` : "",
       note ? `Note: ${note}` : "",
@@ -123,7 +123,7 @@ export default function DeliveryClient({
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-zinc-900">Find a rider</p>
+            <p className="text-sm font-semibold text-zinc-900">Find a delivery agent</p>
             <p className="mt-1 text-xs text-zinc-600">
               Search, filter, then message. The message is editable.
             </p>
@@ -186,7 +186,7 @@ export default function DeliveryClient({
         <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border bg-zinc-50 px-3 py-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-zinc-900">Verified only</p>
-            <p className="text-[11px] text-zinc-600">Show only riders verified by admin.</p>
+            <p className="text-[11px] text-zinc-600">Show only delivery agents verified by admin.</p>
           </div>
           <button
             type="button"
@@ -289,14 +289,14 @@ export default function DeliveryClient({
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-zinc-700" />
             <p className="text-sm font-semibold text-zinc-900">
-              Riders <span className="text-xs text-zinc-500">({filtered.length})</span>
+              Delivery Agents <span className="text-xs text-zinc-500">({filtered.length})</span>
             </p>
           </div>
         </div>
 
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-zinc-900">No riders found</p>
+            <p className="text-sm font-semibold text-zinc-900">No delivery agents found</p>
             <p className="mt-1 text-sm text-zinc-600">
               Try removing filters or searching by phone/WhatsApp.
             </p>
@@ -314,7 +314,7 @@ export default function DeliveryClient({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-zinc-900">
-                        {r.name ?? "Unnamed rider"}
+                        {r.name ?? "Unnamed delivery agent"}
                       </p>
                       <p className="mt-1 text-xs text-zinc-500">
                         Zone: {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
@@ -391,7 +391,7 @@ export default function DeliveryClient({
 
                   {!canWhatsApp ? (
                     <p className="mt-3 text-xs text-amber-700">
-                      No WhatsApp number set for this rider.
+                      No WhatsApp number set for this delivery agent.
                     </p>
                   ) : null}
                 </div>

@@ -98,11 +98,11 @@ export default function RiderApplyPage() {
         <Link href="/delivery" className="text-sm font-semibold text-zinc-700 hover:text-black no-underline">
           ← Back to Delivery
         </Link>
-        <span className="text-xs text-zinc-500">Rider Application</span>
+        <span className="text-xs text-zinc-500">Delivery Agent Application</span>
       </div>
 
       <div className="rounded-3xl border bg-white p-5 shadow-sm">
-        <h1 className="text-xl font-semibold text-zinc-900">Become a Dispatch Rider</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">Become a Delivery Agent</h1>
         <p className="mt-1 text-sm text-zinc-600">
           Submit your details. Admin will verify you before you show in the delivery list.
         </p>

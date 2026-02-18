@@ -183,7 +183,7 @@ export default async function HomePage() {
             </Pill>
             <Pill>
               <Truck className="h-4 w-4" />
-              Couriers
+              Campus Transport
             </Pill>
           </div>
 
@@ -274,7 +274,7 @@ export default async function HomePage() {
                 href="/couriers"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
               >
-                Find couriers <ArrowRight className="h-4 w-4" />
+                Find transport <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>
@@ -551,13 +551,13 @@ export default async function HomePage() {
                   href="/couriers"
                   className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
-                  Find couriers <ArrowRight className="h-4 w-4" />
+                  Find transport <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   href="/rider/apply"
                   className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
                 >
-                  Become a rider <ArrowRight className="h-4 w-4" />
+                  Become a delivery agent <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
             </div>

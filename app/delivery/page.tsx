@@ -76,7 +76,7 @@ export default async function DeliveryPage({
         .filter(Boolean)
         .join("\n")
     : [
-        "Hi, I need a delivery rider.",
+        "Hi, I need a delivery agent.",
         dropoff ? `Drop-off: ${dropoff}` : "Drop-off: (my location)",
         buyerPhone ? `My Phone: ${buyerPhone}` : "",
         note ? `Note: ${note}` : "",
@@ -91,7 +91,7 @@ export default async function DeliveryPage({
           <div>
             <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Delivery (Dispatch)</h1>
             <p className="mt-1 text-sm text-zinc-600">
-              Choose a rider and message them on WhatsApp. No tracking inside Jabumarket.
+              Choose a delivery agent and message them on WhatsApp. No tracking inside Jabumarket.
             </p>
           </div>
 
@@ -133,7 +133,7 @@ export default async function DeliveryPage({
         <p className="text-sm font-semibold text-zinc-900">Safety tips</p>
         <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-zinc-600">
           <li>Confirm delivery fee + ETA before sending money.</li>
-          <li>Avoid paying full upfront unless you trust the rider/vendor.</li>
+          <li>Avoid paying full upfront unless you trust the delivery agent/vendor.</li>
           <li>Use clear drop-off details (hostel name, gate, landmark).</li>
         </ul>
       </div>

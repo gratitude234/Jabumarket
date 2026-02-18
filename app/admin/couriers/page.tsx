@@ -142,7 +142,7 @@ export default function AdminCouriersPage() {
       if ("featured" in patch && patch.featured) {
         const bad = rows.filter((r) => ids.includes(r.id) && (!r.verified || !r.active));
         if (bad.length) {
-          throw new Error("To feature a courier, they must be VERIFIED and ACTIVE.");
+          throw new Error("To feature a transport provider, they must be VERIFIED and ACTIVE.");
         }
       }
 
@@ -170,8 +170,8 @@ export default function AdminCouriersPage() {
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-semibold text-zinc-900">Couriers</p>
-            <p className="mt-1 text-sm text-zinc-600">Verify, activate, and feature couriers in the directory.</p>
+            <p className="text-lg font-semibold text-zinc-900">Campus Transport</p>
+            <p className="mt-1 text-sm text-zinc-600">Verify, activate, and feature transport providers in the directory.</p>
           </div>
 
           <button
@@ -257,7 +257,7 @@ export default function AdminCouriersPage() {
             </div>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            Note: Featuring requires the courier to be <span className="font-semibold">Verified</span> and <span className="font-semibold">Active</span>.
+            Note: Featuring requires the transport provider to be <span className="font-semibold">Verified</span> and <span className="font-semibold">Active</span>.
           </p>
         </div>
       ) : null}
@@ -285,7 +285,7 @@ export default function AdminCouriersPage() {
                     onChange={(e) => toggleAll(e.target.checked)}
                   />
                 </th>
-                <th className="px-4 py-3">Courier</th>
+                <th className="px-4 py-3">Transport Provider</th>
                 <th className="px-4 py-3">Base</th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3">WhatsApp</th>
@@ -300,7 +300,7 @@ export default function AdminCouriersPage() {
               {!loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-sm text-zinc-600">
-                    No couriers found for this filter.
+                    No transport providers found for this filter.
                   </td>
                 </tr>
               ) : null}
@@ -320,7 +320,7 @@ export default function AdminCouriersPage() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-zinc-900">{r.name ?? "Unnamed courier"}</div>
+                      <div className="font-semibold text-zinc-900">{r.name ?? "Unnamed transport provider"}</div>
                       <div className="text-xs text-zinc-500">{r.price_note ?? ""}</div>
                     </td>
 

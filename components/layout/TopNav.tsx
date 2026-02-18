@@ -10,7 +10,8 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
   { href: "/vendors", label: "Vendors" },
-  { href: "/couriers", label: "Delivery" },
+  { href: "/delivery", label: "Delivery Agents" },
+  { href: "/couriers", label: "Campus Transport" },
 ];
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
