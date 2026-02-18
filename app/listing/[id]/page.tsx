@@ -1,7 +1,7 @@
 // app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
@@ -94,6 +94,8 @@ export default async function ListingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const supabase = createSupabaseServerClient();
+
   const { id } = await params;
 
   const { data, error } = await supabase
