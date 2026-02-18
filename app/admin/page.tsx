@@ -113,14 +113,14 @@ export default function AdminHomePage() {
         icon: <Store className="h-5 w-5 text-zinc-800" />,
       },
       {
-        title: "Delivery Agents",
+        title: "Riders",
         value: loading ? "…" : `${counts.ridersPending}`,
         subtitle: loading ? "Pending verifications" : `Pending • ${counts.ridersAll} total`,
         href: "/admin/riders",
         icon: <Bike className="h-5 w-5 text-zinc-800" />,
       },
       {
-        title: "Campus Transport",
+        title: "Couriers",
         value: loading ? "…" : `${counts.couriersPending}`,
         subtitle: loading ? "Pending verifications" : `Pending • ${counts.couriersAll} total`,
         href: "/admin/couriers",

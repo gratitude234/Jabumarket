@@ -23,8 +23,8 @@ function cn(...parts: Array<string | false | null | undefined>) {
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/vendors", label: "Vendors", icon: Store },
-  { href: "/admin/riders", label: "Delivery Agents", icon: Bike },
-  { href: "/admin/couriers", label: "Campus Transport", icon: Truck },
+  { href: "/admin/riders", label: "Riders", icon: Bike },
+  { href: "/admin/couriers", label: "Couriers", icon: Truck },
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {

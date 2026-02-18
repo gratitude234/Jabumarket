@@ -146,7 +146,7 @@ export default function CouriersClient({
       {/* Errors */}
       {loadError ? (
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4">
-          <p className="text-sm font-semibold text-rose-900">Couldn’t load transport providers</p>
+          <p className="text-sm font-semibold text-rose-900">Couldn’t load couriers</p>
           <p className="mt-1 text-sm text-rose-800">{loadError}</p>
         </div>
       ) : null}
@@ -180,15 +180,15 @@ export default function CouriersClient({
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-zinc-700" />
             <p className="text-sm font-semibold text-zinc-900">
-              Campus Transport <span className="text-xs text-zinc-500">({filtered.length})</span>
+              Couriers <span className="text-xs text-zinc-500">({filtered.length})</span>
             </p>
           </div>
         </div>
 
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-zinc-900">No transport providers yet</p>
-            <p className="mt-1 text-sm text-zinc-600">Admins can add verified drivers in Supabase.</p>
+            <p className="text-sm font-semibold text-zinc-900">No couriers yet</p>
+            <p className="mt-1 text-sm text-zinc-600">Admins can add verified couriers in Supabase.</p>
           </div>
         ) : (
           <div className="grid gap-3 p-4 sm:grid-cols-2">
@@ -268,7 +268,7 @@ export default function CouriersClient({
                       href={`/report?courier=${c.id}`}
                       className="col-span-2 rounded-2xl border bg-white px-4 py-2 text-center text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
                     >
-                      Report driver
+                      Report courier
                     </Link>
                   </div>
                 </div>

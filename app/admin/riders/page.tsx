@@ -155,7 +155,7 @@ export default function AdminRidersPage() {
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-lg font-semibold text-zinc-900">Delivery Agents</p>
+            <p className="text-lg font-semibold text-zinc-900">Riders</p>
             <p className="mt-1 text-sm text-zinc-600">Verify riders and manage their availability in the directory.</p>
           </div>
 
@@ -273,7 +273,7 @@ export default function AdminRidersPage() {
                     onChange={(e) => toggleAll(e.target.checked)}
                   />
                 </th>
-                <th className="px-4 py-3">Delivery Agent</th>
+                <th className="px-4 py-3">Rider</th>
                 <th className="px-4 py-3">Zone</th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3">WhatsApp</th>
@@ -307,7 +307,7 @@ export default function AdminRidersPage() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-zinc-900">{r.name ?? "Unnamed delivery agent"}</div>
+                      <div className="font-semibold text-zinc-900">{r.name ?? "Unnamed rider"}</div>
                       <div className="text-xs text-zinc-500">{r.fee_note ?? ""}</div>
                     </td>
 

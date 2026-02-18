@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Search, X } from "lucide-react";
+import { Search, Plus, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -80,13 +80,9 @@ export default function MobileTopBar() {
             Jabumarket
           </Link>
 
-          {/* Keep posting as a bottom-nav primary action (mobile-first) */}
-          <Link
-            href="/notifications"
-            aria-label="Notifications"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background shadow-sm hover:bg-secondary"
-          >
-            <Bell className="h-5 w-5" />
+          <Link href="/post" className="btn-primary">
+            <Plus className="h-4 w-4" />
+            Post
           </Link>
         </div>
 

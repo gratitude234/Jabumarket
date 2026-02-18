@@ -594,7 +594,7 @@ export default async function ListingPage({
 
               {isFoodListing && !isSold && isActive ? (
                 <p className="mt-2 text-xs text-zinc-500">
-                  Tip: tell the driver your drop-off and budget before sending.
+                  Tip: tell the courier your drop-off and budget before sending.
                 </p>
               ) : null}
             </div>

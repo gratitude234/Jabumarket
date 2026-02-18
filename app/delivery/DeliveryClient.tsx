@@ -91,7 +91,7 @@ export default function DeliveryClient({
     const parts = [
       initial.listingTitle
         ? `Hi, I need delivery for an order on JABU MARKET.\nItem: ${initial.listingTitle}\nPickup: ${initial.pickupLocation}`
-        : `Hi, I need a delivery agent.`,
+        : `Hi, I need a delivery rider.`,
       dropoff ? `Drop-off: ${dropoff}` : `Drop-off: (my location)`,
       buyerPhone ? `My Phone: ${buyerPhone}` : "",
       note ? `Note: ${note}` : "",
@@ -123,7 +123,7 @@ export default function DeliveryClient({
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-zinc-900">Find a delivery agent</p>
+            <p className="text-sm font-semibold text-zinc-900">Find a rider</p>
             <p className="mt-1 text-xs text-zinc-600">
               Search, filter, then message. The message is editable.
             </p>
@@ -289,7 +289,7 @@ export default function DeliveryClient({
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-zinc-700" />
             <p className="text-sm font-semibold text-zinc-900">
-              Delivery Agents <span className="text-xs text-zinc-500">({filtered.length})</span>
+              Riders <span className="text-xs text-zinc-500">({filtered.length})</span>
             </p>
           </div>
         </div>
@@ -314,7 +314,7 @@ export default function DeliveryClient({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-zinc-900">
-                        {r.name ?? "Unnamed delivery agent"}
+                        {r.name ?? "Unnamed rider"}
                       </p>
                       <p className="mt-1 text-xs text-zinc-500">
                         Zone: {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
@@ -391,7 +391,7 @@ export default function DeliveryClient({
 
                   {!canWhatsApp ? (
                     <p className="mt-3 text-xs text-amber-700">
-                      No WhatsApp number set for this delivery agent.
+                      No WhatsApp number set for this rider.
                     </p>
                   ) : null}
                 </div>
