@@ -122,15 +122,27 @@ function Chip({
       ? "bg-rose-50 text-rose-700 border-rose-200"
       : "bg-zinc-50 text-zinc-700 border-zinc-200";
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs", styles)}>
+    <span
+      className={cx(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
+        styles
+      )}
+    >
       {children}
     </span>
   );
 }
 
-function BannerView({ banner, onClose }: { banner: Banner; onClose: () => void }) {
+function BannerView({
+  banner,
+  onClose,
+}: {
+  banner: Banner;
+  onClose: () => void;
+}) {
   if (!banner) return null;
-  const base = "rounded-2xl border p-3 text-sm flex items-start justify-between gap-3";
+  const base =
+    "rounded-2xl border p-3 text-sm flex items-start justify-between gap-3";
   const tone =
     banner.type === "success"
       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -221,7 +233,8 @@ export default function MePage() {
   const [docs, setDocs] = useState<VerificationDoc[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
 
-  const [docType, setDocType] = useState<(typeof DOC_TYPES)[number]["key"]>("id_card");
+  const [docType, setDocType] =
+    useState<(typeof DOC_TYPES)[number]["key"]>("id_card");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -351,7 +364,10 @@ export default function MePage() {
         const next = created as Vendor;
         setVendor(next);
         syncFormFromVendor(next);
-        setToast({ type: "info", text: "Your vendor profile was created. Please complete your details below." });
+        setToast({
+          type: "info",
+          text: "Your vendor profile was created. Please complete your details below.",
+        });
         await loadRequestsAndDocs(next.id);
         return;
       }
@@ -399,8 +415,10 @@ export default function MePage() {
     const errors: Record<string, string> = {};
 
     if (!name) errors.name = "Name is required.";
-    if (form.whatsapp.trim() && whatsappDigits.length < 7) errors.whatsapp = "Enter a valid WhatsApp number.";
-    if (form.phone.trim() && phoneDigits.length < 7) errors.phone = "Enter a valid phone number.";
+    if (form.whatsapp.trim() && whatsappDigits.length < 7)
+      errors.whatsapp = "Enter a valid WhatsApp number.";
+    if (form.phone.trim() && phoneDigits.length < 7)
+      errors.phone = "Enter a valid phone number.";
 
     const canSave = Object.keys(errors).length === 0;
     return { errors, canSave, whatsappDigits, phoneDigits };
@@ -468,13 +486,17 @@ export default function MePage() {
     if (!vendor) return;
 
     // If already verified or suspended, don't proceed
-    const isVerified = vendor.verification_status === "verified" || vendor.verified === true;
+    const isVerified =
+      vendor.verification_status === "verified" || vendor.verified === true;
     if (isVerified) {
       setToast({ type: "info", text: "You are already verified." });
       return;
     }
     if (vendor.verification_status === "suspended") {
-      setToast({ type: "error", text: "Your verification is suspended. Contact an admin." });
+      setToast({
+        type: "error",
+        text: "Your verification is suspended. Contact an admin.",
+      });
       return;
     }
 
@@ -534,6 +556,17 @@ export default function MePage() {
     }
   }
 
+  /**
+   * IMPORTANT:
+   * Your Storage RLS policy uses:
+   *   split_part(name, '/', 1) = auth.uid()
+   * So we MUST upload with path: <auth.uid()>/<filename>
+   *
+   * Also:
+   * vendor.id is NOT the auth user id in your schema.
+   * vendor.id is the vendors table primary key.
+   * The correct folder is user.id (auth uid).
+   */
   async function uploadDoc() {
     if (!vendor) return;
     if (!docFile) {
@@ -545,24 +578,44 @@ export default function MePage() {
     setBanner(null);
 
     try {
+      // Get current auth user (needed for Storage path)
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+
+      const user = userData.user;
+      if (!user) {
+        setToast({ type: "error", text: "Please log in again." });
+        router.replace("/login");
+        return;
+      }
+
       const bucket = "vendor-verification";
       const safeName = docFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${vendor.id}/${docType}-${Date.now()}-${safeName}`;
 
+      // ✅ This MUST start with user.id to satisfy your Storage INSERT policy
+      const path = `${user.id}/${docType}-${Date.now()}-${safeName}`;
+
+      // Upload first
       const { error: upErr } = await supabase.storage.from(bucket).upload(path, docFile, {
         cacheControl: "3600",
         upsert: false,
+        contentType: docFile.type || undefined,
       });
 
       if (upErr) throw upErr;
 
+      // Then record metadata row (vendor_id stays vendors.id)
       const { error: insErr } = await supabase.from("vendor_verification_docs").insert({
         vendor_id: vendor.id,
         doc_type: docType,
         file_path: path,
       });
 
-      if (insErr) throw insErr;
+      if (insErr) {
+        // If insert fails, you might want to cleanup the uploaded file
+        // (optional) await supabase.storage.from(bucket).remove([path]);
+        throw insErr;
+      }
 
       setDocFile(null);
       const el = document.getElementById("doc-file") as HTMLInputElement | null;
@@ -608,8 +661,12 @@ export default function MePage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-lg font-semibold text-zinc-900">My Profile</p>
-            <p className="mt-1 text-sm text-zinc-600">Manage your vendor details and verification.</p>
-            {email ? <p className="mt-1 text-xs text-zinc-500">Signed in as {email}</p> : null}
+            <p className="mt-1 text-sm text-zinc-600">
+              Manage your vendor details and verification.
+            </p>
+            {email ? (
+              <p className="mt-1 text-xs text-zinc-500">Signed in as {email}</p>
+            ) : null}
           </div>
 
           <button
@@ -638,7 +695,9 @@ export default function MePage() {
           ) : null}
         </div>
 
-        <div className="mt-3 rounded-2xl border bg-zinc-50 p-3 text-xs text-zinc-700">{meta.hint}</div>
+        <div className="mt-3 rounded-2xl border bg-zinc-50 p-3 text-xs text-zinc-700">
+          {meta.hint}
+        </div>
       </header>
 
       <BannerView banner={banner} onClose={() => setBanner(null)} />
@@ -648,7 +707,9 @@ export default function MePage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-base font-semibold text-zinc-900">Vendor details</p>
-            <p className="mt-1 text-sm text-zinc-600">These details show on your vendor page.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              These details show on your vendor page.
+            </p>
           </div>
           <button
             onClick={saveProfile}
@@ -656,7 +717,11 @@ export default function MePage() {
             className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
             type="button"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
             Save
           </button>
         </div>
@@ -675,7 +740,9 @@ export default function MePage() {
               <div
                 className={cx(
                   "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.name && validation.errors.name ? "border-rose-300" : "border-zinc-200"
+                  touched.name && validation.errors.name
+                    ? "border-rose-300"
+                    : "border-zinc-200"
                 )}
               >
                 <User className="h-4 w-4 text-zinc-500" />
@@ -688,16 +755,22 @@ export default function MePage() {
                 />
               </div>
               {touched.name && validation.errors.name ? (
-                <span className="text-xs text-rose-700">{validation.errors.name}</span>
+                <span className="text-xs text-rose-700">
+                  {validation.errors.name}
+                </span>
               ) : null}
             </label>
 
             <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">WhatsApp (recommended)</span>
+              <span className="text-xs font-medium text-zinc-700">
+                WhatsApp (recommended)
+              </span>
               <div
                 className={cx(
                   "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.whatsapp && validation.errors.whatsapp ? "border-rose-300" : "border-zinc-200"
+                  touched.whatsapp && validation.errors.whatsapp
+                    ? "border-rose-300"
+                    : "border-zinc-200"
                 )}
               >
                 <Phone className="h-4 w-4 text-zinc-500" />
@@ -710,7 +783,9 @@ export default function MePage() {
                 />
               </div>
               {touched.whatsapp && validation.errors.whatsapp ? (
-                <span className="text-xs text-rose-700">{validation.errors.whatsapp}</span>
+                <span className="text-xs text-rose-700">
+                  {validation.errors.whatsapp}
+                </span>
               ) : null}
             </label>
 
@@ -719,7 +794,9 @@ export default function MePage() {
               <div
                 className={cx(
                   "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.phone && validation.errors.phone ? "border-rose-300" : "border-zinc-200"
+                  touched.phone && validation.errors.phone
+                    ? "border-rose-300"
+                    : "border-zinc-200"
                 )}
               >
                 <Phone className="h-4 w-4 text-zinc-500" />
@@ -732,7 +809,9 @@ export default function MePage() {
                 />
               </div>
               {touched.phone && validation.errors.phone ? (
-                <span className="text-xs text-rose-700">{validation.errors.phone}</span>
+                <span className="text-xs text-rose-700">
+                  {validation.errors.phone}
+                </span>
               ) : null}
             </label>
 
@@ -741,13 +820,17 @@ export default function MePage() {
               <div
                 className={cx(
                   "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.location && validation.errors.location ? "border-rose-300" : "border-zinc-200"
+                  touched.location && validation.errors.location
+                    ? "border-rose-300"
+                    : "border-zinc-200"
                 )}
               >
                 <MapPin className="h-4 w-4 text-zinc-500" />
                 <input
                   value={form.location}
-                  onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, location: e.target.value }))
+                  }
                   onBlur={() => setTouched((p) => ({ ...p, location: true }))}
                   className="w-full bg-transparent text-sm outline-none"
                   placeholder="e.g. JABU Hostel Area"
@@ -794,11 +877,21 @@ export default function MePage() {
 
           <button
             onClick={requestVerification}
-            disabled={verifying || loading || !vendor || hasOpenRequest || vendor?.verification_status === "under_review"}
+            disabled={
+              verifying ||
+              loading ||
+              !vendor ||
+              hasOpenRequest ||
+              vendor?.verification_status === "under_review"
+            }
             className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
             type="button"
           >
-            {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {verifying ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
             {hasOpenRequest ? "Request pending" : "Request verification"}
           </button>
         </div>
@@ -810,7 +903,9 @@ export default function MePage() {
               <ShieldAlert className="mt-0.5 h-4 w-4" />
               <div>
                 <p className="font-semibold">Rejected</p>
-                <p className="mt-1 text-rose-800">Reason: {vendor.rejection_reason}</p>
+                <p className="mt-1 text-rose-800">
+                  Reason: {vendor.rejection_reason}
+                </p>
               </div>
             </div>
           </div>
@@ -822,7 +917,10 @@ export default function MePage() {
             <div>
               <p className="text-sm font-semibold text-zinc-900">Upload proof (optional)</p>
               <p className="mt-1 text-xs text-zinc-600">
-                Create a Storage bucket named <span className="font-semibold">vendor-verification</span> in Supabase.
+                Bucket: <span className="font-semibold">vendor-verification</span> (private).
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Upload path must start with your user id: <span className="font-mono">auth.uid()/...</span>
               </p>
             </div>
           </div>
@@ -854,7 +952,11 @@ export default function MePage() {
               disabled={uploading || !docFile || !vendor}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-60"
             >
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <UploadCloud className="h-4 w-4" />
+              )}
               Upload
             </button>
           </div>
@@ -900,22 +1002,19 @@ export default function MePage() {
               {requests.slice(0, 3).map((r) => (
                 <div key={r.id} className="rounded-2xl border bg-white p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Chip
-                      tone={
-                        r.status === "approved"
-                          ? "good"
-                          : r.status === "rejected"
-                          ? "bad"
-                          : "warn"
-                      }
-                    >
+                    <Chip tone={r.status === "approved" ? "good" : r.status === "rejected" ? "bad" : "warn"}>
                       {r.status}
                     </Chip>
                     <span className="text-xs text-zinc-500">
-                      {new Date(r.created_at).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+                      {new Date(r.created_at).toLocaleString("en-NG", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
                     </span>
                   </div>
-                  {r.rejection_reason ? <p className="mt-2 text-xs text-rose-700">Reason: {r.rejection_reason}</p> : null}
+                  {r.rejection_reason ? (
+                    <p className="mt-2 text-xs text-rose-700">Reason: {r.rejection_reason}</p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -958,8 +1057,11 @@ export default function MePage() {
           <div>
             <p className="text-sm font-semibold text-zinc-900">Admin setup reminder</p>
             <p className="mt-1 text-sm text-zinc-600">
-              To fully lock verification, run the SQL file in <span className="font-semibold">/supabase/vendor_verification_system.sql</span>.
-              This prevents users from self-verifying.
+              To fully lock verification, run the SQL file in{" "}
+              <span className="font-semibold">
+                /supabase/vendor_verification_system.sql
+              </span>
+              . This prevents users from self-verifying.
             </p>
           </div>
         </div>
