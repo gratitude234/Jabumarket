@@ -264,12 +264,22 @@ export default async function HomePage() {
               >
                 Explore listings <ArrowRight className="h-4 w-4" />
               </Link>
+
               <Link
                 href="/vendors"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
               >
                 Browse vendors <ArrowRight className="h-4 w-4" />
               </Link>
+
+              {/* NEW: Delivery Agents CTA */}
+              <Link
+                href="/delivery"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Find delivery agents <ArrowRight className="h-4 w-4" />
+              </Link>
+
               <Link
                 href="/couriers"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
@@ -503,7 +513,7 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* SAFETY + COURIER */}
+      {/* SAFETY + DELIVERY/TRANSPORT */}
       <section className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
           <div className="flex items-start gap-3">
@@ -541,18 +551,29 @@ export default async function HomePage() {
             </div>
             <div className="space-y-1">
               <h3 className="text-sm font-semibold text-zinc-900">
-                Need a courier?
+                Need delivery or transport?
               </h3>
               <p className="text-sm text-zinc-600">
-                Message couriers directly for pickups and quick deliveries.
+                Contact delivery agents for errands, or transport providers for
+                keke & car rides.
               </p>
+
               <div className="mt-3 flex flex-wrap gap-2">
+                {/* NEW: Delivery Agents CTA */}
+                <Link
+                  href="/delivery"
+                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                >
+                  Find delivery agents <ArrowRight className="h-4 w-4" />
+                </Link>
+
                 <Link
                   href="/couriers"
                   className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
                   Find transport <ArrowRight className="h-4 w-4" />
                 </Link>
+
                 <Link
                   href="/rider/apply"
                   className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
