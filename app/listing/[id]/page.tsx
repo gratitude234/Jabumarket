@@ -1,6 +1,7 @@
 // app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
@@ -53,6 +54,22 @@ function truncateText(input: string, max = 160) {
   return s.slice(0, max).trimEnd() + "…";
 }
 
+// ✅ Next 16: headers() is async (returns Promise) — MUST await it
+async function getSiteOrigin() {
+  const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, "");
+
+  const h = await headers(); // <-- critical fix
+
+  const host =
+    h.get("x-forwarded-host")?.split(",")[0]?.trim() || h.get("host");
+  const proto =
+    h.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+
+  if (!host) return "";
+  return `${proto}://${host}`;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -62,30 +79,51 @@ export async function generateMetadata({
 
   const { data } = await supabase
     .from("listings")
-    .select("id,title,description,image_url,price_label")
+    .select("id,title,description,image_url,price_label,price,location")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (!data) return { title: "Listing — Jabumarket" };
+  const origin = await getSiteOrigin();
+  const url = origin ? `${origin}/listing/${id}` : `/listing/${id}`;
 
-  const title = data.title
-    ? `${data.title} — Jabumarket`
-    : "Listing — Jabumarket";
-  const description = data.description
+  if (!data) {
+    return {
+      title: "Listing — Jabumarket",
+      description: "See listing details on Jabumarket.",
+      alternates: { canonical: url },
+      openGraph: {
+        title: "Listing — Jabumarket",
+        description: "See listing details on Jabumarket.",
+        url,
+        siteName: "Jabumarket",
+        type: "website",
+      },
+      twitter: { card: "summary_large_image" },
+    };
+  }
+
+  const t = data.title ? `${data.title} — Jabumarket` : "Listing — Jabumarket";
+  const d = data.description
     ? truncateText(data.description, 160)
     : "See listing details on Jabumarket.";
 
   const images = data.image_url ? [data.image_url] : undefined;
 
   return {
-    title,
-    description,
-    openGraph: images
-      ? { title, description, images }
-      : { title, description },
+    title: t,
+    description: d,
+    alternates: { canonical: url },
+    openGraph: {
+      title: t,
+      description: d,
+      url,
+      siteName: "Jabumarket",
+      type: "website",
+      images,
+    },
     twitter: images
-      ? { card: "summary_large_image", title, description, images }
-      : undefined,
+      ? { card: "summary_large_image", title: t, description: d, images }
+      : { card: "summary_large_image", title: t, description: d },
   };
 }
 
@@ -109,28 +147,26 @@ export default async function ListingPage({
 
   if (error || !data) return notFound();
 
-  // Supabase join shape can vary by schema:
-// - sometimes `vendor` comes back as an object
-// - sometimes as an array (rare)
-// Normalize defensively, and if it's missing, try a direct fetch by vendor_id.
-const row = data as ListingRow & { vendor?: any };
-const joinedVendor = (row as any).vendor;
-let vendor: VendorRow | null =
-  Array.isArray(joinedVendor) ? joinedVendor[0] ?? null : joinedVendor ?? null;
+  // Normalize vendor join shape + fallback by vendor_id
+  const row = data as ListingRow & { vendor?: any };
+  const joinedVendor = (row as any).vendor;
 
-if (!vendor && (row as any).vendor_id) {
-  const { data: v2 } = await supabase
-    .from("vendors")
-    .select("id,name,whatsapp,phone,verified,vendor_type,location")
-    .eq("id", (row as any).vendor_id)
-    .maybeSingle();
-  vendor = (v2 as any) ?? null;
-}
+  let vendor: VendorRow | null =
+    Array.isArray(joinedVendor) ? joinedVendor[0] ?? null : joinedVendor ?? null;
 
-const listing: ListingRow & { vendor?: VendorRow | null } = {
-  ...(row as ListingRow),
-  vendor,
-};
+  if (!vendor && (row as any).vendor_id) {
+    const { data: v2 } = await supabase
+      .from("vendors")
+      .select("id,name,whatsapp,phone,verified,vendor_type,location")
+      .eq("id", (row as any).vendor_id)
+      .maybeSingle();
+    vendor = (v2 as any) ?? null;
+  }
+
+  const listing: ListingRow & { vendor?: VendorRow | null } = {
+    ...(row as ListingRow),
+    vendor,
+  };
 
   const isSold = listing.status === "sold";
   const isInactive = listing.status === "inactive";
@@ -142,7 +178,7 @@ const listing: ListingRow & { vendor?: VendorRow | null } = {
 
   const whatsappRaw = cleanDigits(vendor?.whatsapp);
   const phoneRaw = cleanDigits(vendor?.phone);
-  const contactPhone = phoneRaw || whatsappRaw; // best effort fallback
+  const contactPhone = phoneRaw || whatsappRaw;
 
   const hasWhatsApp = whatsappRaw.length >= 8;
   const hasPhone = contactPhone.length >= 8;
@@ -162,7 +198,7 @@ const listing: ListingRow & { vendor?: VendorRow | null } = {
 
   const heroSrc = listing.image_url?.trim() || "/images/placeholder.svg";
 
-  // Better "similar": if category is missing/empty, fallback to latest active listings.
+  // Similar listings
   const categorySafe = String((listing as any).category ?? "").trim();
   const similarQuery = supabase
     .from("listings")
@@ -181,10 +217,25 @@ const listing: ListingRow & { vendor?: VendorRow | null } = {
 
   const similar = (similarData ?? []) as ListingRow[];
 
-  // Share link (works even without client-side Web Share API)
-  const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "";
-  const listingUrl = base ? `${base}/listing/${listing.id}` : `/listing/${listing.id}`;
-  const shareText = `Check this on Jabumarket: ${listing.title}\n${listingUrl}`;
+  // ✅ Improved share (absolute URL + price + location)
+  const origin = await getSiteOrigin();
+  const listingUrl = origin
+    ? `${origin}/listing/${listing.id}?utm_source=share`
+    : `/listing/${listing.id}`;
+
+  const shareTitle = listing.title?.trim() || "Listing on Jabumarket";
+  const shareLocation = (listing.location ?? vendor?.location ?? "")
+    .toString()
+    .trim();
+
+  const shareTextLines = [
+    `Check this on Jabumarket: ${shareTitle}`,
+    `Price: ${priceText}`,
+    shareLocation ? `Location: ${shareLocation}` : null,
+    `View: ${listingUrl}`,
+  ].filter(Boolean) as string[];
+
+  const shareText = shareTextLines.join("\n");
   const waShareLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
 
   const desc = String(listing.description ?? "").trim();
@@ -494,6 +545,10 @@ const listing: ListingRow & { vendor?: VendorRow | null } = {
                 Report
               </Link>
             </div>
+
+            <p className="mt-2 text-[11px] text-zinc-500">
+              Share sends the full link + price + location on WhatsApp.
+            </p>
           </div>
 
           {/* Seller */}
