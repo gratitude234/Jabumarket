@@ -1,6 +1,7 @@
 // app/listing/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { supabase } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
@@ -35,6 +36,85 @@ function formatDateTime(iso?: string | null) {
   }
 }
 
+function safeText(s: unknown) {
+  return String(s ?? "").trim();
+}
+
+function digitsOnly(s: string) {
+  return s.replace(/[^\d]/g, "");
+}
+
+function pickImage(url?: string | null) {
+  const u = safeText(url);
+  if (!u) return "https://placehold.co/1200x900?text=Jabumarket";
+  return u;
+}
+
+function listingMetaDesc(listing: ListingRow) {
+  const desc = safeText(listing.description);
+  if (!desc) return "View listing details on Jabumarket.";
+  const oneLine = desc.replace(/\s+/g, " ").trim();
+  return oneLine.length > 160 ? `${oneLine.slice(0, 157)}…` : oneLine;
+}
+
+// ✅ Optional SEO (safe + lightweight)
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+
+  const { data } = await supabase
+    .from("listings")
+    .select("id,title,description,image_url,price,price_label,location,category")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!data) {
+    return {
+      title: "Listing not found — Jabumarket",
+      description: "This listing may have been removed or does not exist.",
+    };
+  }
+
+  const listing = data as ListingRow;
+
+  const title = safeText(listing.title) || "Listing";
+  const priceText =
+    listing.price !== null
+      ? formatNaira(listing.price)
+      : safeText(listing.price_label) || "Contact for price";
+
+  const location = safeText(listing.location);
+  const category = safeText(listing.category);
+
+  const metaTitle = `${title} — Jabumarket`;
+  const metaDesc = listingMetaDesc(listing);
+
+  // NOTE: We avoid assuming a canonical site URL.
+  return {
+    title: metaTitle,
+    description: metaDesc,
+    openGraph: {
+      title: metaTitle,
+      description: metaDesc,
+      images: [{ url: pickImage(listing.image_url) }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: metaTitle,
+      description: metaDesc,
+      images: [pickImage(listing.image_url)],
+    },
+    other: {
+      "x-price": priceText,
+      "x-location": location || "—",
+      "x-category": category || "—",
+    },
+  };
+}
+
 export default async function ListingPage({
   params,
 }: {
@@ -53,54 +133,82 @@ export default async function ListingPage({
     .eq("id", id)
     .single();
 
+  // Keep behavior simple: not found -> 404
   if (error || !data) return notFound();
 
-  // ✅ Normalize `vendor` from VendorRow[] -> VendorRow | null
+  // ✅ Normalize vendor from VendorRow[] -> VendorRow | null
   const row = data as ListingRow & { vendor?: VendorRow[] | null };
   const listing: ListingRow & { vendor?: VendorRow | null } = {
     ...(row as ListingRow),
     vendor: row.vendor?.[0] ?? null,
   };
 
+  const title = safeText(listing.title) || "Untitled listing";
+
   const priceText =
     listing.price !== null
       ? formatNaira(listing.price)
-      : listing.price_label ?? "Contact for price";
+      : safeText(listing.price_label) || "Contact for price";
 
   const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
 
   const isSold = listing.status === "sold";
   const isInactive = listing.status === "inactive";
-  const isVerified = Boolean(listing.vendor?.verified);
 
-  const sellerName = listing.vendor?.name ?? "Unknown";
-  const vendorId = listing.vendor?.id ?? listing.vendor_id;
+  const vendor = listing.vendor ?? null;
+  const isVerified = Boolean(vendor?.verified);
 
-  const whatsappRaw = String(listing.vendor?.whatsapp ?? "").trim();
-  const hasWhatsApp = whatsappRaw.length >= 8;
-  const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
-  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappRaw, waText) : "";
+  const sellerName = safeText(vendor?.name) || "Unknown";
+  const vendorId = vendor?.id ?? listing.vendor_id ?? null;
+
+  // WhatsApp + Call logic (prefer dedicated phone for tel:, WhatsApp for wa.me)
+  const whatsappRaw = safeText(vendor?.whatsapp);
+  const phoneRaw = safeText(vendor?.phone);
+
+  const whatsappDigits = digitsOnly(whatsappRaw);
+  const phoneDigits = digitsOnly(phoneRaw);
+
+  const hasWhatsApp = whatsappDigits.length >= 8;
+  const hasPhone = phoneDigits.length >= 8;
+
+  const waText = `Hi, I'm interested in: ${title} (on Jabumarket). Is it still available?`;
+  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappDigits, waText) : "";
+
+  // Call should use phone if present; fallback to WhatsApp number only if no phone
+  const callDigits = hasPhone ? phoneDigits : whatsappDigits;
+  const canCall = !isSold && callDigits.length >= 8;
 
   const isFoodListing =
-    String(listing.category ?? "").toLowerCase() === "food" ||
-    String(listing.vendor?.vendor_type ?? "").toLowerCase() === "food";
+    safeText(listing.category).toLowerCase() === "food" ||
+    safeText(vendor?.vendor_type).toLowerCase() === "food";
 
-  const { data: similarData } = await supabase
+  const postedAt = formatDateTime(listing.created_at);
+
+  // ✅ Better "similar listings" logic:
+  // - If category exists: fetch same category
+  // - Else: fetch latest active listings
+  const category = safeText(listing.category);
+  const similarQuery = supabase
     .from("listings")
     .select(
       "id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable"
     )
-    .eq("category", listing.category ?? "")
     .neq("id", listing.id)
     .in("status", ["active"])
     .order("created_at", { ascending: false })
     .limit(6);
 
+  const { data: similarData } = category
+    ? await similarQuery.eq("category", category)
+    : await similarQuery;
+
   const similar = (similarData ?? []) as ListingRow[];
-  const postedAt = formatDateTime(listing.created_at);
+
+  const desc = safeText(listing.description);
+  const descLong = desc.length > 220;
 
   return (
-    // ✅ FIX: prevent any horizontal overshoot on real phones
+    // ✅ prevent any horizontal overshoot on real phones
     <div className="space-y-4 pb-28 lg:pb-0 overflow-x-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
@@ -113,9 +221,9 @@ export default async function ListingPage({
         </Link>
 
         <div className="flex items-center gap-2">
-          {listing.category ? (
+          {category ? (
             <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
-              {listing.category}
+              {category}
             </span>
           ) : null}
           <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
@@ -129,15 +237,13 @@ export default async function ListingPage({
         {/* Media */}
         <div className="lg:col-span-3 min-w-0">
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-            {/* ✅ FIX: responsive to viewport height so it never feels too tall */}
             <div className="relative w-full bg-zinc-100 overflow-hidden h-[40svh] max-h-[260px] min-h-[200px] sm:h-[340px] sm:max-h-none lg:h-[420px]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={
-                  listing.image_url ??
-                  "https://placehold.co/1200x900?text=Jabumarket"
-                }
-                alt={listing.title ?? "Listing"}
+                src={pickImage(listing.image_url)}
+                alt={`${title} photo`}
+                loading="eager"
+                decoding="async"
                 className={[
                   "h-full w-full max-w-full object-cover",
                   isSold || isInactive ? "" : "transition-transform duration-200",
@@ -178,31 +284,46 @@ export default async function ListingPage({
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-zinc-900">
-                    More like this
+                    {category ? "More like this" : "Latest listings"}
                   </p>
                   <p className="text-xs text-zinc-600">
-                    Newest in the same category.
+                    {category
+                      ? "Newest in the same category."
+                      : "Fresh items from the marketplace."}
                   </p>
                 </div>
-                <Link
-                  href={`/explore?category=${encodeURIComponent(
-                    String(listing.category ?? "")
-                  )}`}
-                  className="text-xs font-medium text-zinc-800 hover:underline"
-                >
-                  See more
-                </Link>
+
+                {category ? (
+                  <Link
+                    href={`/explore?category=${encodeURIComponent(category)}`}
+                    className="text-xs font-medium text-zinc-800 hover:underline"
+                  >
+                    See more
+                  </Link>
+                ) : (
+                  <Link
+                    href="/explore"
+                    className="text-xs font-medium text-zinc-800 hover:underline"
+                  >
+                    Explore
+                  </Link>
+                )}
               </div>
 
-              {/* ✅ FIX: remove -mx-4 (it causes overflow on mobile) */}
+              {/* ✅ remove negative margins; hide scrollbars safely */}
               <div className="flex gap-3 overflow-x-auto pb-1 pr-4 [scrollbar-width:none] lg:grid lg:grid-cols-3 lg:overflow-visible lg:pr-0">
                 <style>{`div::-webkit-scrollbar{display:none}`}</style>
 
                 {similar.map((s) => {
-                  const sType =
-                    s.listing_type === "product" ? "Product" : "Service";
+                  const sType = s.listing_type === "product" ? "Product" : "Service";
                   const sSold = s.status === "sold";
                   const sInactive2 = s.status === "inactive";
+
+                  const sTitle = safeText(s.title) || "Untitled listing";
+                  const sPrice =
+                    s.price !== null
+                      ? formatNaira(s.price)
+                      : safeText(s.price_label) || "Contact for price";
 
                   return (
                     <Link
@@ -216,11 +337,10 @@ export default async function ListingPage({
                       <div className="relative aspect-[4/3] bg-zinc-100 overflow-hidden">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={
-                            s.image_url ??
-                            "https://placehold.co/1200x900?text=Jabumarket"
-                          }
-                          alt={s.title ?? "Listing"}
+                          src={pickImage(s.image_url)}
+                          alt={`${sTitle} photo`}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-cover"
                         />
 
@@ -253,15 +373,11 @@ export default async function ListingPage({
 
                       <div className="space-y-1 p-3">
                         <p className="line-clamp-1 text-sm font-semibold text-zinc-900">
-                          {s.title ?? "Untitled listing"}
+                          {sTitle}
                         </p>
-                        <p className="text-xs font-semibold text-zinc-900">
-                          {s.price !== null
-                            ? formatNaira(s.price)
-                            : s.price_label ?? "Contact for price"}
-                        </p>
+                        <p className="text-xs font-semibold text-zinc-900">{sPrice}</p>
                         <p className="line-clamp-1 text-xs text-zinc-500">
-                          {s.location ?? "—"}
+                          {safeText(s.location) || "—"}
                         </p>
                       </div>
                     </Link>
@@ -281,19 +397,18 @@ export default async function ListingPage({
                   This listing is sold
                 </p>
                 <p className="text-xs text-red-700/80">
-                  You can browse similar items below or return to Explore.
+                  Browse similar items below or return to Explore.
                 </p>
               </div>
             ) : null}
 
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
-              {listing.title ?? "Untitled listing"}
+              {title}
             </h1>
 
             <div className="mt-2 flex items-end justify-between gap-3">
-              <p className="text-2xl font-extrabold text-zinc-900">
-                {priceText}
-              </p>
+              <p className="text-2xl font-extrabold text-zinc-900">{priceText}</p>
+
               <div className="text-right text-xs text-zinc-500">
                 {listing.location ? (
                   <div className="inline-flex items-center justify-end gap-1">
@@ -317,9 +432,9 @@ export default async function ListingPage({
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
                 {typeLabel}
               </span>
-              {listing.category ? (
+              {category ? (
                 <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
-                  {listing.category}
+                  {category}
                 </span>
               ) : null}
               {listing.negotiable ? (
@@ -331,15 +446,31 @@ export default async function ListingPage({
 
             <div className="mt-4">
               <p className="text-xs font-semibold text-zinc-700">Description</p>
-              <details className="mt-2 rounded-2xl border bg-zinc-50 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-zinc-900">
-                  Tap to {`read ${listing.description ? "more" : "details"}`}
-                </summary>
-                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
-                  {listing.description ??
-                    "No description yet. Contact the seller for more details."}
-                </p>
-              </details>
+
+              {desc ? (
+                <div className="mt-2 rounded-2xl border bg-zinc-50 p-3">
+                  <p className="text-sm leading-relaxed text-zinc-700 whitespace-pre-line line-clamp-4">
+                    {desc}
+                  </p>
+
+                  {descLong ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm font-semibold text-zinc-900">
+                        Read more
+                      </summary>
+                      <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
+                        {desc}
+                      </p>
+                    </details>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-2xl border bg-zinc-50 p-3">
+                  <p className="text-sm text-zinc-700">
+                    No description yet. Contact the seller for more details.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -354,6 +485,7 @@ export default async function ListingPage({
                   <p className="truncate text-sm font-semibold text-zinc-900">
                     {sellerName}
                   </p>
+
                   {isVerified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
                       <BadgeCheck className="h-3.5 w-3.5" />
@@ -366,15 +498,13 @@ export default async function ListingPage({
                   )}
                 </div>
 
-                {hasWhatsApp ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    WhatsApp: +{whatsappRaw}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Contact not available
-                  </p>
-                )}
+                <div className="mt-1 space-y-1 text-xs text-zinc-500">
+                  {hasWhatsApp ? <p>WhatsApp: +{whatsappDigits}</p> : <p>WhatsApp: —</p>}
+                  {hasPhone ? <p>Phone: +{phoneDigits}</p> : <p>Phone: —</p>}
+                  {safeText(vendor?.location) ? (
+                    <p className="line-clamp-1">Location: {vendor?.location}</p>
+                  ) : null}
+                </div>
               </div>
 
               {vendorId && isVerified ? (
@@ -419,9 +549,9 @@ export default async function ListingPage({
             </div>
 
             <div className="mt-2 grid grid-cols-2 gap-2">
-              {!isSold && hasWhatsApp ? (
+              {canCall ? (
                 <a
-                  href={`tel:+${whatsappRaw}`}
+                  href={`tel:+${callDigits}`}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
                 >
                   <Phone className="h-4 w-4" />
@@ -448,11 +578,10 @@ export default async function ListingPage({
               )}
             </div>
 
-            {isFoodListing && !isSold ? (
-              <p className="mt-2 text-xs text-zinc-500">
-                Tip: tell the courier your drop-off and budget before sending.
-              </p>
-            ) : null}
+            <p className="mt-2 text-xs text-zinc-500">
+              Tip: Meet in a public place. Inspect items before paying. Avoid full
+              prepayment.
+            </p>
           </div>
 
           <OwnerActions
