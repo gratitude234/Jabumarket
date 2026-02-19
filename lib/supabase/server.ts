@@ -23,7 +23,6 @@ export async function createSupabaseServerClient() {
       setAll(cookiesToSet) {
         try {
           for (const { name, value, options } of cookiesToSet) {
-            // @ts-expect-error Next's cookie store may not expose set in all contexts
             cookieStore.set({ name, value, ...options });
           }
         } catch {
