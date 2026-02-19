@@ -5,19 +5,13 @@ import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
+import {
+  ListingContactActions,
+  ListingViewTracker,
+} from "@/components/listing/ListingStatsClient";
 import { getWhatsAppLink } from "@/lib/whatsapp";
 import ListingImage from "@/components/ListingImage";
-import {
-  ArrowLeft,
-  BadgeCheck,
-  Clock,
-  Flag,
-  MapPin,
-  Phone,
-  Store,
-  Truck,
-  Share2,
-} from "lucide-react";
+import { ArrowLeft, BadgeCheck, Clock, MapPin, Truck } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -178,9 +172,6 @@ export default async function ListingPage({
   const isActive = listing.status === "active";
   const isVerified = Boolean(vendor?.verified);
 
-  const sellerName = vendor?.name ?? "Unknown";
-  const vendorId = vendor?.id ?? listing.vendor_id ?? null;
-
   const whatsappRaw = cleanDigits(vendor?.whatsapp);
   const phoneRaw = cleanDigits(vendor?.phone);
   const contactPhone = phoneRaw || whatsappRaw;
@@ -233,7 +224,6 @@ export default async function ListingPage({
     .toString()
     .trim();
 
-  // Clean, punchy, decision-driving share text
   const shareTextLines = [
     `Check this on Jabumarket: ${shareTitle}`,
     `Price: ${priceText}`,
@@ -249,6 +239,8 @@ export default async function ListingPage({
 
   return (
     <div className="space-y-4 pb-28 lg:pb-0 overflow-x-hidden">
+      <ListingViewTracker listingId={listing.id} />
+
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
@@ -462,7 +454,9 @@ export default async function ListingPage({
             </h1>
 
             <div className="mt-2 flex items-end justify-between gap-3">
-              <p className="text-2xl font-extrabold text-zinc-900">{priceText}</p>
+              <p className="text-2xl font-extrabold text-zinc-900">
+                {priceText}
+              </p>
 
               <div className="text-right text-xs text-zinc-500">
                 {listing.location ? (
@@ -533,128 +527,19 @@ export default async function ListingPage({
               )}
             </div>
 
-            {/* Quick share */}
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <a
-                href={waShareLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                title="Share on WhatsApp"
-              >
-                <Share2 className="h-4 w-4" />
-                Share
-              </a>
+            {/* Contact / share */}
+            <ListingContactActions
+              listingId={listing.id}
+              isSold={isSold}
+              isActive={isActive}
+              hasWhatsApp={hasWhatsApp}
+              hasPhone={hasPhone}
+              waLink={waLink}
+              contactPhone={contactPhone}
+              variant="desktop"
+            />
 
-              <Link
-                href={`/report?listing=${listing.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Flag className="h-4 w-4" />
-                Report
-              </Link>
-            </div>
-
-            {/* Small helper text so users know what “Share” does */}
-            <p className="mt-2 text-[11px] text-zinc-500">
-              Share sends the full link + price + location on WhatsApp.
-            </p>
-          </div>
-
-          {/* Seller */}
-          <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-zinc-700">
-                  Seller / Provider
-                </p>
-
-                <div className="mt-1 flex items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-zinc-900">
-                    {sellerName}
-                  </p>
-                  {isVerified ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-1 text-[10px] font-semibold text-white">
-                      <BadgeCheck className="h-3.5 w-3.5" />
-                      Verified
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-700">
-                      Unverified
-                    </span>
-                  )}
-                </div>
-
-                {hasWhatsApp ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    WhatsApp: +{whatsappRaw}
-                  </p>
-                ) : hasPhone ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Phone: +{contactPhone}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Contact not available
-                  </p>
-                )}
-
-                {!isVerified ? (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Tip: For unverified sellers, avoid full prepayment. Meet in a
-                    public place.
-                  </p>
-                ) : null}
-              </div>
-
-              {vendorId && isVerified ? (
-                <Link
-                  href={`/vendors/${vendorId}`}
-                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                >
-                  <Store className="h-4 w-4" />
-                  Shop
-                </Link>
-              ) : (
-                <span className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-500">
-                  <Store className="h-4 w-4" />
-                  Shop locked
-                </span>
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {!isSold && isActive && hasWhatsApp ? (
-                <a
-                  href={waLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
-                >
-                  WhatsApp
-                </a>
-              ) : (
-                <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
-                  WhatsApp
-                </span>
-              )}
-
-              {!isSold && isActive && hasPhone ? (
-                <a
-                  href={`tel:+${contactPhone}`}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                >
-                  <Phone className="h-4 w-4" />
-                  Call
-                </a>
-              ) : (
-                <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
-                  <Phone className="h-4 w-4" />
-                  Call
-                </span>
-              )}
-            </div>
-
+            {/* Delivery CTA (FIXED: removed stray </div>) */}
             <div className="mt-2">
               {!isSold && isActive && isFoodListing ? (
                 <Link
@@ -700,40 +585,16 @@ export default async function ListingPage({
       {/* Mobile bottom action bar */}
       <div className="fixed bottom-16 left-0 right-0 z-40 px-4 lg:hidden">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
-          <div className="grid grid-cols-2 gap-2">
-            {!isSold && isActive && hasWhatsApp ? (
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
-              >
-                WhatsApp
-              </a>
-            ) : (
-              <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-500">
-                WhatsApp
-              </span>
-            )}
-
-            {!isSold && isActive && hasPhone ? (
-              <a
-                href={`tel:+${contactPhone}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Phone className="h-4 w-4" />
-                Call
-              </a>
-            ) : (
-              <Link
-                href={`/report?listing=${listing.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-              >
-                <Flag className="h-4 w-4" />
-                Report
-              </Link>
-            )}
-          </div>
+          <ListingContactActions
+            listingId={listing.id}
+            isSold={isSold}
+            isActive={isActive}
+            hasWhatsApp={hasWhatsApp}
+            hasPhone={hasPhone}
+            waLink={waLink}
+            contactPhone={contactPhone}
+            variant="mobile"
+          />
         </div>
       </div>
     </div>

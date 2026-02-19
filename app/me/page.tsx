@@ -111,6 +111,22 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+/**
+ * ✅ Hydration-safe datetime formatter:
+ * Avoids toLocaleString() during first render, which can vary by runtime/timezone.
+ * Deterministic UTC output to prevent hydration mismatches.
+ */
+function formatDateTimeUTC(iso: string) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
+}
+
 function Chip({
   tone = "neutral",
   children,
@@ -250,10 +266,10 @@ export default function MePage() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // ✅ NEW: collapse/expand vendor details form
+  // ✅ collapse/expand vendor details form
   const [detailsOpen, setDetailsOpen] = useState(true);
 
-  // Separate editable form state (prevents accidental mutation bugs)
+  // Separate editable form state
   const [form, setForm] = useState({
     name: "",
     whatsapp: "",
@@ -310,7 +326,7 @@ export default function MePage() {
       setRequests((reqs ?? []) as any);
       setDocs((ds ?? []) as any);
     } catch {
-      // ignore (most likely tables not created yet)
+      // ignore
     } finally {
       if (aliveRef.current) setDocsLoading(false);
     }
@@ -344,7 +360,6 @@ export default function MePage() {
 
       setEmail(user.email ?? null);
 
-      // Try to fetch vendor profile for this user
       const { data: v, error } = await supabase
         .from("vendors")
         .select(
@@ -353,7 +368,6 @@ export default function MePage() {
         .eq("user_id", user.id)
         .single();
 
-      // If no vendor row exists, auto-create it
       if (error && isNoRowError(error)) {
         const name = defaultVendorNameFromEmail(user.email);
 
@@ -453,7 +467,6 @@ export default function MePage() {
 
   const meta = statusMeta(vendor);
 
-  // ✅ CTA destination for managing vendor listings
   const myListingsHref = "/my-listings";
 
   async function saveProfile() {
@@ -495,7 +508,6 @@ export default function MePage() {
       setVendor(next);
       setToast({ type: "success", text: "Saved successfully." });
 
-      // ✅ Collapse after successful save
       setDetailsOpen(false);
     } catch (e: any) {
       setToast({ type: "error", text: e?.message ?? "Save failed." });
@@ -507,7 +519,6 @@ export default function MePage() {
   async function requestVerification() {
     if (!vendor) return;
 
-    // If already verified or suspended, don't proceed
     const isVerified =
       vendor.verification_status === "verified" || vendor.verified === true;
     if (isVerified) {
@@ -526,7 +537,6 @@ export default function MePage() {
     setBanner(null);
 
     try {
-      // Check for existing open request
       const { data: openReq } = await supabase
         .from("vendor_verification_requests")
         .select("id,status")
@@ -540,7 +550,6 @@ export default function MePage() {
         return;
       }
 
-      // Create request row
       const { error: reqErr } = await supabase
         .from("vendor_verification_requests")
         .insert({
@@ -553,7 +562,6 @@ export default function MePage() {
 
       if (reqErr) throw reqErr;
 
-      // Update vendor status (best-effort)
       const { error: vErr } = await supabase
         .from("vendors")
         .update({
@@ -564,10 +572,7 @@ export default function MePage() {
         })
         .eq("id", vendor.id);
 
-      if (vErr) {
-        // request is created; vendor table may not have new columns yet
-        console.warn(vErr);
-      }
+      if (vErr) console.warn(vErr);
 
       setToast({ type: "success", text: "Verification request sent." });
       await load();
@@ -578,17 +583,6 @@ export default function MePage() {
     }
   }
 
-  /**
-   * IMPORTANT:
-   * Your Storage RLS policy uses:
-   *   split_part(name, '/', 1) = auth.uid()
-   * So we MUST upload with path: <auth.uid()>/<filename>
-   *
-   * Also:
-   * vendor.id is NOT the auth user id in your schema.
-   * vendor.id is the vendors table primary key.
-   * The correct folder is user.id (auth uid).
-   */
   async function uploadDoc() {
     if (!vendor) return;
     if (!docFile) {
@@ -600,7 +594,6 @@ export default function MePage() {
     setBanner(null);
 
     try {
-      // Get current auth user (needed for Storage path)
       const { data: userData, error: userErr } = await supabase.auth.getUser();
       if (userErr) throw userErr;
 
@@ -613,31 +606,27 @@ export default function MePage() {
 
       const bucket = "vendor-verification";
       const safeName = docFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-
-      // ✅ This MUST start with user.id to satisfy your Storage INSERT policy
       const path = `${user.id}/${docType}-${Date.now()}-${safeName}`;
 
-      // Upload first
-      const { error: upErr } = await supabase.storage.from(bucket).upload(path, docFile, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: docFile.type || undefined,
-      });
+      const { error: upErr } = await supabase.storage
+        .from(bucket)
+        .upload(path, docFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: docFile.type || undefined,
+        });
 
       if (upErr) throw upErr;
 
-      // Then record metadata row (vendor_id stays vendors.id)
-      const { error: insErr } = await supabase.from("vendor_verification_docs").insert({
-        vendor_id: vendor.id,
-        doc_type: docType,
-        file_path: path,
-      });
+      const { error: insErr } = await supabase
+        .from("vendor_verification_docs")
+        .insert({
+          vendor_id: vendor.id,
+          doc_type: docType,
+          file_path: path,
+        });
 
-      if (insErr) {
-        // If insert fails, you might want to cleanup the uploaded file
-        // (optional) await supabase.storage.from(bucket).remove([path]);
-        throw insErr;
-      }
+      if (insErr) throw insErr;
 
       setDocFile(null);
       const el = document.getElementById("doc-file") as HTMLInputElement | null;
@@ -655,9 +644,12 @@ export default function MePage() {
   async function openDoc(path: string) {
     try {
       const bucket = "vendor-verification";
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60);
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(path, 60);
       if (error) throw error;
-      if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      if (data?.signedUrl)
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
     } catch (e: any) {
       setToast({ type: "error", text: e?.message ?? "Could not open document." });
     }
@@ -669,12 +661,16 @@ export default function MePage() {
   }
 
   const lastDecision = useMemo(() => {
-    const decided = requests.find((r) => r.status === "approved" || r.status === "rejected");
+    const decided = requests.find(
+      (r) => r.status === "approved" || r.status === "rejected"
+    );
     return decided ?? null;
   }, [requests]);
 
   const hasOpenRequest = useMemo(() => {
-    return requests.some((r) => r.status === "requested" || r.status === "under_review");
+    return requests.some(
+      (r) => r.status === "requested" || r.status === "under_review"
+    );
   }, [requests]);
 
   return (
@@ -721,7 +717,6 @@ export default function MePage() {
           {meta.hint}
         </div>
 
-        {/* ✅ NEW: vendor listings/products CTA */}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <Link
             href={myListingsHref}
@@ -749,7 +744,6 @@ export default function MePage() {
 
       <BannerView banner={banner} onClose={() => setBanner(null)} />
 
-      {/* Profile form (collapsible) */}
       <section
         id="vendor-details-section"
         className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6"
@@ -799,7 +793,6 @@ export default function MePage() {
           </div>
         </div>
 
-        {/* ✅ Collapsed summary */}
         {!detailsOpen && !loading && vendor ? (
           <div className="mt-4 rounded-3xl border bg-zinc-50 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -869,18 +862,14 @@ export default function MePage() {
                   <User className="h-4 w-4 text-zinc-500" />
                   <input
                     value={form.name}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, name: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                     onBlur={() => setTouched((p) => ({ ...p, name: true }))}
                     className="w-full bg-transparent text-sm outline-none"
                     placeholder="e.g. Mama Put Kitchen"
                   />
                 </div>
                 {touched.name && validation.errors.name ? (
-                  <span className="text-xs text-rose-700">
-                    {validation.errors.name}
-                  </span>
+                  <span className="text-xs text-rose-700">{validation.errors.name}</span>
                 ) : null}
               </label>
 
@@ -908,16 +897,12 @@ export default function MePage() {
                   />
                 </div>
                 {touched.whatsapp && validation.errors.whatsapp ? (
-                  <span className="text-xs text-rose-700">
-                    {validation.errors.whatsapp}
-                  </span>
+                  <span className="text-xs text-rose-700">{validation.errors.whatsapp}</span>
                 ) : null}
               </label>
 
               <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">
-                  Phone (optional)
-                </span>
+                <span className="text-xs font-medium text-zinc-700">Phone (optional)</span>
                 <div
                   className={cx(
                     "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
@@ -929,18 +914,14 @@ export default function MePage() {
                   <Phone className="h-4 w-4 text-zinc-500" />
                   <input
                     value={form.phone}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, phone: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
                     onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
                     className="w-full bg-transparent text-sm outline-none"
                     placeholder="e.g. 08012345678"
                   />
                 </div>
                 {touched.phone && validation.errors.phone ? (
-                  <span className="text-xs text-rose-700">
-                    {validation.errors.phone}
-                  </span>
+                  <span className="text-xs text-rose-700">{validation.errors.phone}</span>
                 ) : null}
               </label>
 
@@ -970,26 +951,24 @@ export default function MePage() {
               <label className="grid gap-1">
                 <span className="text-xs font-medium text-zinc-700">Vendor type</span>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {(["food", "mall", "student", "other"] as VendorType[]).map(
-                    (t) => {
-                      const active = form.vendor_type === t;
-                      return (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setForm((p) => ({ ...p, vendor_type: t }))}
-                          className={cx(
-                            "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
-                            active
-                              ? "border-zinc-900 bg-zinc-900 text-white"
-                              : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
-                          )}
-                        >
-                          {t}
-                        </button>
-                      );
-                    }
-                  )}
+                  {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
+                    const active = form.vendor_type === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, vendor_type: t }))}
+                        className={cx(
+                          "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
+                          active
+                            ? "border-zinc-900 bg-zinc-900 text-white"
+                            : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
                 </div>
               </label>
             </div>
@@ -997,7 +976,6 @@ export default function MePage() {
         </div>
       </section>
 
-      {/* Verification */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1028,22 +1006,18 @@ export default function MePage() {
           </button>
         </div>
 
-        {/* Decision note */}
         {vendor?.verification_status === "rejected" && vendor?.rejection_reason ? (
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4" />
               <div>
                 <p className="font-semibold">Rejected</p>
-                <p className="mt-1 text-rose-800">
-                  Reason: {vendor.rejection_reason}
-                </p>
+                <p className="mt-1 text-rose-800">Reason: {vendor.rejection_reason}</p>
               </div>
             </div>
           </div>
         ) : null}
 
-        {/* Upload docs */}
         <div className="mt-5 rounded-3xl border bg-zinc-50 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1052,7 +1026,8 @@ export default function MePage() {
                 Bucket: <span className="font-semibold">vendor-verification</span> (private).
               </p>
               <p className="mt-1 text-[11px] text-zinc-500">
-                Upload path must start with your user id: <span className="font-mono">auth.uid()/...</span>
+                Upload path must start with your user id:{" "}
+                <span className="font-mono">auth.uid()/...</span>
               </p>
             </div>
           </div>
@@ -1104,9 +1079,14 @@ export default function MePage() {
             ) : (
               <ul className="mt-2 space-y-2">
                 {docs.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border bg-white p-3">
+                  <li
+                    key={d.id}
+                    className="flex items-center justify-between gap-3 rounded-2xl border bg-white p-3"
+                  >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-900">{d.doc_type}</p>
+                      <p className="truncate text-sm font-semibold text-zinc-900">
+                        {d.doc_type}
+                      </p>
                       <p className="truncate text-xs text-zinc-600">{d.file_path}</p>
                     </div>
                     <button
@@ -1124,7 +1104,6 @@ export default function MePage() {
           </div>
         </div>
 
-        {/* Requests history */}
         <div className="mt-5">
           <p className="text-xs font-semibold text-zinc-700">Request history</p>
           {requests.length === 0 ? (
@@ -1134,18 +1113,28 @@ export default function MePage() {
               {requests.slice(0, 3).map((r) => (
                 <div key={r.id} className="rounded-2xl border bg-white p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Chip tone={r.status === "approved" ? "good" : r.status === "rejected" ? "bad" : "warn"}>
+                    <Chip
+                      tone={
+                        r.status === "approved"
+                          ? "good"
+                          : r.status === "rejected"
+                          ? "bad"
+                          : "warn"
+                      }
+                    >
                       {r.status}
                     </Chip>
+
+                    {/* ✅ Hydration-safe time display */}
                     <span className="text-xs text-zinc-500">
-                      {new Date(r.created_at).toLocaleString("en-NG", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      {formatDateTimeUTC(r.created_at)}
                     </span>
                   </div>
+
                   {r.rejection_reason ? (
-                    <p className="mt-2 text-xs text-rose-700">Reason: {r.rejection_reason}</p>
+                    <p className="mt-2 text-xs text-rose-700">
+                      Reason: {r.rejection_reason}
+                    </p>
                   ) : null}
                 </div>
               ))}
@@ -1168,7 +1157,9 @@ export default function MePage() {
         <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-zinc-900">Go to vendors directory</p>
-            <p className="mt-1 text-xs text-zinc-600">Check how your profile appears publicly.</p>
+            <p className="mt-1 text-xs text-zinc-600">
+              Check how your profile appears publicly.
+            </p>
           </div>
           <button
             type="button"

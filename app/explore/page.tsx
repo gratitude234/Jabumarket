@@ -10,7 +10,7 @@ function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
 }
 
-type SortKey = "newest" | "price_asc" | "price_desc";
+type SortKey = "smart" | "newest" | "price_asc" | "price_desc";
 type StatusKey = "active" | "inactive" | "sold";
 
 function buildExploreHref(params: {
@@ -27,13 +27,13 @@ function buildExploreHref(params: {
   const q = (params.q ?? "").trim();
   const type = (params.type ?? "all").trim();
   const category = (params.category ?? "all").trim();
-  const sort = (params.sort ?? "newest").trim();
+  const sort = (params.sort ?? "smart").trim();
   const pageStr = String(params.page ?? "").trim();
 
   if (q) sp.set("q", q);
   if (type && type !== "all") sp.set("type", type);
   if (category && category !== "all") sp.set("category", category);
-  if (sort && sort !== "newest") sp.set("sort", sort);
+  if (sort && sort !== "smart") sp.set("sort", sort);
 
   if (params.sold === "1") sp.set("sold", "1");
   if (params.inactive === "1") sp.set("inactive", "1");
@@ -96,7 +96,7 @@ export default async function ExplorePage({
   const q = qRaw; // keep original for UI
   const type = (sp.type ?? "all") as "all" | ListingType;
   const category = (sp.category ?? "all").trim();
-  const sort = ((sp.sort ?? "newest").trim() as SortKey) || "newest";
+  const sort = ((sp.sort ?? "smart").trim() as SortKey) || "smart";
 
   const includeSold = sp.sold === "1";
   const includeInactive = sp.inactive === "1";
@@ -106,45 +106,78 @@ export default async function ExplorePage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  let query = supabase
-    .from("listings")
-    .select(
-      "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at",
-      { count: "exact" }
-    );
+  // Count (for pagination + "Showing x–y")
+  let countQuery = supabase.from("listings").select("id", { count: "exact", head: true });
 
-  if (type !== "all") query = query.eq("listing_type", type);
-  if (category !== "all") query = query.eq("category", category);
+  if (type !== "all") countQuery = countQuery.eq("listing_type", type);
+  if (category !== "all") countQuery = countQuery.eq("category", category);
 
   const statuses: StatusKey[] = ["active"];
   if (includeInactive) statuses.push("inactive");
   if (includeSold) statuses.push("sold");
-  query = query.in("status", statuses);
+  countQuery = countQuery.in("status", statuses);
 
-  // ✅ Avoid heavy ilike for tiny queries
   if (qRaw && qRaw.length >= 2) {
     const safe = escapeLike(qRaw);
-    query = query.or(`title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`);
+    countQuery = countQuery.or(
+      `title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`
+    );
   }
 
-  // ✅ Better ordering with null prices pushed to the end
-  if (sort === "price_asc") {
-    query = query
-      .order("price", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: false });
-  } else if (sort === "price_desc") {
-    query = query
-      .order("price", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+  const { count, error: countError } = await countQuery;
+
+  let listings: ListingRow[] = [];
+  let error: any = null;
+
+  if (sort === "smart") {
+    const { data: rankedData, error: rankedError } = await supabase.rpc("explore_ranked_listings", {
+      p_q: qRaw && qRaw.length >= 2 ? qRaw : null,
+      p_type: type === "all" ? "all" : type,
+      p_category: category,
+      p_statuses: statuses,
+      p_from: from,
+      p_to: to,
+    });
+
+    listings = (rankedData ?? []) as ListingRow[];
+    error = rankedError ?? countError ?? null;
   } else {
-    query = query.order("created_at", { ascending: false });
+    let query = supabase
+      .from("listings")
+      .select(
+        "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at"
+      );
+
+    if (type !== "all") query = query.eq("listing_type", type);
+    if (category !== "all") query = query.eq("category", category);
+    query = query.in("status", statuses);
+
+    if (qRaw && qRaw.length >= 2) {
+      const safe = escapeLike(qRaw);
+      query = query.or(
+        `title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`
+      );
+    }
+
+    if (sort === "price_asc") {
+      query = query
+        .order("price", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    } else if (sort === "price_desc") {
+      query = query
+        .order("price", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    } else {
+      query = query.order("created_at", { ascending: false });
+    }
+
+    query = query.range(from, to);
+
+    const { data, error: dataError } = await query;
+    listings = (data ?? []) as ListingRow[];
+    error = dataError ?? countError ?? null;
   }
 
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-
-  const listings = (data ?? []) as ListingRow[];
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const showingFrom = total === 0 ? 0 : from + 1;
@@ -163,7 +196,7 @@ export default async function ExplorePage({
     !!q ||
     type !== "all" ||
     category !== "all" ||
-    sort !== "newest" ||
+    sort !== "smart" ||
     includeSold ||
     includeInactive;
 
@@ -223,7 +256,7 @@ export default async function ExplorePage({
               {/* preserve filters */}
               {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
               {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
-              {sort !== "newest" ? <input type="hidden" name="sort" value={sort} /> : null}
+              {sort !== "smart" ? <input type="hidden" name="sort" value={sort} /> : null}
               {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
               {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
 
@@ -299,7 +332,12 @@ export default async function ExplorePage({
                 {/* Sort */}
                 <div className="mt-4 space-y-2">
                   <p className="text-xs font-medium text-zinc-700">Sort</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+                    <SortLink
+                      href={buildExploreHref({ ...activeFilters, sort: "smart", page: 1 })}
+                      active={sort === "smart"}
+                      label="Smart"
+                    />
                     <SortLink
                       href={buildExploreHref({ ...activeFilters, sort: "newest", page: 1 })}
                       active={sort === "newest"}
@@ -376,7 +414,7 @@ export default async function ExplorePage({
               />
             ) : null}
 
-            {sort !== "newest" ? (
+            {sort !== "smart" ? (
               <ActiveChip
                 label={sort === "price_asc" ? "Price ↑" : "Price ↓"}
                 href={buildExploreHref({ ...activeFilters, sort: "newest", page: 1 })}
