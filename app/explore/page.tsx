@@ -503,8 +503,14 @@ export default async function ExplorePage({
         <>
           {/* Mobile-first grid (2 cols), scales up nicely */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {listings.map((l) => (
-              <ListingCard key={l.id} listing={l} />
+            {listings.map((l, i) => (
+              <ListingCard
+                key={l.id}
+                listing={l}
+                // absolute rank across pages (useful for Smart)
+                rank={from + i + 1}
+                sort={sort}
+              />
             ))}
           </div>
 
@@ -624,7 +630,15 @@ function ActiveChip({ href, label }: { href: string; label: string }) {
   );
 }
 
-function ListingCard({ listing }: { listing: ListingRow }) {
+function ListingCard({
+  listing,
+  rank,
+  sort,
+}: {
+  listing: ListingRow;
+  rank: number;
+  sort: SortKey;
+}) {
   const priceText =
     listing.price !== null ? formatNaira(listing.price) : listing.price_label ?? "Contact for price";
 
@@ -633,6 +647,29 @@ function ListingCard({ listing }: { listing: ListingRow }) {
   const isInactive = listing.status === "inactive";
 
   const desc = (listing.description ?? "").trim();
+
+  // --- Smart ranking explanation pills ---
+  // The RPC may (optionally) return extra fields; we treat them as best-effort.
+  const contactClicks = Number((listing as any).contact_clicks ?? 0);
+  const views = Number((listing as any).views ?? 0);
+  const createdAtMs = listing.created_at ? new Date(listing.created_at).getTime() : NaN;
+  const ageHours = Number.isFinite(createdAtMs) ? (Date.now() - createdAtMs) / 36e5 : Infinity;
+
+  // Heuristics:
+  // - If we have contact clicks, use them (strongest signal).
+  // - Otherwise, fall back to "top of Smart" + recency as a proxy.
+  const isHot = contactClicks >= 3 && ageHours <= 24 * 14;
+  const isTrendingByClicks = !isHot && contactClicks >= 1 && ageHours <= 24 * 7;
+  const isTrendingBySmart =
+    sort === "smart" && !isHot && !isTrendingByClicks && rank <= 6 && ageHours <= 24 * 3;
+
+  const pill = isHot
+    ? { label: "Hot", title: "Lots of interest recently" }
+    : isTrendingByClicks
+      ? { label: "Trending", title: "People are contacting sellers for this" }
+      : isTrendingBySmart
+        ? { label: "Trending", title: "High Smart rank right now" }
+        : null;
 
   return (
     <Link
@@ -673,6 +710,18 @@ function ListingCard({ listing }: { listing: ListingRow }) {
             {priceText}
           </span>
         </div>
+
+        {/* Smart pill */}
+        {pill ? (
+          <div className="absolute bottom-3 right-3">
+            <span
+              title={pill.title}
+              className="rounded-full bg-black/80 px-3 py-1 text-xs font-semibold text-white backdrop-blur"
+            >
+              {pill.label}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-2 p-3">
@@ -694,6 +743,14 @@ function ListingCard({ listing }: { listing: ListingRow }) {
             </span>
           ) : null}
         </div>
+
+        {/* subtle proof signals (only if available from RPC) */}
+        {sort === "smart" && (contactClicks > 0 || views > 0) ? (
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+            {contactClicks > 0 ? <span>{contactClicks} contact</span> : null}
+            {views > 0 ? <span>{views} views</span> : null}
+          </div>
+        ) : null}
 
         <div>
           <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
