@@ -5,7 +5,19 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { CourierRow } from "@/lib/types";
 import { getWhatsAppLink } from "@/lib/whatsapp";
-import { Copy, Loader2, Search, Star, Phone, ShieldCheck, X } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  Search,
+  Star,
+  Phone,
+  ShieldCheck,
+  X,
+  ChevronDown,
+  ChevronUp,
+  MessageSquareText,
+  Sparkles,
+} from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -27,10 +39,19 @@ export default function CouriersClient({
   loadError: string | null;
 }) {
   const [q, setQ] = useState("");
+
+  // Fields
   const [pickup, setPickup] = useState(listingPickup ?? "");
   const [dropoff, setDropoff] = useState("");
   const [budget, setBudget] = useState("");
+
+  // Message
   const [message, setMessage] = useState(prefill);
+
+  // ✅ Collapsible message section:
+  // - Open by default when coming from a listing (more context needed)
+  // - Collapsed for generic browsing
+  const [showMessage, setShowMessage] = useState<boolean>(!!listingTitle);
 
   const [toast, setToast] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -58,11 +79,17 @@ export default function CouriersClient({
     const b = budget ? `₦${budget.replace(/[^\d]/g, "")}` : "(₦...)";
 
     if (listingTitle) {
-      return `Hi! I need delivery help on campus.\n\nItem: ${listingTitle}\nPickup: ${p}\nDrop-off: ${d}\nBudget: ${b}\n\nCan you help?`;
+      return `Hi! I need campus transport.\n\nItem: ${listingTitle}\nPickup: ${p}\nDrop-off: ${d}\nBudget: ${b}\n\nCan you help?`;
     }
 
-    return `Hi! I need delivery help on campus.\n\nPickup: ${p}\nDrop-off: ${d}\nBudget: ${b}\n\nCan you help?`;
+    return `Hi! I need campus transport.\n\nPickup: ${p}\nDrop-off: ${d}\nBudget: ${b}\n\nCan you help?`;
   }, [pickup, dropoff, budget, listingTitle]);
+
+  const messageSummary = useMemo(() => {
+    const oneLine = (message || "").replace(/\n+/g, " ").trim();
+    if (!oneLine) return "No message set";
+    return oneLine.length > 90 ? `${oneLine.slice(0, 90)}…` : oneLine;
+  }, [message]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -78,69 +105,93 @@ export default function CouriersClient({
 
   return (
     <div className="space-y-4">
-      {/* Message */}
+      {/* ✅ Quick message (optional) - collapsible */}
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-zinc-900">What to send</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Fill these fields or edit the message directly.
-            </p>
+        <button
+          type="button"
+          onClick={() => setShowMessage((s) => !s)}
+          className="flex w-full items-start justify-between gap-3 text-left"
+        >
+          <div className="flex items-start gap-2">
+            <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-2xl border bg-zinc-50">
+              <MessageSquareText className="h-4 w-4 text-zinc-800" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900">Quick message (optional)</p>
+              <p className="mt-1 text-xs text-zinc-600">
+                {showMessage ? "Edit what will be sent to WhatsApp." : messageSummary}
+              </p>
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setMessage(regenerated)}
-            className="rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-          >
-            Regenerate
-          </button>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <input
-            value={pickup}
-            onChange={(e) => setPickup(e.target.value)}
-            placeholder="Pickup (e.g. JABU Gate)"
-            className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
-          />
-          <input
-            value={dropoff}
-            onChange={(e) => setDropoff(e.target.value)}
-            placeholder="Drop-off (e.g. Female Hostel 2)"
-            className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
-          />
-          <input
-            value={budget}
-            onChange={(e) => setBudget(e.target.value)}
-            placeholder="Budget (e.g. 500)"
-            className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
-          />
-        </div>
-
-        <div className="mt-4 rounded-3xl border bg-zinc-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-zinc-900">Message (editable)</p>
-            <button
-              type="button"
-              onClick={() => copyText(message)}
-              className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-              disabled={copying}
-            >
-              {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
-              Copy
-            </button>
+          <div className="mt-1 inline-flex items-center gap-2">
+            <span className="rounded-full border bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-800">
+              {showMessage ? "Hide" : "Edit"}
+            </span>
+            {showMessage ? (
+              <ChevronUp className="h-4 w-4 text-zinc-700" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-zinc-700" />
+            )}
           </div>
+        </button>
 
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={7}
-            className="mt-2 w-full resize-none rounded-2xl border bg-white p-3 text-sm text-zinc-900 outline-none"
-          />
+        {showMessage ? (
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setMessage(regenerated)}
+                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                <Sparkles className="h-4 w-4" />
+                Regenerate
+              </button>
 
-          <p className="mt-2 text-xs text-zinc-500">Always confirm price before sending money.</p>
-        </div>
+              <button
+                type="button"
+                onClick={() => copyText(message)}
+                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                disabled={copying}
+              >
+                {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                Copy
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <input
+                value={pickup}
+                onChange={(e) => setPickup(e.target.value)}
+                placeholder="Pickup (e.g. JABU Gate)"
+                className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
+              />
+              <input
+                value={dropoff}
+                onChange={(e) => setDropoff(e.target.value)}
+                placeholder="Drop-off (e.g. Female Hostel 2)"
+                className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
+              />
+              <input
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                placeholder="Budget (e.g. 500)"
+                className="h-11 rounded-2xl border bg-white px-3 text-sm outline-none"
+              />
+            </div>
+
+            <div className="mt-3 rounded-3xl border bg-zinc-50 p-3">
+              <p className="text-xs font-semibold text-zinc-900">Message (editable)</p>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={7}
+                className="mt-2 w-full resize-none rounded-2xl border bg-white p-3 text-sm text-zinc-900 outline-none"
+              />
+              <p className="mt-2 text-xs text-zinc-500">Always confirm price before sending money.</p>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Errors */}
@@ -188,7 +239,9 @@ export default function CouriersClient({
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm font-semibold text-zinc-900">No transport providers yet</p>
-            <p className="mt-1 text-sm text-zinc-600">Admins can add verified transport providers in Supabase.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Admins can add verified transport providers in Supabase.
+            </p>
           </div>
         ) : (
           <div className="grid gap-3 p-4 sm:grid-cols-2">

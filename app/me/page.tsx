@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BadgeCheck,
   ShieldAlert,
@@ -19,6 +20,10 @@ import {
   FileText,
   X,
   Loader2,
+  Package,
+  ChevronDown,
+  ChevronUp,
+  PencilLine,
 } from "lucide-react";
 
 type VendorType = "food" | "mall" | "student" | "other";
@@ -217,6 +222,13 @@ function statusMeta(v: Vendor | null) {
   };
 }
 
+function friendlyVendorType(t: VendorType) {
+  if (t === "food") return "Food Vendor";
+  if (t === "mall") return "Mall Store";
+  if (t === "student") return "Student Seller";
+  return "Other";
+}
+
 export default function MePage() {
   const router = useRouter();
   const aliveRef = useRef(true);
@@ -237,6 +249,9 @@ export default function MePage() {
     useState<(typeof DOC_TYPES)[number]["key"]>("id_card");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // ✅ NEW: collapse/expand vendor details form
+  const [detailsOpen, setDetailsOpen] = useState(true);
 
   // Separate editable form state (prevents accidental mutation bugs)
   const [form, setForm] = useState({
@@ -364,6 +379,7 @@ export default function MePage() {
         const next = created as Vendor;
         setVendor(next);
         syncFormFromVendor(next);
+        setDetailsOpen(true);
         setToast({
           type: "info",
           text: "Your vendor profile was created. Please complete your details below.",
@@ -437,6 +453,9 @@ export default function MePage() {
 
   const meta = statusMeta(vendor);
 
+  // ✅ CTA destination for managing vendor listings
+  const myListingsHref = "/my-listings";
+
   async function saveProfile() {
     if (!vendor) return;
 
@@ -475,6 +494,9 @@ export default function MePage() {
 
       setVendor(next);
       setToast({ type: "success", text: "Saved successfully." });
+
+      // ✅ Collapse after successful save
+      setDetailsOpen(false);
     } catch (e: any) {
       setToast({ type: "error", text: e?.message ?? "Save failed." });
     } finally {
@@ -684,7 +706,7 @@ export default function MePage() {
           {vendor?.vendor_type ? (
             <Chip>
               <Store className="h-3.5 w-3.5" />
-              {vendor.vendor_type}
+              {friendlyVendorType(vendor.vendor_type)}
             </Chip>
           ) : null}
           {vendor?.location ? (
@@ -698,12 +720,40 @@ export default function MePage() {
         <div className="mt-3 rounded-2xl border bg-zinc-50 p-3 text-xs text-zinc-700">
           {meta.hint}
         </div>
+
+        {/* ✅ NEW: vendor listings/products CTA */}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <Link
+            href={myListingsHref}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            <Package className="h-4 w-4" />
+            My Listings / Products
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => {
+              setDetailsOpen(true);
+              const el = document.getElementById("vendor-details-section");
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            <PencilLine className="h-4 w-4" />
+            Edit My Details
+          </button>
+        </div>
       </header>
 
       <BannerView banner={banner} onClose={() => setBanner(null)} />
 
-      {/* Profile form */}
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
+      {/* Profile form (collapsible) */}
+      <section
+        id="vendor-details-section"
+        className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-base font-semibold text-zinc-900">Vendor details</p>
@@ -711,158 +761,240 @@ export default function MePage() {
               These details show on your vendor page.
             </p>
           </div>
-          <button
-            onClick={saveProfile}
-            disabled={saving || !dirty || !validation.canSave}
-            className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
-            type="button"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            Save
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              aria-expanded={detailsOpen}
+              aria-controls="vendor-details-content"
+            >
+              {detailsOpen ? (
+                <>
+                  <ChevronUp className="h-4 w-4" />
+                  Collapse
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4" />
+                  Expand
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={saveProfile}
+              disabled={saving || !dirty || !validation.canSave || !detailsOpen}
+              className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+              type="button"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save
+            </button>
+          </div>
         </div>
 
-        {loading ? (
-          <div className="mt-5 grid gap-3">
-            <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-            <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-            <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-            <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
+        {/* ✅ Collapsed summary */}
+        {!detailsOpen && !loading && vendor ? (
+          <div className="mt-4 rounded-3xl border bg-zinc-50 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border bg-white p-3">
+                <p className="text-xs font-semibold text-zinc-600">Shop name</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">
+                  {vendor.name || "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl border bg-white p-3">
+                <p className="text-xs font-semibold text-zinc-600">Vendor type</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">
+                  {friendlyVendorType(vendor.vendor_type)}
+                </p>
+              </div>
+              <div className="rounded-2xl border bg-white p-3">
+                <p className="text-xs font-semibold text-zinc-600">WhatsApp</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">
+                  {vendor.whatsapp || "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl border bg-white p-3">
+                <p className="text-xs font-semibold text-zinc-600">Phone</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">
+                  {vendor.phone || "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl border bg-white p-3 sm:col-span-2">
+                <p className="text-xs font-semibold text-zinc-600">Location</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">
+                  {vendor.location || "—"}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              <PencilLine className="h-4 w-4" />
+              Edit details
+            </button>
           </div>
-        ) : (
-          <div className="mt-5 grid gap-3">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">Shop name</span>
-              <div
-                className={cx(
-                  "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.name && validation.errors.name
-                    ? "border-rose-300"
-                    : "border-zinc-200"
-                )}
-              >
-                <User className="h-4 w-4 text-zinc-500" />
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  onBlur={() => setTouched((p) => ({ ...p, name: true }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="e.g. Mama Put Kitchen"
-                />
-              </div>
-              {touched.name && validation.errors.name ? (
-                <span className="text-xs text-rose-700">
-                  {validation.errors.name}
+        ) : null}
+
+        <div id="vendor-details-content">
+          {loading && detailsOpen ? (
+            <div className="mt-5 grid gap-3">
+              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
+              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
+              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
+              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
+            </div>
+          ) : detailsOpen ? (
+            <div className="mt-5 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-zinc-700">Shop name</span>
+                <div
+                  className={cx(
+                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
+                    touched.name && validation.errors.name
+                      ? "border-rose-300"
+                      : "border-zinc-200"
+                  )}
+                >
+                  <User className="h-4 w-4 text-zinc-500" />
+                  <input
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, name: e.target.value }))
+                    }
+                    onBlur={() => setTouched((p) => ({ ...p, name: true }))}
+                    className="w-full bg-transparent text-sm outline-none"
+                    placeholder="e.g. Mama Put Kitchen"
+                  />
+                </div>
+                {touched.name && validation.errors.name ? (
+                  <span className="text-xs text-rose-700">
+                    {validation.errors.name}
+                  </span>
+                ) : null}
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-zinc-700">
+                  WhatsApp (recommended)
                 </span>
-              ) : null}
-            </label>
+                <div
+                  className={cx(
+                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
+                    touched.whatsapp && validation.errors.whatsapp
+                      ? "border-rose-300"
+                      : "border-zinc-200"
+                  )}
+                >
+                  <Phone className="h-4 w-4 text-zinc-500" />
+                  <input
+                    value={form.whatsapp}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, whatsapp: e.target.value }))
+                    }
+                    onBlur={() => setTouched((p) => ({ ...p, whatsapp: true }))}
+                    className="w-full bg-transparent text-sm outline-none"
+                    placeholder="e.g. 2348012345678"
+                  />
+                </div>
+                {touched.whatsapp && validation.errors.whatsapp ? (
+                  <span className="text-xs text-rose-700">
+                    {validation.errors.whatsapp}
+                  </span>
+                ) : null}
+              </label>
 
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">
-                WhatsApp (recommended)
-              </span>
-              <div
-                className={cx(
-                  "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.whatsapp && validation.errors.whatsapp
-                    ? "border-rose-300"
-                    : "border-zinc-200"
-                )}
-              >
-                <Phone className="h-4 w-4 text-zinc-500" />
-                <input
-                  value={form.whatsapp}
-                  onChange={(e) => setForm((p) => ({ ...p, whatsapp: e.target.value }))}
-                  onBlur={() => setTouched((p) => ({ ...p, whatsapp: true }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="e.g. 2348012345678"
-                />
-              </div>
-              {touched.whatsapp && validation.errors.whatsapp ? (
-                <span className="text-xs text-rose-700">
-                  {validation.errors.whatsapp}
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-zinc-700">
+                  Phone (optional)
                 </span>
-              ) : null}
-            </label>
+                <div
+                  className={cx(
+                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
+                    touched.phone && validation.errors.phone
+                      ? "border-rose-300"
+                      : "border-zinc-200"
+                  )}
+                >
+                  <Phone className="h-4 w-4 text-zinc-500" />
+                  <input
+                    value={form.phone}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, phone: e.target.value }))
+                    }
+                    onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
+                    className="w-full bg-transparent text-sm outline-none"
+                    placeholder="e.g. 08012345678"
+                  />
+                </div>
+                {touched.phone && validation.errors.phone ? (
+                  <span className="text-xs text-rose-700">
+                    {validation.errors.phone}
+                  </span>
+                ) : null}
+              </label>
 
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">Phone (optional)</span>
-              <div
-                className={cx(
-                  "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.phone && validation.errors.phone
-                    ? "border-rose-300"
-                    : "border-zinc-200"
-                )}
-              >
-                <Phone className="h-4 w-4 text-zinc-500" />
-                <input
-                  value={form.phone}
-                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="e.g. 08012345678"
-                />
-              </div>
-              {touched.phone && validation.errors.phone ? (
-                <span className="text-xs text-rose-700">
-                  {validation.errors.phone}
-                </span>
-              ) : null}
-            </label>
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-zinc-700">Location</span>
+                <div
+                  className={cx(
+                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
+                    touched.location && validation.errors.location
+                      ? "border-rose-300"
+                      : "border-zinc-200"
+                  )}
+                >
+                  <MapPin className="h-4 w-4 text-zinc-500" />
+                  <input
+                    value={form.location}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, location: e.target.value }))
+                    }
+                    onBlur={() => setTouched((p) => ({ ...p, location: true }))}
+                    className="w-full bg-transparent text-sm outline-none"
+                    placeholder="e.g. JABU Hostel Area"
+                  />
+                </div>
+              </label>
 
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">Location</span>
-              <div
-                className={cx(
-                  "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                  touched.location && validation.errors.location
-                    ? "border-rose-300"
-                    : "border-zinc-200"
-                )}
-              >
-                <MapPin className="h-4 w-4 text-zinc-500" />
-                <input
-                  value={form.location}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, location: e.target.value }))
-                  }
-                  onBlur={() => setTouched((p) => ({ ...p, location: true }))}
-                  className="w-full bg-transparent text-sm outline-none"
-                  placeholder="e.g. JABU Hostel Area"
-                />
-              </div>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-zinc-700">Vendor type</span>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
-                  const active = form.vendor_type === t;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, vendor_type: t }))}
-                      className={cx(
-                        "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
-                        active
-                          ? "border-zinc-900 bg-zinc-900 text-white"
-                          : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
-                      )}
-                    >
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
-            </label>
-          </div>
-        )}
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-zinc-700">Vendor type</span>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(["food", "mall", "student", "other"] as VendorType[]).map(
+                    (t) => {
+                      const active = form.vendor_type === t;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setForm((p) => ({ ...p, vendor_type: t }))}
+                          className={cx(
+                            "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
+                            active
+                              ? "border-zinc-900 bg-zinc-900 text-white"
+                              : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+                          )}
+                        >
+                          {t}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              </label>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {/* Verification */}
@@ -1045,25 +1177,6 @@ export default function MePage() {
           >
             Open <ArrowRight className="h-4 w-4" />
           </button>
-        </div>
-      </section>
-
-      {/* Help box */}
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex items-start gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl border bg-zinc-50">
-            <ShieldAlert className="h-5 w-5 text-zinc-800" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-zinc-900">Admin setup reminder</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              To fully lock verification, run the SQL file in{" "}
-              <span className="font-semibold">
-                /supabase/vendor_verification_system.sql
-              </span>
-              . This prevents users from self-verifying.
-            </p>
-          </div>
         </div>
       </section>
     </div>

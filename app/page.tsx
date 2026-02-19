@@ -18,7 +18,7 @@ import {
   BadgeCheck,
   MapPin,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
@@ -143,6 +143,7 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export default async function HomePage() {
+  const supabase = await createSupabaseServerClient();
   const { data: latestListings } = await supabase
     .from("listings")
     .select("id, title, price, category, listing_type, created_at")

@@ -197,16 +197,29 @@ export default function VendorsClient() {
       setLoading(true);
       setErrorMsg(null);
 
-      try {
-        const start = (pageParam - 1) * PER_PAGE;
-        const end = start + PER_PAGE - 1;
+      const start = (pageParam - 1) * PER_PAGE;
+      const end = start + PER_PAGE - 1;
+
+      async function fetchOnce() {
+        // If there is an auth session and it's expired, try to refresh it.
+        // If refresh fails (common when cookies/storage are cleared), fall back to signed-out state.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const session = sessionData?.session;
+
+        if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
+          const refreshed = await supabase.auth.refreshSession().catch(() => null);
+          if (!refreshed?.data?.session) {
+            await supabase.auth.signOut().catch(() => {});
+          }
+        }
 
         // ✅ Only VERIFIED vendors are allowed on this page
         let query = supabase
           .from("vendors")
-          .select("id, name, whatsapp, phone, location, verified, verification_status, vendor_type", {
-            count: "exact",
-          })
+          .select(
+            "id, name, whatsapp, phone, location, verified, verification_status, vendor_type",
+            { count: "exact" }
+          )
           .or("verification_status.eq.verified,verified.eq.true");
 
         if (typeParam !== "all") query = query.eq("vendor_type", typeParam);
@@ -228,16 +241,33 @@ export default function VendorsClient() {
 
         query = query.range(start, end);
 
-        const { data, error, count } = await query;
-        if (error) throw error;
+        return await query;
+      }
+
+      try {
+        let res = await fetchOnce();
+
+        // If the stored token is expired, Supabase can still throw "JWT expired".
+        // We sign out (clears the bad token) and retry once with anon access.
+        if (res.error?.message?.toLowerCase().includes("jwt expired")) {
+          await supabase.auth.signOut().catch(() => {});
+          res = await fetchOnce();
+        }
+
+        if (res.error) throw res.error;
 
         if (!cancelled) {
-          setVendors((data ?? []) as VendorRow[]);
-          setTotal(count ?? 0);
+          setVendors((res.data ?? []) as VendorRow[]);
+          setTotal(res.count ?? 0);
         }
       } catch (e: any) {
         if (!cancelled) {
-          setErrorMsg(e?.message ?? "Failed to load vendors.");
+          const msg = e?.message ?? "Failed to load vendors.";
+          setErrorMsg(
+            msg.toLowerCase().includes("jwt expired")
+              ? "Session expired. Please refresh the page or sign in again."
+              : msg
+          );
           setVendors([]);
           setTotal(0);
         }

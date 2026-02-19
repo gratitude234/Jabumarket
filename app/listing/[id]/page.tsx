@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import { getWhatsAppLink } from "@/lib/whatsapp";
@@ -54,13 +54,13 @@ function truncateText(input: string, max = 160) {
   return s.slice(0, max).trimEnd() + "…";
 }
 
-// ✅ Next 16: headers() is async (returns Promise) — MUST await it
 async function getSiteOrigin() {
+  // Prefer env (stable across builds)
   const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (envBase) return envBase.replace(/\/$/, "");
 
-  const h = await headers(); // <-- critical fix
-
+  // Fallback: derive from request headers (works on Vercel / SSR)
+  const h = await headers();
   const host =
     h.get("x-forwarded-host")?.split(",")[0]?.trim() || h.get("host");
   const proto =
@@ -75,6 +75,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const supabase = await createSupabaseServerClient();
   const { id } = await params;
 
   const { data } = await supabase
@@ -132,6 +133,7 @@ export default async function ListingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const supabase = await createSupabaseServerClient();
   const { id } = await params;
 
   const { data, error } = await supabase
@@ -147,7 +149,10 @@ export default async function ListingPage({
 
   if (error || !data) return notFound();
 
-  // Normalize vendor join shape + fallback by vendor_id
+  // Supabase join shape can vary:
+  // - sometimes `vendor` is an object
+  // - sometimes it's an array
+  // Normalize + fallback fetch by vendor_id.
   const row = data as ListingRow & { vendor?: any };
   const joinedVendor = (row as any).vendor;
 
@@ -217,7 +222,7 @@ export default async function ListingPage({
 
   const similar = (similarData ?? []) as ListingRow[];
 
-  // ✅ Improved share (absolute URL + price + location)
+  // ✅ Improved share link & message (absolute URL + helpful details)
   const origin = await getSiteOrigin();
   const listingUrl = origin
     ? `${origin}/listing/${listing.id}?utm_source=share`
@@ -228,6 +233,7 @@ export default async function ListingPage({
     .toString()
     .trim();
 
+  // Clean, punchy, decision-driving share text
   const shareTextLines = [
     `Check this on Jabumarket: ${shareTitle}`,
     `Price: ${priceText}`,
@@ -411,7 +417,9 @@ export default async function ListingPage({
               </div>
             ) : (
               <div className="rounded-2xl border bg-white p-4 text-sm text-zinc-600">
-                <p className="font-semibold text-zinc-900">Nothing similar yet.</p>
+                <p className="font-semibold text-zinc-900">
+                  Nothing similar yet.
+                </p>
                 <p className="mt-1 text-xs">
                   Try browsing Explore to find more listings.
                 </p>
@@ -532,6 +540,7 @@ export default async function ListingPage({
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+                title="Share on WhatsApp"
               >
                 <Share2 className="h-4 w-4" />
                 Share
@@ -546,6 +555,7 @@ export default async function ListingPage({
               </Link>
             </div>
 
+            {/* Small helper text so users know what “Share” does */}
             <p className="mt-2 text-[11px] text-zinc-500">
               Share sends the full link + price + location on WhatsApp.
             </p>

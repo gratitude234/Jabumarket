@@ -1,6 +1,7 @@
+
 // app/explore/page.tsx
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, ListingType } from "@/lib/types";
 import ListingImage from "@/components/ListingImage";
 import { Search, SlidersHorizontal, ArrowRight, ArrowLeft } from "lucide-react";
@@ -80,6 +81,7 @@ export default async function ExplorePage({
     inactive?: string;
   }>;
 }) {
+  const supabase = await createSupabaseServerClient();
   const sp = (searchParams ? await searchParams : {}) as {
     q?: string;
     type?: string;

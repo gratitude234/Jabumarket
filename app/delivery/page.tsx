@@ -1,6 +1,6 @@
 // app/delivery/page.tsx
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow, RiderRow } from "@/lib/types";
 import DeliveryClient from "./DeliveryClient";
 
@@ -22,6 +22,7 @@ export default async function DeliveryPage({
     note?: string;
   }>;
 }) {
+  const supabase = await createSupabaseServerClient();
   const sp = (await searchParams) ?? {};
   const q = (sp.q ?? "").trim();
   const zone = (sp.zone ?? "all").trim();

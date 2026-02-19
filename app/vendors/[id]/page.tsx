@@ -1,7 +1,7 @@
 // app/vendors/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { supabase } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import {
   ArrowLeft,
@@ -142,6 +142,7 @@ export default async function VendorProfilePage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<{ q?: string; sort?: SortKey; page?: string }>;
 }) {
+  const supabase = await createSupabaseServerClient();
   const { id } = await params;
   const sp = (searchParams ? await searchParams : {}) as {
     q?: string;

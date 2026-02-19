@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  ChevronDown,
+  ChevronUp,
+  MessageSquareText,
 } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -60,6 +63,11 @@ export default function DeliveryClient({
   const [toast, setToast] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
 
+  // ✅ Collapsible message section:
+  // - Open by default when coming from a listing (because pickup/item context matters)
+  // - Collapsed for generic delivery discovery
+  const [showMessage, setShowMessage] = useState<boolean>(!!initial.listingTitle);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
 
@@ -79,13 +87,6 @@ export default function DeliveryClient({
       return name.includes(needle) || phone.includes(needle) || wa.includes(needle);
     });
   }, [riders, q, zone, availability, verifiedOnly]);
-
-  const computedMessage = useMemo(() => {
-    // Keep message builder smart but editable: if user edits message manually, we respect it.
-    // This recompute only if user hasn't modified message away from base.
-    // Here: we just provide a "Regenerate" button instead of overriding.
-    return message;
-  }, [message]);
 
   const helpfulMessageTemplate = useMemo(() => {
     const parts = [
@@ -117,6 +118,12 @@ export default function DeliveryClient({
     }
   }
 
+  const messageSummary = useMemo(() => {
+    const oneLine = message.replace(/\n+/g, " ").trim();
+    if (!oneLine) return "No message set";
+    return oneLine.length > 90 ? `${oneLine.slice(0, 90)}…` : oneLine;
+  }, [message]);
+
   return (
     <div className="space-y-4">
       {/* Controls */}
@@ -124,9 +131,7 @@ export default function DeliveryClient({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-zinc-900">Find a delivery agent</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Search, filter, then message. The message is editable.
-            </p>
+            <p className="mt-1 text-xs text-zinc-600">Search, filter, then message on WhatsApp.</p>
           </div>
           <div className="grid h-10 w-10 place-items-center rounded-2xl border bg-zinc-50">
             <Filter className="h-4 w-4 text-zinc-800" />
@@ -207,80 +212,108 @@ export default function DeliveryClient({
         </div>
       </div>
 
-      {/* Message builder */}
+      {/* ✅ Quick message (optional) - collapsible */}
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-zinc-900">Message details</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Fill these fields or just edit the message directly.
-            </p>
+        <button
+          type="button"
+          onClick={() => setShowMessage((s) => !s)}
+          className="flex w-full items-start justify-between gap-3 text-left"
+        >
+          <div className="flex items-start gap-2">
+            <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-2xl border bg-zinc-50">
+              <MessageSquareText className="h-4 w-4 text-zinc-800" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900">Quick message (optional)</p>
+              <p className="mt-1 text-xs text-zinc-600">
+                {showMessage ? "Edit what will be sent to WhatsApp." : messageSummary}
+              </p>
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setMessage(helpfulMessageTemplate)}
-            className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-            title="Regenerate message from fields"
-          >
-            <Sparkles className="h-4 w-4" />
-            Regenerate
-          </button>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-700">Drop-off</label>
-            <input
-              value={dropoff}
-              onChange={(e) => setDropoff(e.target.value)}
-              placeholder="e.g. Male Hostel 4, Gate B"
-              className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
-            />
+          <div className="mt-1 inline-flex items-center gap-2">
+            <span className="rounded-full border bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-800">
+              {showMessage ? "Hide" : "Edit"}
+            </span>
+            {showMessage ? (
+              <ChevronUp className="h-4 w-4 text-zinc-700" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-zinc-700" />
+            )}
           </div>
+        </button>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-700">Your phone (optional)</label>
-            <input
-              value={buyerPhone}
-              onChange={(e) => setBuyerPhone(e.target.value)}
-              placeholder="e.g. 08012345678"
-              className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
-            />
+        {showMessage ? (
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setMessage(helpfulMessageTemplate)}
+                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                title="Regenerate message from fields"
+              >
+                <Sparkles className="h-4 w-4" />
+                Regenerate
+              </button>
+
+              <button
+                type="button"
+                onClick={() => copyText(message)}
+                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                disabled={copying}
+              >
+                {copying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                Copy
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700">Drop-off (optional)</label>
+                <input
+                  value={dropoff}
+                  onChange={(e) => setDropoff(e.target.value)}
+                  placeholder="e.g. Male Hostel 4, Gate B"
+                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700">My phone (optional)</label>
+                <input
+                  value={buyerPhone}
+                  onChange={(e) => setBuyerPhone(e.target.value)}
+                  placeholder="e.g. 08012345678"
+                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-xs font-semibold text-zinc-700">Note (optional)</label>
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. Call when you get to the gate..."
+                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-3xl border bg-zinc-50 p-3">
+              <p className="text-xs font-semibold text-zinc-900">Message preview (editable)</p>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={7}
+                className="mt-2 w-full resize-none rounded-2xl border bg-white p-3 text-sm text-zinc-900 outline-none"
+              />
+            </div>
           </div>
-
-          <div className="space-y-1 sm:col-span-2">
-            <label className="text-xs font-semibold text-zinc-700">Note (optional)</label>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Call when you get to the gate..."
-              className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-3xl border bg-zinc-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-zinc-900">Message preview (editable)</p>
-            <button
-              type="button"
-              onClick={() => copyText(computedMessage)}
-              className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-              disabled={copying}
-            >
-              {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
-              Copy
-            </button>
-          </div>
-
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={7}
-            className="mt-2 w-full resize-none rounded-2xl border bg-white p-3 text-sm text-zinc-900 outline-none"
-          />
-        </div>
+        ) : null}
       </div>
 
       {/* Results */}
@@ -306,8 +339,8 @@ export default function DeliveryClient({
             {filtered.map((r) => {
               const wa = (r.whatsapp ?? r.phone)?.trim() || "";
               const canWhatsApp = !!wa;
-              const msg = computedMessage;
-              const href = canWhatsApp ? getWhatsAppLink(wa, msg) : null;
+
+              const href = canWhatsApp ? getWhatsAppLink(wa, message) : null;
 
               return (
                 <div key={r.id} className="rounded-3xl border bg-white p-4">
@@ -319,9 +352,8 @@ export default function DeliveryClient({
                       <p className="mt-1 text-xs text-zinc-500">
                         Zone: {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
                       </p>
-                      {r.fee_note ? (
-                        <p className="mt-2 text-xs text-zinc-700">{r.fee_note}</p>
-                      ) : null}
+
+                      {r.fee_note ? <p className="mt-2 text-xs text-zinc-700">{r.fee_note}</p> : null}
 
                       <div className="mt-2 flex flex-wrap gap-2">
                         {r.verified ? (
