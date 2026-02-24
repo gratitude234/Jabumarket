@@ -152,8 +152,9 @@ export default function StudyHomeClient() {
         .limit(6);
 
       // 4) Continue + streak (uses your util; keep it best-effort)
-      const attemptPromise = getLatestAttempt(user.id).catch(() => null);
-      const streakPromise = getPracticeStreak(user.id).catch(() => null);
+      // NOTE: helpers read the authed user internally, so they take no args.
+      const attemptPromise = getLatestAttempt().catch(() => null);
+      const streakPromise = getPracticeStreak().catch(() => null);
 
       const [prefsRes, countsRes, trendingRes, coursesRes, latestAttemptRes, streakRes] =
         await Promise.all([prefsPromise, countsPromise, trendingPromise, coursesPromise, attemptPromise, streakPromise]);
