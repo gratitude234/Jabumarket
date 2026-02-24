@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getWhatsAppLink } from "@/lib/whatsapp";
@@ -346,6 +346,14 @@ function TutorCard({
 }
 
 export default function TutorsPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6" />}>
+      <TutorsPageInner />
+    </Suspense>
+  );
+}
+
+function TutorsPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
