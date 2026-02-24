@@ -73,7 +73,8 @@ export default function StudyHomeClient() {
   const [chips, setChips] = useState<{ level?: number; semester?: string; type?: string }>({});
 
   const [continueAttempt, setContinueAttempt] = useState<any | null>(null);
-  const [streak, setStreak] = useState<{ current: number; best: number } | null>(null);
+  // Matches lib/studyPractice.getPracticeStreak()
+  const [streak, setStreak] = useState<{ streak: number; didPracticeToday: boolean } | null>(null);
 
   const [forYou, setForYou] = useState<MaterialMini[]>([]);
   const [trending, setTrending] = useState<MaterialMini[]>([]);
@@ -287,7 +288,7 @@ export default function StudyHomeClient() {
                   </span>
                   {streak ? (
                     <span className="rounded-full border border-border bg-background px-2 py-1">
-                      🔥 streak: {streak.current}
+                      🔥 streak: {streak.streak}
                     </span>
                   ) : null}
                 </div>
