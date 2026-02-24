@@ -1122,35 +1122,35 @@ export default function AdminStudyPage() {
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: null, page: null }))}
-              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", tab === "materials" ? "border-zinc-900 bg-zinc-900 text-white" : "bg-white hover:bg-zinc-50")}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "bg-white hover:bg-zinc-50")}
             >
               <FileText className="h-4 w-4" /> Materials
             </button>
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: "tutors", page: null }))}
-              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", tab === "tutors" ? "border-zinc-900 bg-zinc-900 text-white" : "bg-white hover:bg-zinc-50")}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "bg-white hover:bg-zinc-50")}
             >
               <Users className="h-4 w-4" /> Tutors
             </button>
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: "reports", page: null }))}
-              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", tab === "reports" ? "border-zinc-900 bg-zinc-900 text-white" : "bg-white hover:bg-zinc-50")}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "bg-white hover:bg-zinc-50")}
             >
               <Flag className="h-4 w-4" /> Reports
             </button>
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: "practice", page: null }))}
-              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", tab === "practice" ? "border-zinc-900 bg-zinc-900 text-white" : "bg-white hover:bg-zinc-50")}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "bg-white hover:bg-zinc-50")}
             >
               <BookOpen className="h-4 w-4" /> Practice
             </button>
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: "qa", page: null }))}
-              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", tab === "qa" ? "border-zinc-900 bg-zinc-900 text-white" : "bg-white hover:bg-zinc-50")}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "border-zinc-900 bg-zinc-900 text-white")}
             >
               <MessageSquareText className="h-4 w-4" /> Q&amp;A
             </button>
