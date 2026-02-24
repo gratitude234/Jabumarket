@@ -665,6 +665,129 @@ export default function AdminStudyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, page, perPage, qParam]);
 
+  async function fetchSets() {
+    if (tab !== "practice") return;
+    setSetsLoading(true);
+    setBanner(null);
+
+    const start = (page - 1) * perPage;
+    const end = start + perPage - 1;
+
+    // Defensive select: columns may vary across schemas.
+    // If a column doesn't exist in your DB, Supabase will error and we show a helpful message.
+    let q = supabase
+      .from("study_quiz_sets")
+      .select(
+        "id,title,description,course_code,level,semester,published,time_limit_minutes,questions_count,created_at",
+        { count: "exact" }
+      )
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(start, end);
+
+    const qn = normalize(qParam);
+    if (qn) {
+      q = q.or(`title.ilike.%${qn}%,description.ilike.%${qn}%,course_code.ilike.%${qn}%`);
+    }
+
+    const res = await q;
+
+    if (res.error) {
+      setSets([]);
+      setSetsTotal(0);
+      setSetsLoading(false);
+      const msg = res.error.message ?? "Failed to load CBT sets.";
+      setBanner({
+        kind: "error",
+        text:
+          msg.includes("relation") || msg.includes("does not exist")
+            ? 'Missing table: "study_quiz_sets" in Supabase. Create it to manage CBT sets here.'
+            : msg,
+      });
+      return;
+    }
+
+    setSets(((res.data as any[]) ?? []) as any);
+    setSetsTotal(res.count ?? 0);
+    setSetsLoading(false);
+  }
+
+  useEffect(() => {
+    fetchSets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, page, perPage, qParam]);
+
+  async function toggleSetPublish(setId: string, nextPublished: boolean) {
+    const id = String(setId || "");
+    if (!id || setsMutating[id]) return;
+
+    setSetsMutating((p) => ({ ...p, [id]: true }));
+    setBanner(null);
+
+    const res = await supabase.from("study_quiz_sets").update({ published: nextPublished }).eq("id", id);
+    if (res.error) {
+      setBanner({ kind: "error", text: res.error.message ?? "Failed to update set." });
+      setSetsMutating((p) => {
+        const n = { ...p };
+        delete n[id];
+        return n;
+      });
+      return;
+    }
+
+    setSets((prev) => prev.map((s: any) => (String(s.id) === id ? { ...s, published: nextPublished } : s)));
+    setSetsMutating((p) => {
+      const n = { ...p };
+      delete n[id];
+      return n;
+    });
+  }
+
+  async function deleteSet(setId: string) {
+    const id = String(setId || "");
+    if (!id || setsMutating[id]) return;
+
+    const ok = window.confirm("Delete this CBT set and all its questions? This cannot be undone.");
+    if (!ok) return;
+
+    setSetsMutating((p) => ({ ...p, [id]: true }));
+    setBanner(null);
+
+    try {
+      // 1) Load question IDs for this set
+      const qs = await supabase.from("study_quiz_questions").select("id").eq("quiz_set_id", id);
+      if (qs.error) throw qs.error;
+
+      const qIds = ((qs.data as any[]) ?? []).map((r) => String(r.id)).filter(Boolean);
+
+      // 2) Delete options for those questions
+      if (qIds.length) {
+        const delOpts = await supabase.from("study_quiz_options").delete().in("question_id", qIds);
+        if (delOpts.error) throw delOpts.error;
+      }
+
+      // 3) Delete questions
+      const delQs = await supabase.from("study_quiz_questions").delete().eq("quiz_set_id", id);
+      if (delQs.error) throw delQs.error;
+
+      // 4) Delete set
+      const delSet = await supabase.from("study_quiz_sets").delete().eq("id", id);
+      if (delSet.error) throw delSet.error;
+
+      setSets((prev) => prev.filter((s: any) => String(s.id) !== id));
+      setSetsTotal((t) => Math.max(0, t - 1));
+      setBanner({ kind: "success", text: "CBT set deleted." });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e?.message ?? "Failed to delete set." });
+    } finally {
+      setSetsMutating((p) => {
+        const n = { ...p };
+        delete n[id];
+        return n;
+      });
+    }
+  }
+
   async function setReportStatus(id: string, status: "open" | "resolved") {
     if (!id || reportsMutating[id]) return;
     setReportsMutating((p) => ({ ...p, [id]: true }));
