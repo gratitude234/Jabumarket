@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowRight, Bike, Store, Truck } from "lucide-react";
+import { ArrowRight, Bike, Store, Truck, FileText } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -50,6 +50,7 @@ export default function AdminHomePage() {
     ridersAll: 0,
     couriersPending: 0,
     couriersAll: 0,
+    studyPending: 0,
   });
 
   useEffect(() => {
@@ -83,6 +84,12 @@ export default function AdminHomePage() {
       const cAll = await supabase.from("couriers").select("id", { count: "exact", head: true });
       const cPending = await supabase.from("couriers").select("id", { count: "exact", head: true }).eq("verified", false);
 
+      // Study uploads
+      const sPending = await supabase
+        .from("study_materials")
+        .select("id", { count: "exact", head: true })
+        .eq("approved", false);
+
       if (!mounted) return;
 
       setCounts({
@@ -92,6 +99,7 @@ export default function AdminHomePage() {
         ridersAll: rAll.count ?? 0,
         couriersPending: cPending.count ?? 0,
         couriersAll: cAll.count ?? 0,
+        studyPending: sPending.count ?? 0,
       });
 
       setLoading(false);
@@ -125,6 +133,13 @@ export default function AdminHomePage() {
         subtitle: loading ? "Pending verifications" : `Pending • ${counts.couriersAll} total`,
         href: "/admin/couriers",
         icon: <Truck className="h-5 w-5 text-zinc-800" />,
+      },
+      {
+        title: "Study",
+        value: loading ? "…" : `${counts.studyPending}`,
+        subtitle: loading ? "Pending uploads" : "Pending uploads",
+        href: "/admin/study",
+        icon: <FileText className="h-5 w-5 text-zinc-800" />,
       },
     ];
   }, [loading, counts]);

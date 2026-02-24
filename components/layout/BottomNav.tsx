@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, Store, PlusSquare, User } from "lucide-react";
+import { Home, Search, Store, PlusSquare, User, BookOpen } from "lucide-react";
 
 const items = [
   { href: "/", label: "Home", icon: Home },
   { href: "/explore", label: "Explore", icon: Search },
+  { href: "/study", label: "Study", icon: BookOpen },
   { href: "/vendors", label: "Vendors", icon: Store },
   { href: "/post", label: "Post", icon: PlusSquare },
   { href: "/me", label: "Me", icon: User },
@@ -18,7 +19,7 @@ export default function BottomNav() {
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background">
       <div className="mx-auto max-w-6xl px-2">
-        <div className="grid grid-cols-5 h-14">
+        <div className="grid grid-cols-6 h-14">
           {items.map((item) => {
             const active =
               pathname === item.href ||

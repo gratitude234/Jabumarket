@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import TopNav from "@/components/layout/TopNav";
-import BottomNav from "@/components/layout/BottomNav";
-import MobileTopBar from "@/components/layout/MobileTopBar";
-import { Suspense } from "react";
+import AppChrome from "@/components/layout/AppChrome";
 
 export const metadata: Metadata = {
   title: "Jabumarket",
@@ -20,15 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute -bottom-52 -left-52 h-[36rem] w-[36rem] rounded-full bg-accent/10 blur-3xl" />
         </div>
 
-        <Suspense fallback={null}>
-          <MobileTopBar />
-        </Suspense>
-        <Suspense fallback={null}>
-          <TopNav />
-        </Suspense>
-
-        <main className="mx-auto max-w-6xl px-4 py-6 pb-20 md:pb-8">{children}</main>
-        <BottomNav />
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );

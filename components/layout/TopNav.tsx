@@ -9,21 +9,41 @@ import { useEffect, useMemo, useState } from "react";
 const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
+  { href: "/study", label: "Study" },
   { href: "/vendors", label: "Vendors" },
   { href: "/delivery", label: "Delivery Agents" },
   { href: "/couriers", label: "Campus Transport" },
 ];
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
-  const copy = new URLSearchParams(sp.toString());
   const q = nextQ.trim();
 
+  // ✅ Special routing rules:
+  // - Home search goes to Explore
+  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
+
+  // - Anywhere in /study: route search to /study/materials
+  if (pathname.startsWith("/study")) {
+    // keep you on materials if you’re already there
+    if (pathname.startsWith("/study/materials")) {
+      const copy = new URLSearchParams(sp.toString());
+      if (q) copy.set("q", q);
+      else copy.delete("q");
+      const qs = copy.toString();
+      return qs ? `${pathname}?${qs}` : pathname;
+    }
+
+    // otherwise: only send to materials when the user is actually searching.
+    // If the query is empty, DO NOT redirect away from the current /study page.
+    // (TopNav is hidden on mobile but still runs its effects; forcing /study -> /study/materials breaks the Study homepage.)
+    return q ? `/study/materials?q=${encodeURIComponent(q)}` : pathname;
+  }
+
+  // default: update q on current route
+  const copy = new URLSearchParams(sp.toString());
   if (q) copy.set("q", q);
   else copy.delete("q");
-
   const qs = copy.toString();
-
-  if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
   return qs ? `${pathname}?${qs}` : pathname;
 }
 
@@ -38,7 +58,10 @@ export default function TopNav() {
   const sp = useSearchParams();
 
   const showSearch =
-    pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/vendors");
+    pathname === "/" ||
+    pathname.startsWith("/explore") ||
+    pathname.startsWith("/vendors") ||
+    pathname.startsWith("/study");
 
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);
@@ -114,7 +137,11 @@ export default function TopNav() {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder={
-                    pathname.startsWith("/vendors") ? "Search vendors..." : "Search listings..."
+                    pathname.startsWith("/vendors")
+                      ? "Search vendors..."
+                      : pathname.startsWith("/study")
+                        ? "Search materials..."
+                        : "Search listings..."
                   }
                   className="w-64 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
                 />
