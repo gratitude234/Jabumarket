@@ -677,7 +677,7 @@ export default function UploadMaterialsPage() {
                 ? "Your request was rejected. You can apply again."
                 : "Only approved Course Reps and Departmental Librarians can upload materials."
             }
-            actions={
+            action={
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Link
                   href="/study/apply-rep"
