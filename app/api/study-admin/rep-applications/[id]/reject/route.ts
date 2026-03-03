@@ -10,8 +10,9 @@ function jsonError(message: string, status: number, code: string, extra?: Record
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Super admin only
   let auth;
+  let resolvedParams: { id: string } | null = null;
   try {
-    const resolvedParams = await params;
+    resolvedParams = await params;
     auth = await requireStudyModerator();
   } catch (e: any) {
     return jsonError(e?.message || "Unauthorized", e?.status || 401, e?.code || "UNAUTHORIZED");
