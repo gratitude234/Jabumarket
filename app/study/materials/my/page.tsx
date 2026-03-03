@@ -164,7 +164,7 @@ export default function MyUploadsPage() {
             icon={ShieldCheck}
             title="No uploads yet"
             description="When you upload materials, they’ll appear here with their review status."
-            actions={
+            action={
               <Link
                 href="/study/materials/upload"
                 className="inline-flex items-center justify-center rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-black/90"
