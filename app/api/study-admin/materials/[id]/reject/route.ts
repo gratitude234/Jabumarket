@@ -13,8 +13,9 @@ function idFromUrl(req: Request) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const resolvedParams = await params;
     const { scope } = await requireStudyModeratorFromRequest(req);
 
     // Prefer dynamic route param, but fall back to body.id for resilience
@@ -25,7 +26,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       body = null;
     }
 
-    const id = params?.id || (typeof body?.id === "string" ? body.id : "") || idFromUrl(req);
+    const id = resolvedParams?.id || (typeof body?.id === "string" ? body.id : "") || idFromUrl(req);
     if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
 
     // Optional note: we store it in description (short) for reviewer transparency.

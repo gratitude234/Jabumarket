@@ -19,9 +19,10 @@ function idFromUrl(req: Request) {
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const { userId, scope } = await requireStudyModeratorFromRequest(req);
     // Prefer dynamic route param, but fall back to body.id for resilience
     let body: any = null;
@@ -32,7 +33,7 @@ export async function POST(
     }
 
     const id =
-      params?.id ||
+      resolvedParams?.id ||
       (typeof body?.id === "string" ? body.id : "") ||
       idFromUrl(req);
     if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });

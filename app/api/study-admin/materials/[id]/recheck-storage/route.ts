@@ -32,8 +32,9 @@ function idFromUrl(req: Request) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const resolvedParams = await params;
     const { scope } = await requireStudyModeratorFromRequest(req);
 
     let body: any = null;
@@ -43,7 +44,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       body = null;
     }
 
-    const id = params?.id || (typeof body?.id === "string" ? body.id : "") || idFromUrl(req);
+    const id = resolvedParams?.id || (typeof body?.id === "string" ? body.id : "") || idFromUrl(req);
     if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
 
     const admin = createSupabaseAdminClient();

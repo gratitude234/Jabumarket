@@ -7,17 +7,18 @@ function jsonError(message: string, status: number, code: string, extra?: Record
   return NextResponse.json({ ok: false, code, message, ...(extra ?? {}) }, { status });
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Super admin only
   let auth;
   try {
+    const resolvedParams = await params;
     auth = await requireStudyModerator();
   } catch (e: any) {
     return jsonError(e?.message || "Unauthorized", e?.status || 401, e?.code || "UNAUTHORIZED");
   }
   if (auth.scope.role !== "super") return jsonError("Forbidden", 403, "FORBIDDEN");
 
-  const id = params?.id;
+  const id = resolvedParams?.id;
   if (!id) return jsonError("Missing application id", 400, "MISSING_ID");
 
   let body: any = null;
