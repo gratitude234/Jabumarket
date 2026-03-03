@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
@@ -12,10 +12,12 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  RefreshCcw,
   Settings,
   ShieldCheck,
   Store,
   User,
+  ChevronDown,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
@@ -172,45 +174,46 @@ function MeInner() {
     };
   }, [vendor, study, studyLoading]);
 
-  useEffect(() => {
-    let mounted = true;
+  async function loadAll() {
+    setLoading(true);
 
-    async function load() {
-      setLoading(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
 
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth?.user;
-
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
-
-      const nextMe: Me = {
-        id: user.id,
-        email: user.email ?? null,
-        full_name: (user.user_metadata as any)?.full_name ?? null,
-      };
-
-      const { data: v, error: vErr } = await supabase
-        .from("vendors")
-        .select(
-          "id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at"
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!mounted) return;
-
-      setMe(nextMe);
-      setVendor(vErr ? null : ((v as any) ?? null));
-      setLoading(false);
+    if (!user) {
+      router.replace("/login");
+      return;
     }
 
-    load();
+    const nextMe: Me = {
+      id: user.id,
+      email: user.email ?? null,
+      full_name: (user.user_metadata as any)?.full_name ?? null,
+    };
+
+    const { data: v, error: vErr } = await supabase
+      .from("vendors")
+      .select(
+        "id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at"
+      )
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    setMe(nextMe);
+    setVendor(vErr ? null : ((v as any) ?? null));
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!mounted) return;
+      await loadAll();
+    })();
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   useEffect(() => {
@@ -248,76 +251,182 @@ function MeInner() {
     router.replace("/login");
   }
 
-  if (loading) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-6">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="h-16 w-16 rounded-2xl bg-zinc-100" />
-          <div className="mt-4 h-5 w-40 rounded bg-zinc-100" />
-          <div className="mt-2 h-4 w-56 rounded bg-zinc-100" />
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="h-12 rounded-xl bg-zinc-100" />
-            <div className="h-12 rounded-xl bg-zinc-100" />
-            <div className="h-12 rounded-xl bg-zinc-100" />
-            <div className="h-12 rounded-xl bg-zinc-100" />
-          </div>
-          <div className="mt-6 h-10 rounded-xl bg-zinc-100" />
-        </div>
-      </div>
-    );
-  }
-
   const displayName = me?.full_name || vendor?.name || "My Account";
   const displaySub = me?.email || "—";
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6">
-      <HeaderCard
-        name={displayName}
-        sub={displaySub}
-        avatarText={initials(displayName || me?.email)}
-        roles={roles}
-        vendorName={vendor?.name ?? null}
-      />
+    <div className="min-h-[100dvh] bg-zinc-50">
+      <div className="mx-auto w-full max-w-3xl px-4 pb-8 pt-4">
+        {/* Sticky mini top bar (mobile-first) */}
+        <div className="sticky top-0 z-20 -mx-4 mb-3 bg-zinc-50/85 px-4 pt-2 backdrop-blur">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-zinc-900">Account</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // quick refresh of local data
+                  loadAll();
+                }}
+                className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                aria-label="Refresh"
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </button>
 
-      <div className="mt-4">
-        <QuickActions roles={roles} />
+              <Link
+                href="/settings"
+                className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                aria-label="Settings"
+              >
+                <Settings className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Tabs active={activeTab} onChange={setTab} />
+          </div>
+        </div>
+
+        {loading ? (
+          <MeSkeleton />
+        ) : (
+          <>
+            <HeaderCard
+              name={displayName}
+              sub={displaySub}
+              avatarText={initials(displayName || me?.email)}
+              roles={roles}
+              vendorName={vendor?.name ?? null}
+            />
+
+            <div className="mt-4">
+              <QuickActions roles={roles} />
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {activeTab === "overview" && <OverviewTab roles={roles} vendor={vendor} study={study} />}
+
+              {activeTab === "profile" && (
+                <ProfileTab
+                  roles={roles}
+                  me={me}
+                  vendor={vendor}
+                  onVendorUpdated={(v) => setVendor(v)}
+                  onMeUpdated={(m) => setMe(m)}
+                />
+              )}
+
+              {activeTab === "verification" && (
+                <VerificationTab roles={roles} vendor={vendor} onVendorUpdated={(v) => setVendor(v)} />
+              )}
+
+              {activeTab === "account" && <AccountTab me={me} onSignOut={signOut} />}
+            </div>
+
+            <div className="mt-6 text-center text-xs text-zinc-500">
+              Tip: keep your profile updated so Study & Market feels personal.
+            </div>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-6 rounded-2xl border bg-white shadow-sm">
-        <Tabs active={activeTab} onChange={setTab} />
+/* ----------------------------- Improved UI Parts ----------------------------- */
 
-        <div className="p-4">
-          {activeTab === "overview" && (
-            <OverviewTab roles={roles} vendor={vendor} study={study} />
-          )}
-
-          {activeTab === "profile" && (
-            <ProfileTab
-              roles={roles}
-              me={me}
-              vendor={vendor}
-              onVendorUpdated={(v) => setVendor(v)}
-              onMeUpdated={(m) => setMe(m)}
-            />
-          )}
-
-          {activeTab === "verification" && (
-            <VerificationTab
-              roles={roles}
-              vendor={vendor}
-              onVendorUpdated={(v) => setVendor(v)}
-            />
-          )}
-
-          {activeTab === "account" && <AccountTab me={me} onSignOut={signOut} />}
+function MeSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-3xl border bg-white p-4 shadow-sm">
+        <div className="flex items-start gap-4">
+          <div className="h-16 w-16 rounded-2xl bg-zinc-100" />
+          <div className="min-w-0 flex-1">
+            <div className="h-5 w-44 rounded bg-zinc-100" />
+            <div className="mt-2 h-4 w-56 rounded bg-zinc-100" />
+            <div className="mt-3 flex gap-2">
+              <div className="h-6 w-20 rounded-full bg-zinc-100" />
+              <div className="h-6 w-28 rounded-full bg-zinc-100" />
+              <div className="h-6 w-24 rounded-full bg-zinc-100" />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 text-center text-xs text-zinc-500">
-        Tip: bookmark this page — your account hub.
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-[78px] rounded-2xl border bg-white p-3 shadow-sm">
+          <div className="h-4 w-20 rounded bg-zinc-100" />
+          <div className="mt-2 h-3 w-28 rounded bg-zinc-100" />
+        </div>
+        <div className="h-[78px] rounded-2xl border bg-white p-3 shadow-sm">
+          <div className="h-4 w-24 rounded bg-zinc-100" />
+          <div className="mt-2 h-3 w-28 rounded bg-zinc-100" />
+        </div>
+        <div className="h-[78px] rounded-2xl border bg-white p-3 shadow-sm">
+          <div className="h-4 w-20 rounded bg-zinc-100" />
+          <div className="mt-2 h-3 w-28 rounded bg-zinc-100" />
+        </div>
+        <div className="h-[78px] rounded-2xl border bg-white p-3 shadow-sm">
+          <div className="h-4 w-24 rounded bg-zinc-100" />
+          <div className="mt-2 h-3 w-28 rounded bg-zinc-100" />
+        </div>
+      </div>
+
+      <div className="h-40 rounded-3xl border bg-white p-4 shadow-sm">
+        <div className="h-4 w-28 rounded bg-zinc-100" />
+        <div className="mt-3 space-y-2">
+          <div className="h-10 rounded-xl bg-zinc-100" />
+          <div className="h-10 rounded-xl bg-zinc-100" />
+          <div className="h-10 rounded-xl bg-zinc-100" />
+        </div>
       </div>
     </div>
+  );
+}
+
+function SectionCard(props: {
+  title: string;
+  desc?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  tone?: "base" | "success" | "danger" | "warn";
+}) {
+  const tone =
+    props.tone === "success"
+      ? "border-emerald-200 bg-emerald-50/40"
+      : props.tone === "danger"
+      ? "border-rose-200 bg-rose-50/40"
+      : props.tone === "warn"
+      ? "border-amber-200 bg-amber-50/40"
+      : "border-zinc-200 bg-white";
+
+  return (
+    <div className={cn("rounded-3xl border p-4 shadow-sm", tone)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-zinc-900">{props.title}</div>
+          {props.desc ? <div className="mt-1 text-sm text-zinc-600">{props.desc}</div> : null}
+        </div>
+        {props.right ? <div className="shrink-0">{props.right}</div> : null}
+      </div>
+      <div className="mt-4">{props.children}</div>
+    </div>
+  );
+}
+
+function InlinePill(props: { icon: React.ReactNode; label: string; tone: "good" | "warn" | "base" }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+        pillTone(props.tone)
+      )}
+    >
+      <span className="text-zinc-800">{props.icon}</span>
+      {props.label}
+    </span>
   );
 }
 
@@ -332,116 +441,56 @@ function HeaderCard(props: {
 }) {
   const { roles } = props;
 
+  const studyPill = roles.studyLoading ? (
+    <InlinePill icon={<BookOpen className="h-3.5 w-3.5" />} label="Study…" tone="base" />
+  ) : roles.isStudyContributor ? (
+    <InlinePill
+      icon={<BookOpen className="h-3.5 w-3.5" />}
+      label={roles.studyRole === "dept_librarian" ? "Dept Librarian" : "Course Rep"}
+      tone="good"
+    />
+  ) : roles.studyStatus && roles.studyStatus !== "not_applied" ? (
+    <InlinePill
+      icon={<BookOpen className="h-3.5 w-3.5" />}
+      label={roles.studyStatus === "pending" ? "Rep: pending" : "Rep: rejected"}
+      tone="warn"
+    />
+  ) : null;
+
+  const marketPill = roles.isVerifiedVendor ? (
+    <InlinePill icon={<BadgeCheck className="h-3.5 w-3.5" />} label="Verified vendor" tone="good" />
+  ) : roles.isVendor ? (
+    <InlinePill icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Vendor (unverified)" tone="warn" />
+  ) : (
+    <InlinePill icon={<User className="h-3.5 w-3.5" />} label="Student" tone="base" />
+  );
+
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100 text-lg font-semibold text-zinc-700">
           {props.avatarText}
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate text-lg font-semibold text-zinc-900">
-              {props.name}
-            </h1>
-
-            {roles.isVendor && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("base")
-                )}
-              >
-                <Store className="h-3.5 w-3.5" />
-                Vendor
-              </span>
-            )}
-
-            {roles.studyLoading ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("base")
-                )}
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                Study…
-              </span>
-            ) : roles.isStudyContributor ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("good")
-                )}
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                {roles.studyRole === "dept_librarian" ? "Dept Librarian" : "Course Rep"}
-              </span>
-            ) : roles.studyStatus && roles.studyStatus !== "not_applied" ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("warn")
-                )}
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                {roles.studyStatus === "pending"
-                  ? "Rep application: pending"
-                  : "Rep application: rejected"}
-              </span>
-            ) : null}
-
-            {roles.isVerifiedVendor ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("good")
-                )}
-              >
-                <BadgeCheck className="h-3.5 w-3.5" />
-                Verified
-              </span>
-            ) : roles.isVendor ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("warn")
-                )}
-              >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Not verified
-              </span>
-            ) : (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  pillTone("base")
-                )}
-              >
-                <User className="h-3.5 w-3.5" />
-                Student
-              </span>
-            )}
-          </div>
-
+          <h1 className="truncate text-lg font-semibold text-zinc-900">{props.name}</h1>
           <p className="mt-1 truncate text-sm text-zinc-600">{props.sub}</p>
 
+          <div className="mt-3 flex flex-wrap gap-2">
+            {roles.isVendor ? (
+              <InlinePill icon={<Store className="h-3.5 w-3.5" />} label="Market" tone="base" />
+            ) : null}
+            {studyPill}
+            {marketPill}
+          </div>
+
           {roles.isVendor && props.vendorName ? (
-            <p className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+            <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
               <Building2 className="h-3.5 w-3.5" />
-              Store:{" "}
-              <span className="font-medium text-zinc-700">{props.vendorName}</span>
+              Store: <span className="font-semibold text-zinc-700">{props.vendorName}</span>
             </p>
           ) : null}
         </div>
-
-        <Link
-          href="/settings"
-          className="inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-        >
-          <Settings className="mr-2 h-4 w-4" />
-          Settings
-        </Link>
       </div>
     </div>
   );
@@ -509,10 +558,12 @@ function QuickActions({ roles }: { roles: RoleFlags }) {
         <Link
           key={c.title}
           href={c.href}
-          className="rounded-2xl border bg-white p-3 shadow-sm transition hover:bg-zinc-50"
+          className="rounded-3xl border border-zinc-200 bg-white p-3 shadow-sm transition active:scale-[0.99] hover:bg-zinc-50"
         >
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-xl border bg-white p-2">{c.icon}</div>
+            <div className="mt-0.5 rounded-2xl border border-zinc-200 bg-white p-2">
+              {c.icon}
+            </div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-zinc-900">{c.title}</div>
               <div className="mt-0.5 text-xs text-zinc-600">{c.desc}</div>
@@ -533,22 +584,31 @@ function Tabs(props: { active: TabKey; onChange: (t: TabKey) => void }) {
   ];
 
   return (
-    <div className="flex gap-2 overflow-x-auto border-b p-2">
-      {items.map((it) => {
-        const isActive = props.active === it.key;
-        return (
-          <button
-            key={it.key}
-            onClick={() => props.onChange(it.key)}
-            className={cn(
-              "whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium",
-              isActive ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"
-            )}
-          >
-            {it.label}
-          </button>
-        );
-      })}
+    <div className="relative">
+      {/* mobile-first segmented control */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {items.map((it) => {
+          const isActive = props.active === it.key;
+          return (
+            <button
+              key={it.key}
+              onClick={() => props.onChange(it.key)}
+              className={cn(
+                "whitespace-nowrap rounded-2xl px-3 py-2 text-sm font-semibold transition",
+                isActive
+                  ? "bg-zinc-900 text-white"
+                  : "border border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+              )}
+              aria-current={isActive ? "page" : undefined}
+            >
+              {it.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* subtle hint for horizontal scroll */}
+      <div className="pointer-events-none absolute right-0 top-0 h-full w-10 bg-gradient-to-l from-zinc-50/95 to-transparent" />
     </div>
   );
 }
@@ -564,91 +624,122 @@ function OverviewTab({
   vendor: Vendor | null;
   study: StudyMeResponse | null;
 }) {
+  const studySummary = roles.studyLoading
+    ? "Loading your contributor status…"
+    : study && "ok" in study && study.ok
+    ? `Status: ${study.status}${study.role ? ` • Role: ${study.role}` : ""}`
+    : "Couldn’t load your study status right now.";
+
+  const marketSummary = roles.isVendor
+    ? `Store: ${vendor?.name ?? "—"} • ${vendor?.verified ? "Verified" : "Not verified"}`
+    : "Create a vendor profile and start posting listings.";
+
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">What you can do here</div>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-700">
-          <li>Manage your profile details</li>
-          <li>Track vendor verification (if you sell)</li>
-          <li>Track Study contributor status and uploads</li>
+    <div className="space-y-4">
+      <SectionCard
+        title="Your hub"
+        desc="Everything about your identity, Study role and Market profile lives here."
+      >
+        <ul className="space-y-2 text-sm text-zinc-700">
+          <li className="flex gap-2">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-zinc-400" />
+            Update your name & profile details
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-zinc-400" />
+            Track Study contributor status & uploads
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-zinc-400" />
+            Track vendor verification (if you sell)
+          </li>
         </ul>
-      </div>
+      </SectionCard>
 
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">JABU Study</div>
-
+      <SectionCard
+        title="JABU Study"
+        desc={studySummary}
+        right={
+          <Link
+            href={roles.isStudyContributor ? "/study/materials/my" : "/study"}
+            className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            Open
+          </Link>
+        }
+      >
         {roles.studyLoading ? (
-          <p className="mt-1 text-sm text-zinc-700">Loading your contributor status…</p>
+          <div className="space-y-2">
+            <div className="h-10 rounded-2xl bg-zinc-100" />
+            <div className="h-10 rounded-2xl bg-zinc-100" />
+          </div>
         ) : study && "ok" in study && study.ok ? (
-          <div className="mt-2 text-sm text-zinc-800">
-            <div>
-              <span className="text-zinc-500">Status:</span>{" "}
-              <span className="font-semibold">{study.status}</span>
-            </div>
-            <div className="mt-1">
-              <span className="text-zinc-500">Role:</span>{" "}
-              <span className="font-semibold">{study.role ?? "—"}</span>
-            </div>
-
+          <div className="grid grid-cols-2 gap-2">
             {study.status === "approved" ? (
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <>
                 <Link
                   href="/study/materials/upload"
-                  className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                  className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
                   Upload material
                 </Link>
                 <Link
                   href="/study/materials/my"
-                  className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                  className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
                 >
                   My uploads
                 </Link>
-              </div>
+              </>
             ) : (
-              <div className="mt-3">
-                <Link
-                  href="/study/apply-rep"
-                  className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Manage application
-                </Link>
-              </div>
+              <Link
+                href="/study/apply-rep"
+                className="col-span-2 inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                Manage application
+              </Link>
             )}
           </div>
         ) : (
-          <p className="mt-1 text-sm text-zinc-700">
-            Couldn’t load your study contributor status right now.
-          </p>
+          <div className="text-sm text-zinc-700">Try refreshing from the top.</div>
         )}
-      </div>
+      </SectionCard>
 
-      {roles.isVendor ? (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">JabuMarket</div>
-          <p className="mt-1 text-sm text-zinc-700">
-            Store: <span className="font-medium">{vendor?.name ?? "—"}</span>
-          </p>
-          <p className="mt-1 text-sm text-zinc-700">
-            Verification:{" "}
-            <span className="font-medium">{vendor?.verified ? "Verified" : "Not verified"}</span>
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Want to sell on JabuMarket?</div>
-          <p className="mt-1 text-sm text-zinc-700">
-            Create a vendor profile and start posting listings.
-          </p>
+      <SectionCard
+        title="JABU Market"
+        desc={marketSummary}
+        right={
+          <Link
+            href={roles.isVendor ? "/my-listings" : "/market"}
+            className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            {roles.isVendor ? "My listings" : "Explore"}
+          </Link>
+        }
+      >
+        {roles.isVendor ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/me?tab=verification"
+              className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+            >
+              Verification
+            </Link>
+            <Link
+              href="/my-listings"
+              className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              Manage listings
+            </Link>
+          </div>
+        ) : (
           <Link
             href="/post"
-            className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="inline-flex w-full items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
           >
             Become a vendor
           </Link>
-        </div>
-      )}
+        )}
+      </SectionCard>
     </div>
   );
 }
@@ -709,7 +800,12 @@ function ProfileTab({
   });
 
   const [vendorSaving, setVendorSaving] = useState(false);
-  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(
+    null
+  );
+
+  // collapsible sections (mobile-first)
+  const [openSection, setOpenSection] = useState<"identity" | "vendor" | "study">("identity");
 
   useEffect(() => {
     if (!vendor) return;
@@ -730,8 +826,10 @@ function ProfileTab({
     const phoneDigits = normalizePhone(vendorForm.phone);
 
     if (!name) errors.name = "Store/Display name is required.";
-    if (vendorForm.whatsapp.trim() && whatsappDigits.length < 7) errors.whatsapp = "Enter a valid WhatsApp number.";
-    if (vendorForm.phone.trim() && phoneDigits.length < 7) errors.phone = "Enter a valid phone number.";
+    if (vendorForm.whatsapp.trim() && whatsappDigits.length < 7)
+      errors.whatsapp = "Enter a valid WhatsApp number.";
+    if (vendorForm.phone.trim() && phoneDigits.length < 7)
+      errors.phone = "Enter a valid phone number.";
 
     return { errors, canSave: Object.keys(errors).length === 0 };
   }, [vendorForm]);
@@ -923,7 +1021,9 @@ function ProfileTab({
         ? studyForm.faculty.trim()
         : faculties.find((f) => f.id === studyForm.faculty_id)?.name ?? "";
 
-      const selectedDeptRow = manualMode ? null : departments.find((d) => d.id === studyForm.department_id) ?? null;
+      const selectedDeptRow = manualMode
+        ? null
+        : departments.find((d) => d.id === studyForm.department_id) ?? null;
 
       const selectedDepartment = manualMode
         ? studyForm.department.trim()
@@ -964,37 +1064,35 @@ function ProfileTab({
 
   const vendErr = vendorValidation.errors;
 
+  const hasSaveBar = nameDirty || vendorDirty;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {banner ? (
-        <div
-          className={cn(
-            "rounded-2xl border p-3 text-sm",
-            banner.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : banner.type === "error"
-              ? "border-rose-200 bg-rose-50 text-rose-800"
-              : "border-zinc-200 bg-zinc-50 text-zinc-800"
-          )}
-          role="status"
-        >
-          {banner.text}
-        </div>
+        <Banner type={banner.type} text={banner.text} />
       ) : null}
 
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Account identity</div>
-        <p className="mt-1 text-sm text-zinc-600">This name shows across the app.</p>
-
-        <div className="mt-3 grid gap-2">
-          <Field label="Full name" value={fullName} onChange={setFullName} placeholder="e.g. Gratitude Developers" />
+      {/* Collapsible sections reduce scrolling + cognitive load on mobile */}
+      <CollapsibleSection
+        open={openSection === "identity"}
+        onToggle={() => setOpenSection((s) => (s === "identity" ? "study" : "identity"))}
+        title="Account identity"
+        subtitle="Your name shows across the app."
+      >
+        <div className="grid gap-2">
+          <Field
+            label="Full name"
+            value={fullName}
+            onChange={setFullName}
+            placeholder="e.g. Gratitude Developers"
+          />
 
           {nameDirty ? (
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setFullName(me?.full_name ?? "")}
-                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
                 disabled={savingName}
               >
                 Cancel
@@ -1003,7 +1101,7 @@ function ProfileTab({
                 type="button"
                 onClick={saveName}
                 className={cn(
-                  "rounded-xl px-3 py-2 text-sm font-semibold",
+                  "w-full rounded-2xl px-3 py-3 text-sm font-semibold",
                   savingName ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
                 )}
                 disabled={savingName || !fullName.trim()}
@@ -1011,152 +1109,130 @@ function ProfileTab({
                 {savingName ? "Saving…" : "Save name"}
               </button>
             </div>
-          ) : null}
-        </div>
-
-        <div className="mt-3 text-xs text-zinc-500">
-          Email: <span className="font-medium text-zinc-700">{me?.email ?? "—"}</span>
-        </div>
-      </div>
-
-      {roles.isVendor && vendor ? (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
-          <p className="mt-1 text-sm text-zinc-600">What customers see when viewing your store.</p>
-
-          <div className="mt-4 grid gap-3">
-            <Field
-              label="Store / Display name"
-              value={vendorForm.name}
-              onChange={(v) => setVendorForm((s) => ({ ...s, name: v }))}
-              onBlur={() => setVendorTouched((t) => ({ ...t, name: true }))}
-              placeholder={defaultVendorNameFromEmail(me?.email)}
-              error={vendorTouched.name ? vendErr.name : undefined}
-            />
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field
-                label="WhatsApp"
-                value={vendorForm.whatsapp}
-                onChange={(v) => setVendorForm((s) => ({ ...s, whatsapp: v }))}
-                onBlur={() => setVendorTouched((t) => ({ ...t, whatsapp: true }))}
-                placeholder="+234 801 234 5678"
-                error={vendorTouched.whatsapp ? vendErr.whatsapp : undefined}
-              />
-              <Field
-                label="Phone"
-                value={vendorForm.phone}
-                onChange={(v) => setVendorForm((s) => ({ ...s, phone: v }))}
-                onBlur={() => setVendorTouched((t) => ({ ...t, phone: true }))}
-                placeholder="+234 701 234 5678"
-                error={vendorTouched.phone ? vendErr.phone : undefined}
-              />
+          ) : (
+            <div className="text-xs text-zinc-500">
+              Email: <span className="font-semibold text-zinc-700">{me?.email ?? "—"}</span>
             </div>
+          )}
+        </div>
+      </CollapsibleSection>
 
-            <Field
-              label="Location"
-              value={vendorForm.location}
-              onChange={(v) => setVendorForm((s) => ({ ...s, location: v }))}
-              onBlur={() => setVendorTouched((t) => ({ ...t, location: true }))}
-              placeholder="e.g. JABU Campus / Male Hostels"
-              error={vendorTouched.location ? vendErr.location : undefined}
-            />
+      <CollapsibleSection
+        open={openSection === "vendor"}
+        onToggle={() => setOpenSection((s) => (s === "vendor" ? "study" : "vendor"))}
+        title="Vendor profile"
+        subtitle={roles.isVendor ? "What customers see in your store." : "Create a vendor profile to sell."}
+        disabled={!roles.isVendor}
+      >
+        {roles.isVendor && vendor ? (
+          <>
+            <div className="grid gap-3">
+              <Field
+                label="Store / Display name"
+                value={vendorForm.name}
+                onChange={(v) => setVendorForm((s) => ({ ...s, name: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, name: true }))}
+                placeholder={defaultVendorNameFromEmail(me?.email)}
+                error={vendorTouched.name ? vendErr.name : undefined}
+              />
 
-            <div>
-              <div className="text-xs font-semibold text-zinc-700">Vendor type</div>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
-                  const active = vendorForm.vendor_type === t;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
-                      className={cn(
-                        "rounded-xl border px-3 py-2 text-sm font-semibold capitalize",
-                        active ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-800 hover:bg-zinc-50"
-                      )}
-                    >
-                      {t}
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field
+                  label="WhatsApp"
+                  value={vendorForm.whatsapp}
+                  onChange={(v) => setVendorForm((s) => ({ ...s, whatsapp: v }))}
+                  onBlur={() => setVendorTouched((t) => ({ ...t, whatsapp: true }))}
+                  placeholder="+234 801 234 5678"
+                  error={vendorTouched.whatsapp ? vendErr.whatsapp : undefined}
+                />
+                <Field
+                  label="Phone"
+                  value={vendorForm.phone}
+                  onChange={(v) => setVendorForm((s) => ({ ...s, phone: v }))}
+                  onBlur={() => setVendorTouched((t) => ({ ...t, phone: true }))}
+                  placeholder="+234 701 234 5678"
+                  error={vendorTouched.phone ? vendErr.phone : undefined}
+                />
+              </div>
+
+              <Field
+                label="Location"
+                value={vendorForm.location}
+                onChange={(v) => setVendorForm((s) => ({ ...s, location: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, location: true }))}
+                placeholder="e.g. JABU Campus / Male Hostels"
+                error={vendorTouched.location ? vendErr.location : undefined}
+              />
+
+              <div>
+                <div className="text-xs font-semibold text-zinc-700">Vendor type</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
+                    const active = vendorForm.vendor_type === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
+                        className={cn(
+                          "rounded-2xl border px-3 py-2 text-sm font-semibold capitalize transition",
+                          active
+                            ? "border-zinc-900 bg-zinc-900 text-white"
+                            : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+
+            {vendorDirty ? (
+              <SaveBar
+                text={!vendorValidation.canSave ? "Fix errors to save" : "Unsaved vendor changes"}
+                onCancel={cancelVendor}
+                onSave={saveVendor}
+                saving={vendorSaving}
+                canSave={vendorValidation.canSave}
+                saveLabel="Save vendor"
+              />
+            ) : null}
+          </>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-700">Not a vendor yet? Create a vendor profile to sell on JabuMarket.</p>
+            <Link
+              href="/post"
+              className="inline-flex w-full items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              Become a vendor
+            </Link>
           </div>
+        )}
+      </CollapsibleSection>
 
-          {vendorDirty ? (
-            <div className="sticky bottom-0 -mx-3 mt-4 border-t bg-white/90 px-3 py-3 backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-zinc-600">
-                  Unsaved vendor changes
-                  {!vendorValidation.canSave ? (
-                    <span className="ml-2 font-semibold text-rose-700">• Fix errors to save</span>
-                  ) : null}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={cancelVendor}
-                    className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                    disabled={vendorSaving}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveVendor}
-                    disabled={vendorSaving || !vendorValidation.canSave}
-                    className={cn(
-                      "rounded-xl px-3 py-2 text-sm font-semibold",
-                      vendorSaving || !vendorValidation.canSave
-                        ? "bg-zinc-200 text-zinc-600"
-                        : "bg-zinc-900 text-white hover:bg-zinc-800"
-                    )}
-                  >
-                    {vendorSaving ? "Saving…" : "Save vendor"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
-          <p className="mt-1 text-sm text-zinc-700">
-            Not a vendor yet? Create a vendor profile to sell on JabuMarket.
-          </p>
-          <Link
-            href="/post"
-            className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
-            Become a vendor
-          </Link>
-        </div>
-      )}
-
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Study profile</div>
-        <p className="mt-1 text-sm text-zinc-600">
-          Used to personalize courses/materials and improve “For you”.
-        </p>
-
+      <CollapsibleSection
+        open={openSection === "study"}
+        onToggle={() => setOpenSection((s) => (s === "study" ? "identity" : "study"))}
+        title="Study profile"
+        subtitle="Personalizes Study: courses, materials and “For you”."
+      >
         {studyLoading ? (
-          <div className="mt-3 space-y-2">
-            <div className="h-10 rounded-xl bg-zinc-100" />
-            <div className="h-10 rounded-xl bg-zinc-100" />
-            <div className="h-10 rounded-xl bg-zinc-100" />
+          <div className="space-y-2">
+            <div className="h-10 rounded-2xl bg-zinc-100" />
+            <div className="h-10 rounded-2xl bg-zinc-100" />
+            <div className="h-10 rounded-2xl bg-zinc-100" />
           </div>
         ) : (
-          <div className="mt-4 space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="text-xs font-semibold text-zinc-700">Mode</div>
               <button
                 type="button"
                 onClick={() => setManualMode((v) => !v)}
-                className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
               >
                 {manualMode ? "Use official list" : "Can’t find mine? Type manually"}
               </button>
@@ -1175,7 +1251,7 @@ function ProfileTab({
                         department_id: "",
                       }))
                     }
-                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-400"
                   >
                     <option value="">Select faculty</option>
                     {faculties.map((f) => (
@@ -1190,11 +1266,15 @@ function ProfileTab({
                   <div className="text-xs font-semibold text-zinc-700">Department</div>
                   <select
                     value={studyForm.department_id}
-                    onChange={(e) => setStudyForm((s) => ({ ...s, department_id: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    onChange={(e) =>
+                      setStudyForm((s) => ({ ...s, department_id: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-400"
                     disabled={!studyForm.faculty_id}
                   >
-                    <option value="">{studyForm.faculty_id ? "Select department" : "Pick faculty first"}</option>
+                    <option value="">
+                      {studyForm.faculty_id ? "Select department" : "Pick faculty first"}
+                    </option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
                         {String(d.display_name || d.official_name || "").trim()}
@@ -1225,8 +1305,10 @@ function ProfileTab({
                 <div className="text-xs font-semibold text-zinc-700">Level</div>
                 <select
                   value={String(studyForm.level)}
-                  onChange={(e) => setStudyForm((s) => ({ ...s, level: Number(e.target.value) }))}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  onChange={(e) =>
+                    setStudyForm((s) => ({ ...s, level: Number(e.target.value) }))
+                  }
+                  className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-400"
                 >
                   {[100, 200, 300, 400, 500, 600, 700].map((lv) => (
                     <option key={lv} value={lv}>
@@ -1240,8 +1322,10 @@ function ProfileTab({
                 <div className="text-xs font-semibold text-zinc-700">Semester</div>
                 <select
                   value={studyForm.semester}
-                  onChange={(e) => setStudyForm((s) => ({ ...s, semester: e.target.value as any }))}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  onChange={(e) =>
+                    setStudyForm((s) => ({ ...s, semester: e.target.value as any }))
+                  }
+                  className="mt-1 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-400"
                 >
                   <option value="first">1st Semester</option>
                   <option value="second">2nd Semester</option>
@@ -1255,8 +1339,10 @@ function ProfileTab({
               onClick={saveStudy}
               disabled={!studyValid || studySaving}
               className={cn(
-                "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
-                !studyValid || studySaving ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+                "inline-flex w-full items-center justify-center rounded-2xl px-3 py-3 text-sm font-semibold",
+                !studyValid || studySaving
+                  ? "bg-zinc-200 text-zinc-600"
+                  : "bg-zinc-900 text-white hover:bg-zinc-800"
               )}
             >
               {studySaving ? "Saving…" : "Save study profile"}
@@ -1264,12 +1350,24 @@ function ProfileTab({
 
             {!studyValid ? (
               <p className="text-xs text-zinc-500">
-                Please complete faculty + department and ensure level/semester are selected.
+                Complete faculty + department and ensure level/semester are selected.
               </p>
             ) : null}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
+
+      {/* Name save bar (separate from vendor bar) */}
+      {hasSaveBar && nameDirty ? (
+        <SaveBar
+          text="Unsaved name change"
+          onCancel={() => setFullName(me?.full_name ?? "")}
+          onSave={saveName}
+          saving={savingName}
+          canSave={!!fullName.trim()}
+          saveLabel="Save name"
+        />
+      ) : null}
     </div>
   );
 }
@@ -1308,7 +1406,9 @@ function VerificationTab({
   const [loading, setLoading] = useState(true);
   const [req, setReq] = useState<RequestRow | null>(null);
   const [docs, setDocs] = useState<DocRow[]>([]);
-  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(
+    null
+  );
 
   const [docType, setDocType] = useState("id_card");
   const [file, setFile] = useState<File | null>(null);
@@ -1550,40 +1650,35 @@ function VerificationTab({
 
   if (!roles.isVendor || !vendor) {
     return (
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Verification</div>
-        <p className="mt-1 text-sm text-zinc-700">
-          Verification is for vendors. Create a vendor profile to request verification.
+      <SectionCard title="Verification" desc="Verification is only for vendors.">
+        <p className="text-sm text-zinc-700">
+          Create a vendor profile to request verification.
         </p>
         <Link
           href="/post"
-          className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
         >
           Become a vendor
         </Link>
-      </div>
+      </SectionCard>
     );
   }
 
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="h-10 rounded-xl bg-zinc-100" />
-        <div className="h-24 rounded-2xl bg-zinc-100" />
-        <div className="h-40 rounded-2xl bg-zinc-100" />
+        <div className="h-10 rounded-2xl bg-zinc-100" />
+        <div className="h-28 rounded-3xl bg-zinc-100" />
+        <div className="h-44 rounded-3xl bg-zinc-100" />
       </div>
     );
   }
 
   if (isVerified) {
     return (
-      <div className="space-y-3">
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <div className="text-sm font-semibold text-emerald-900">✅ Vendor verified</div>
-          <p className="mt-1 text-sm text-emerald-800">
-            Your store is verified. Customers will see your verified badge.
-          </p>
-          <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-sm text-emerald-900">
+      <div className="space-y-4">
+        <SectionCard title="✅ Vendor verified" desc="Customers will see your verified badge." tone="success">
+          <div className="rounded-2xl border border-emerald-200 bg-white p-3 text-sm text-emerald-900">
             <div>
               <span className="text-emerald-700">Store:</span>{" "}
               <span className="font-semibold">{vendor?.name ?? "—"}</span>
@@ -1593,75 +1688,62 @@ function VerificationTab({
               <span className="font-semibold">{vendor?.verified_at ?? "—"}</span>
             </div>
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Next</div>
-          <p className="mt-1 text-sm text-zinc-700">
-            Focus on improving your store profile and listings.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+        <SectionCard title="Next" desc="Improve your store profile and listings.">
+          <div className="grid grid-cols-2 gap-2">
             <Link
               href="/me?tab=profile"
-              className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
             >
               Edit profile
             </Link>
             <Link
               href="/my-listings"
-              className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+              className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-3 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
             >
               My listings
             </Link>
           </div>
-        </div>
+        </SectionCard>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {banner ? (
-        <div
-          className={cn(
-            "rounded-2xl border p-3 text-sm",
-            banner.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : banner.type === "error"
-              ? "border-rose-200 bg-rose-50 text-rose-800"
-              : "border-zinc-200 bg-zinc-50 text-zinc-800"
-          )}
-          role="status"
-        >
-          {banner.text}
-        </div>
-      ) : null}
+    <div className="space-y-4">
+      {banner ? <Banner type={banner.type} text={banner.text} /> : null}
 
       <Stepper step={step} req={req} vendor={vendor} />
 
-      <div className="rounded-2xl border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-zinc-900">1) Upload documents</div>
-            <p className="mt-1 text-sm text-zinc-600">
-              Upload clear proof to speed up approval (ID card, student ID, business doc, etc).
-            </p>
-          </div>
-          {pending ? (
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700">
-              Locked (pending review)
+      <SectionCard
+        title="1) Upload documents"
+        desc="Upload clear proof to speed approval (ID card, student ID, business doc, etc)."
+        right={
+          pending ? (
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+              Locked
             </span>
-          ) : null}
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          ) : (
+            <button
+              type="button"
+              onClick={() => refreshStatus()}
+              className="inline-flex items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+            >
+              <RefreshCcw className="mr-2 h-3.5 w-3.5" />
+              Refresh
+            </button>
+          )
+        }
+      >
+        <div className="grid gap-2 sm:grid-cols-3">
           <label className="block sm:col-span-1">
             <div className="text-xs font-semibold text-zinc-700">Doc type</div>
             <select
               value={docType}
               onChange={(e) => setDocType(e.target.value)}
               className={cn(
-                "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+                "mt-1 w-full rounded-2xl border bg-white px-3 py-3 text-sm outline-none",
                 canUploadDocs ? "border-zinc-200 focus:border-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-400"
               )}
               disabled={!canUploadDocs}
@@ -1682,7 +1764,7 @@ function VerificationTab({
               disabled={!canUploadDocs}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className={cn(
-                "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+                "mt-1 w-full rounded-2xl border bg-white px-3 py-3 text-sm outline-none",
                 !canUploadDocs ? "border-zinc-200 bg-zinc-50 text-zinc-400" : "border-zinc-200 focus:border-zinc-400"
               )}
             />
@@ -1694,7 +1776,7 @@ function VerificationTab({
           onClick={uploadDoc}
           disabled={uploading || !file || !canUploadDocs}
           className={cn(
-            "mt-3 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
+            "mt-3 inline-flex w-full items-center justify-center rounded-2xl px-3 py-3 text-sm font-semibold",
             uploading || !file || !canUploadDocs
               ? "bg-zinc-200 text-zinc-600"
               : "bg-zinc-900 text-white hover:bg-zinc-800"
@@ -1705,7 +1787,7 @@ function VerificationTab({
 
         {pending ? (
           <p className="mt-2 text-xs text-zinc-500">
-            Your request is being reviewed — uploads and deletions are locked to keep your submission stable.
+            While review is pending, uploads/deletions are locked to keep your submission stable.
           </p>
         ) : null}
 
@@ -1714,7 +1796,10 @@ function VerificationTab({
           {docs.length ? (
             <div className="mt-2 space-y-2">
               {docs.map((d) => (
-                <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border bg-white p-2">
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3"
+                >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-zinc-900">
                       {d.doc_type.replace(/_/g, " ")}
@@ -1726,7 +1811,7 @@ function VerificationTab({
                     <button
                       type="button"
                       onClick={() => openDoc(d.file_path)}
-                      className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                      className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
                     >
                       View
                     </button>
@@ -1736,8 +1821,10 @@ function VerificationTab({
                       onClick={() => deleteDoc({ id: d.id, file_path: d.file_path })}
                       disabled={!canDeleteDocs}
                       className={cn(
-                        "rounded-xl border px-3 py-1.5 text-xs font-semibold",
-                        !canDeleteDocs ? "bg-zinc-100 text-zinc-400" : "bg-white text-rose-700 hover:bg-rose-50 border-rose-200"
+                        "rounded-2xl border px-3 py-2 text-xs font-semibold",
+                        !canDeleteDocs
+                          ? "border-zinc-200 bg-zinc-100 text-zinc-400"
+                          : "border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
                       )}
                     >
                       Delete
@@ -1750,26 +1837,21 @@ function VerificationTab({
             <p className="mt-2 text-sm text-zinc-600">No documents uploaded yet.</p>
           )}
         </div>
-      </div>
+      </SectionCard>
 
-      <div className="rounded-2xl border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-zinc-900">2) Request verification</div>
-            <p className="mt-1 text-sm text-zinc-600">
-              When you request, admins will review your docs and approve or reject with a reason.
-            </p>
-          </div>
-
-          {req ? (
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700">
+      <SectionCard
+        title="2) Request verification"
+        desc="Admins will review your docs and approve or reject with a reason."
+        right={
+          req ? (
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700">
               Status: {req.status.replace(/_/g, " ")}
             </span>
-          ) : null}
-        </div>
-
+          ) : null
+        }
+      >
         {req?.status === "rejected" ? (
-          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
             <div className="font-semibold">Rejected</div>
             <div className="mt-1">
               Reason:{" "}
@@ -1782,23 +1864,21 @@ function VerificationTab({
         ) : null}
 
         {req && (req.status === "requested" || req.status === "under_review" || req.status === "approved") ? (
-          <div className="mt-3 rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-800">
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
             <div className="font-semibold">Request in progress</div>
             <div className="mt-1 text-zinc-700">
-              Your request is{" "}
-              <span className="font-medium">{req.status.replace(/_/g, " ")}</span>.
-              You don’t need to submit again.
+              Your request is <span className="font-semibold">{req.status.replace(/_/g, " ")}</span>. No need to submit again.
             </div>
           </div>
         ) : (
-          <div className="mt-3 space-y-2">
+          <div className="space-y-2">
             <label className="block">
               <div className="text-xs font-semibold text-zinc-700">Note (optional)</div>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Anything admins should know? e.g. ‘I’m a campus vendor at male hostel gate.’"
-                className="mt-1 min-h-[88px] w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                className="mt-1 min-h-[96px] w-full rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm outline-none focus:border-zinc-400"
               />
             </label>
 
@@ -1807,51 +1887,64 @@ function VerificationTab({
               onClick={submitRequest}
               disabled={!canRequest || requesting}
               className={cn(
-                "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
+                "inline-flex w-full items-center justify-center rounded-2xl px-3 py-3 text-sm font-semibold",
                 !canRequest || requesting ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
               )}
             >
               {requesting ? "Submitting…" : "Request verification"}
             </button>
 
-            {!docs.length ? <p className="text-xs text-zinc-500">Upload at least one document to enable request.</p> : null}
+            {!docs.length ? (
+              <p className="text-xs text-zinc-500">Upload at least one document to enable request.</p>
+            ) : null}
           </div>
         )}
-      </div>
+      </SectionCard>
 
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Current status</div>
-        <p className="mt-1 text-sm text-zinc-700">
-          {isVerified ? "✅ You’re verified." : req ? `Your latest request is: ${req.status.replace(/_/g, " ")}.` : "No request submitted yet."}
+      <SectionCard title="Current status" desc="A quick summary of where you are right now.">
+        <p className="text-sm text-zinc-700">
+          {isVerified
+            ? "✅ You’re verified."
+            : req
+            ? `Your latest request is: ${req.status.replace(/_/g, " ")}.`
+            : "No request submitted yet."}
         </p>
-      </div>
+      </SectionCard>
     </div>
   );
 }
 
 function Stepper({ step, req, vendor }: { step: number; req: any; vendor: Vendor }) {
   const steps = [
-    { n: 1, title: "Upload docs", desc: "Add proof documents" },
-    { n: 2, title: "Request", desc: "Submit for review" },
-    { n: 3, title: "Review", desc: "Admins check your docs" },
-    { n: 4, title: "Result", desc: "Approved / Rejected" },
+    { n: 1, title: "Upload", desc: "Add documents" },
+    { n: 2, title: "Request", desc: "Submit" },
+    { n: 3, title: "Review", desc: "Admin checks" },
+    { n: 4, title: "Result", desc: "Approved/Rejected" },
   ];
 
   return (
-    <div className="rounded-2xl border bg-white p-3">
-      <div className="text-sm font-semibold text-zinc-900">Verification</div>
-      <div className="mt-1 text-sm text-zinc-600">
-        Status:{" "}
-        <span className="font-semibold text-zinc-800">
-          {vendor.verified || vendor.verification_status === "verified"
-            ? "verified"
-            : req?.status
-            ? String(req.status).replace(/_/g, " ")
-            : "not started"}
-        </span>
+    <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-zinc-900">Verification</div>
+          <div className="mt-1 text-sm text-zinc-600">
+            Status:{" "}
+            <span className="font-semibold text-zinc-800">
+              {vendor.verified || vendor.verification_status === "verified"
+                ? "verified"
+                : req?.status
+                ? String(req.status).replace(/_/g, " ")
+                : "not started"}
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700">
+          Step {step}/4
+        </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-4 grid grid-cols-4 gap-2">
         {steps.map((s) => {
           const done = s.n < step;
           const active = s.n === step;
@@ -1859,7 +1952,7 @@ function Stepper({ step, req, vendor }: { step: number; req: any; vendor: Vendor
             <div key={s.n} className="min-w-0">
               <div
                 className={cn(
-                  "flex items-center justify-center rounded-xl border px-2 py-2 text-xs font-semibold",
+                  "flex items-center justify-center rounded-2xl border px-2 py-2 text-xs font-semibold",
                   done
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                     : active
@@ -1880,21 +1973,132 @@ function Stepper({ step, req, vendor }: { step: number; req: any; vendor: Vendor
 
 function AccountTab({ me, onSignOut }: { me: Me | null; onSignOut: () => Promise<void> }) {
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Account</div>
-        <p className="mt-1 text-sm text-zinc-700">
-          Email: <span className="font-medium">{me?.email ?? "—"}</span>
+    <div className="space-y-4">
+      <SectionCard title="Account" desc="Your sign-in identity">
+        <p className="text-sm text-zinc-700">
+          Email: <span className="font-semibold">{me?.email ?? "—"}</span>
         </p>
-      </div>
+      </SectionCard>
 
       <button
         onClick={onSignOut}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
       >
         <LogOut className="h-4 w-4" />
         Sign out
       </button>
+    </div>
+  );
+}
+
+/* ----------------------------- Small UI Utils ----------------------------- */
+
+function Banner(props: { type: "success" | "error" | "info"; text: string }) {
+  return (
+    <div
+      className={cn(
+        "rounded-3xl border p-4 text-sm shadow-sm",
+        props.type === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : props.type === "error"
+          ? "border-rose-200 bg-rose-50 text-rose-800"
+          : "border-zinc-200 bg-white text-zinc-800"
+      )}
+      role="status"
+    >
+      {props.text}
+    </div>
+  );
+}
+
+function SaveBar(props: {
+  text: string;
+  onCancel: () => void;
+  onSave: () => void;
+  saving: boolean;
+  canSave: boolean;
+  saveLabel: string;
+}) {
+  return (
+    <div className="sticky bottom-3 z-10">
+      <div className="rounded-3xl border border-zinc-200 bg-white/90 p-3 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-zinc-700">{props.text}</div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={props.onCancel}
+              className="rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+              disabled={props.saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={props.onSave}
+              disabled={props.saving || !props.canSave}
+              className={cn(
+                "rounded-2xl px-3 py-2 text-sm font-semibold",
+                props.saving || !props.canSave
+                  ? "bg-zinc-200 text-zinc-600"
+                  : "bg-zinc-900 text-white hover:bg-zinc-800"
+              )}
+            >
+              {props.saving ? "Saving…" : props.saveLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleSection(props: {
+  title: string;
+  subtitle?: string;
+  open: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const disabled = !!props.disabled;
+
+  return (
+    <div className={cn("rounded-3xl border shadow-sm", disabled ? "border-zinc-200 bg-white" : "border-zinc-200 bg-white")}>
+      <button
+        type="button"
+        onClick={() => {
+          if (!disabled) props.onToggle();
+        }}
+        className={cn(
+          "flex w-full items-center justify-between gap-3 rounded-3xl px-4 py-4 text-left",
+          disabled ? "cursor-default" : "hover:bg-zinc-50"
+        )}
+        aria-expanded={props.open}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-zinc-900">{props.title}</div>
+          {props.subtitle ? (
+            <div className="mt-1 text-sm text-zinc-600">{props.subtitle}</div>
+          ) : null}
+          {disabled ? (
+            <div className="mt-1 text-xs text-zinc-500">Available after you become a vendor.</div>
+          ) : null}
+        </div>
+
+        <ChevronDown
+          className={cn(
+            "h-5 w-5 shrink-0 text-zinc-500 transition",
+            props.open ? "rotate-180" : "rotate-0",
+            disabled ? "opacity-40" : "opacity-100"
+          )}
+        />
+      </button>
+
+      {props.open && !disabled ? (
+        <div className="border-t border-zinc-200 px-4 pb-4 pt-4">{props.children}</div>
+      ) : null}
     </div>
   );
 }
@@ -1916,7 +2120,7 @@ function Field(props: {
         onBlur={props.onBlur}
         placeholder={props.placeholder}
         className={cn(
-          "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none",
+          "mt-1 w-full rounded-2xl border bg-white px-3 py-3 text-sm text-zinc-900 outline-none",
           props.error ? "border-rose-300 focus:border-rose-400" : "border-zinc-200 focus:border-zinc-400"
         )}
       />
