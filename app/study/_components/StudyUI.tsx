@@ -22,12 +22,11 @@ function cn(...parts: Array<string | false | null | undefined>) {
 export function Card({
   children,
   className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) {
   return (
     <div
+      {...props}
       className={cn(
         "rounded-2xl border border-border bg-card p-4 shadow-sm",
         "sm:p-5",
