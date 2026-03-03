@@ -1,4 +1,3 @@
-// app/delivery/page.tsx
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow, RiderRow } from "@/lib/types";
@@ -48,7 +47,7 @@ export default async function DeliveryPage({
     listing = (data as any) ?? null;
   }
 
-  // Riders (keep query light)
+  // Riders
   const { data: ridersData } = await supabase
     .from("riders")
     .select("id,name,phone,whatsapp,zone,fee_note,is_available,verified,created_at")
@@ -87,12 +86,13 @@ export default async function DeliveryPage({
 
   return (
     <div className="space-y-4 pb-24 md:pb-6">
+      {/* Slim header */}
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Delivery (Dispatch)</h1>
+            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Delivery</h1>
             <p className="mt-1 text-sm text-zinc-600">
-              Choose a delivery agent and message them on WhatsApp. No tracking inside Jabumarket.
+              Pick an agent and contact them on WhatsApp.
             </p>
           </div>
 
@@ -105,7 +105,7 @@ export default async function DeliveryPage({
         </div>
 
         {listing ? (
-          <div className="mt-4 rounded-3xl border bg-zinc-50 p-4">
+          <div className="mt-3 rounded-2xl border bg-zinc-50 p-3">
             <p className="text-xs font-semibold text-zinc-700">From listing</p>
             <p className="mt-1 text-sm font-semibold text-zinc-900">{listing.title}</p>
             <p className="mt-1 text-xs text-zinc-600">Pickup: {pickupLocation}</p>
@@ -129,15 +129,6 @@ export default async function DeliveryPage({
         }}
         riders={riders}
       />
-
-      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <p className="text-sm font-semibold text-zinc-900">Safety tips</p>
-        <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-zinc-600">
-          <li>Confirm delivery fee + ETA before sending money.</li>
-          <li>Avoid paying full upfront unless you trust the delivery agent/vendor.</li>
-          <li>Use clear drop-off details (hostel name, gate, landmark).</li>
-        </ul>
-      </div>
     </div>
   );
 }

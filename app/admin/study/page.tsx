@@ -606,9 +606,15 @@ export default function AdminStudyPage() {
     setTutorsMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
 
-    const res = await supabase.from("study_tutors").update({ [key]: next }).eq("id", id);
-    if (res.error) {
-      setBanner({ kind: "error", text: res.error.message ?? "Failed to update tutor." });
+    const resp = await fetch("/api/admin/study/tutors/set-flag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, key, value: next }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Failed to update tutor." });
       setTutorsMutating((p) => {
         const n = { ...p };
         delete n[id];
@@ -724,9 +730,15 @@ export default function AdminStudyPage() {
     setSetsMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
 
-    const res = await supabase.from("study_quiz_sets").update({ published: nextPublished }).eq("id", id);
-    if (res.error) {
-      setBanner({ kind: "error", text: res.error.message ?? "Failed to update set." });
+    const resp = await fetch("/api/admin/study/quiz-sets/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, published: nextPublished }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Failed to update set." });
       setSetsMutating((p) => {
         const n = { ...p };
         delete n[id];
@@ -754,25 +766,16 @@ export default function AdminStudyPage() {
     setBanner(null);
 
     try {
-      // 1) Load question IDs for this set
-      const qs = await supabase.from("study_quiz_questions").select("id").eq("quiz_set_id", id);
-      if (qs.error) throw qs.error;
+      const resp = await fetch("/api/admin/study/quiz-sets/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await resp.json().catch(() => null);
 
-      const qIds = ((qs.data as any[]) ?? []).map((r) => String(r.id)).filter(Boolean);
-
-      // 2) Delete options for those questions
-      if (qIds.length) {
-        const delOpts = await supabase.from("study_quiz_options").delete().in("question_id", qIds);
-        if (delOpts.error) throw delOpts.error;
+      if (!resp.ok || !json?.ok) {
+        throw new Error(json?.error ?? "Failed to delete set.");
       }
-
-      // 3) Delete questions
-      const delQs = await supabase.from("study_quiz_questions").delete().eq("quiz_set_id", id);
-      if (delQs.error) throw delQs.error;
-
-      // 4) Delete set
-      const delSet = await supabase.from("study_quiz_sets").delete().eq("id", id);
-      if (delSet.error) throw delSet.error;
 
       setSets((prev) => prev.filter((s: any) => String(s.id) !== id));
       setSetsTotal((t) => Math.max(0, t - 1));
@@ -792,9 +795,16 @@ export default function AdminStudyPage() {
     if (!id || reportsMutating[id]) return;
     setReportsMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
-    const res = await supabase.from("study_reports").update({ status }).eq("id", id);
-    if (res.error) {
-      setBanner({ kind: "error", text: res.error.message ?? "Failed to update report." });
+
+    const resp = await fetch("/api/admin/study/reports/set-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Failed to update report." });
       setReportsMutating((p) => {
         const n = { ...p };
         delete n[id];
@@ -802,6 +812,7 @@ export default function AdminStudyPage() {
       });
       return;
     }
+
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     setReportsMutating((p) => {
       const n = { ...p };
@@ -828,76 +839,30 @@ export default function AdminStudyPage() {
     setReportsMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
 
-    // 1) Delete target content
     try {
-      if (r.material_id) {
-        // Best-effort: delete file from storage
-        const fileRow = await supabase
-          .from("study_materials")
-          .select("file_path")
-          .eq("id", r.material_id)
-          .maybeSingle();
-        const filePath = (fileRow.data as any)?.file_path as string | undefined;
-        if (filePath) {
-          await supabase.storage.from(BUCKET).remove([filePath]);
-        }
-        const del = await supabase.from("study_materials").delete().eq("id", r.material_id);
-        if (del.error) throw del.error;
-      } else if (r.tutor_id) {
-        // Prefer deactivate if the column exists
-        const t = await supabase.from("study_tutors").select("*").eq("id", r.tutor_id).maybeSingle();
-        if (t.error) throw t.error;
-        const key = pickKey(t.data, ["active", "is_active", "enabled"]);
-        if (key) {
-          const upd = await supabase.from("study_tutors").update({ [key]: false }).eq("id", r.tutor_id);
-          if (upd.error) throw upd.error;
-        } else {
-          const del = await supabase.from("study_tutors").delete().eq("id", r.tutor_id);
-          if (del.error) throw del.error;
-        }
-      } else if (r.answer_id) {
-        const del = await supabase.from("study_answers").delete().eq("id", r.answer_id);
-        if (del.error) throw del.error;
-      } else if (r.question_id) {
-        const del = await supabase.from("study_questions").delete().eq("id", r.question_id);
-        if (del.error) throw del.error;
-      }
-    } catch (e: any) {
-      setBanner({ kind: "error", text: e?.message ?? "Failed to delete content." });
-      setReportsMutating((p) => {
-        const n = { ...p };
-        delete n[id];
-        return n;
+      const resp = await fetch("/api/admin/study/reports/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
       });
-      return;
-    }
+      const json = await resp.json().catch(() => null);
 
-    // 2) Resolve the report (best effort)
-    const res = await supabase.from("study_reports").update({ status: "resolved" }).eq("id", id);
-    if (res.error) {
-      setBanner({
-        kind: "warn",
-        text: "Content deleted, but report status update failed: " + (res.error.message ?? ""),
-      });
+      if (!resp.ok || !json?.ok) {
+        throw new Error(json?.error ?? "Failed to delete content.");
+      }
+
       setReports((prev) => prev.filter((x) => x.id !== id));
       setReportsTotal((t) => Math.max(0, t - 1));
+      setBanner({ kind: "success", text: `${kind} content deleted and report resolved.` });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e?.message ?? "Failed to delete content." });
+    } finally {
       setReportsMutating((p) => {
         const n = { ...p };
         delete n[id];
         return n;
       });
-      return;
     }
-
-    // 3) Remove report from list
-    setReports((prev) => prev.filter((x) => x.id !== id));
-    setReportsTotal((t) => Math.max(0, t - 1));
-    setReportsMutating((p) => {
-      const n = { ...p };
-      delete n[id];
-      return n;
-    });
-    setBanner({ kind: "success", text: `${kind} content deleted and report resolved.` });
   }
 
   async function approveOne(id: string) {
@@ -905,10 +870,16 @@ export default function AdminStudyPage() {
     setMutating((prev) => ({ ...prev, [id]: "approve" }));
     setBanner(null);
 
-    const res = await supabase.from("study_materials").update({ approved: true }).eq("id", id);
+	    const resp = await fetch(`/api/study-admin/materials/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+	      body: JSON.stringify({ id }),
+    });
 
-    if (res.error) {
-      setBanner({ kind: "error", text: res.error.message ?? "Failed to approve." });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Failed to approve." });
       setMutating((prev) => {
         const n = { ...prev };
         delete n[id];
@@ -917,7 +888,6 @@ export default function AdminStudyPage() {
       return;
     }
 
-    // Optimistic remove from list if we're viewing pending
     if (status === "pending") {
       setItems((prev) => prev.filter((m) => m.id !== id));
       setTotal((t) => Math.max(0, t - 1));
@@ -927,7 +897,6 @@ export default function AdminStudyPage() {
         return n;
       });
     } else {
-      // In approved/all, just refetch the row list
       await fetchPage();
     }
 
@@ -944,20 +913,16 @@ export default function AdminStudyPage() {
     setMutating((prev) => ({ ...prev, [row.id]: "reject" }));
     setBanner(null);
 
-    // Best-effort delete file
-    const delFile = await supabase.storage.from(BUCKET).remove([row.file_path]);
-    if (delFile.error) {
-      setBanner({
-        kind: "warn",
-        text:
-          "Record will be rejected, but file delete failed (check storage policies). " +
-          (delFile.error.message ?? ""),
-      });
-    }
+	    const resp = await fetch(`/api/study-admin/materials/${row.id}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.id }),
+    });
 
-    const del = await supabase.from("study_materials").delete().eq("id", row.id);
-    if (del.error) {
-      setBanner({ kind: "error", text: del.error.message ?? "Failed to reject." });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Failed to reject." });
       setMutating((prev) => {
         const n = { ...prev };
         delete n[row.id];
@@ -989,11 +954,16 @@ export default function AdminStudyPage() {
     setBulkBusy(true);
     setBanner(null);
 
-    // batch update: approve all selected
-    const res = await supabase.from("study_materials").update({ approved: true }).in("id", selectedIds);
+	    const resp = await fetch("/api/study-admin/materials/bulk-approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selectedIds }),
+    });
 
-    if (res.error) {
-      setBanner({ kind: "error", text: res.error.message ?? "Bulk approve failed." });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
+      setBanner({ kind: "error", text: json?.error ?? "Bulk approve failed." });
       setBulkBusy(false);
       return;
     }
@@ -1142,12 +1112,19 @@ export default function AdminStudyPage() {
     setQaMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
 
-    const res = await supabase.from("study_questions").delete().eq("id", id);
-    if (res.error) {
+    const resp = await fetch("/api/admin/study/questions/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
       setQaMutating((p) => ({ ...p, [id]: false }));
-      setBanner({ kind: "error", text: res.error.message });
+      setBanner({ kind: "error", text: json?.error ?? "Failed to delete question." });
       return;
     }
+
     setQaMutating((p) => ({ ...p, [id]: false }));
     setBanner({ kind: "success", text: "Question deleted." });
     if (qaSelectedQ?.id === id) {
@@ -1163,12 +1140,19 @@ export default function AdminStudyPage() {
     setQaMutating((p) => ({ ...p, [id]: true }));
     setBanner(null);
 
-    const res = await supabase.from("study_answers").delete().eq("id", id);
-    if (res.error) {
+    const resp = await fetch("/api/admin/study/answers/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
       setQaMutating((p) => ({ ...p, [id]: false }));
-      setBanner({ kind: "error", text: res.error.message });
+      setBanner({ kind: "error", text: json?.error ?? "Failed to delete answer." });
       return;
     }
+
     setQaMutating((p) => ({ ...p, [id]: false }));
     setBanner({ kind: "success", text: "Answer deleted." });
     if (qaSelectedQ?.id) openAnswersDrawer(qaSelectedQ);
@@ -1180,17 +1164,26 @@ export default function AdminStudyPage() {
     setQaMutating((p) => ({ ...p, [q.id]: true }));
     setBanner(null);
 
-    const res = await supabase.from("study_questions").update({ solved: !q.solved }).eq("id", q.id);
-    if (res.error) {
+    const nextSolved = !q.solved;
+
+    const resp = await fetch("/api/admin/study/questions/toggle-solved", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: q.id, solved: nextSolved }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
       setQaMutating((p) => ({ ...p, [q.id]: false }));
-      setBanner({ kind: "error", text: res.error.message });
+      setBanner({ kind: "error", text: json?.error ?? "Failed to update question." });
       return;
     }
+
     setQaMutating((p) => ({ ...p, [q.id]: false }));
-    setBanner({ kind: "success", text: !q.solved ? "Marked as solved." : "Marked as unsolved." });
+    setBanner({ kind: "success", text: nextSolved ? "Marked as solved." : "Marked as unsolved." });
     fetchQuestions();
     if (qaSelectedQ?.id === q.id) {
-      setQaSelectedQ({ ...q, solved: !q.solved });
+      setQaSelectedQ({ ...q, solved: nextSolved });
     }
   }
 
@@ -1200,23 +1193,18 @@ export default function AdminStudyPage() {
     setQaMutating((p) => ({ ...p, [answerId]: true }));
     setBanner(null);
 
-    // unaccept all answers first
-    const u1 = await supabase.from("study_answers").update({ is_accepted: false }).eq("question_id", qid);
-    if (u1.error) {
+    const resp = await fetch("/api/admin/study/answers/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: qid, answerId }),
+    });
+    const json = await resp.json().catch(() => null);
+
+    if (!resp.ok || !json?.ok) {
       setQaMutating((p) => ({ ...p, [answerId]: false }));
-      setBanner({ kind: "error", text: u1.error.message });
+      setBanner({ kind: "error", text: json?.error ?? "Failed to accept answer." });
       return;
     }
-
-    const u2 = await supabase.from("study_answers").update({ is_accepted: true }).eq("id", answerId);
-    if (u2.error) {
-      setQaMutating((p) => ({ ...p, [answerId]: false }));
-      setBanner({ kind: "error", text: u2.error.message });
-      return;
-    }
-
-    // mark question solved
-    await supabase.from("study_questions").update({ solved: true }).eq("id", qid);
 
     setQaMutating((p) => ({ ...p, [answerId]: false }));
     setBanner({ kind: "success", text: "Accepted answer set." });
@@ -2380,7 +2368,7 @@ export default function AdminStudyPage() {
                         </button>
 
                         <a
-                          href={m.file_url}
+                          href={`/api/study/materials/${m.id}/download`}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
@@ -2634,7 +2622,7 @@ export default function AdminStudyPage() {
           previewItem ? (
             <div className="flex gap-2">
               <a
-                href={previewItem.file_url}
+                href={`/api/study/materials/${previewItem.id}/download`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
@@ -2700,7 +2688,7 @@ export default function AdminStudyPage() {
                 <div className="p-4 text-sm text-zinc-600">
                   Preview not available for this file type. Use{" "}
                   <a
-                    href={previewItem.file_url}
+                    href={`/api/study/materials/${previewItem.id}/download`}
                     target="_blank"
                     rel="noreferrer"
                     className="font-semibold text-zinc-900 underline"

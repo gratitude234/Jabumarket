@@ -898,7 +898,7 @@ export default function LibraryClient() {
                       <GhostButton href="/study/materials">Materials</GhostButton>
                       {m?.file_url ? (
                         <a
-                          href={m.file_url}
+                          href={`/api/study/materials/${m.id}/download`}
                           target="_blank"
                           rel="noreferrer"
                           className={cn(

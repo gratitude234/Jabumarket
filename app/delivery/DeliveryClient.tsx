@@ -1,4 +1,3 @@
-// app/delivery/DeliveryClient.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -11,12 +10,10 @@ import {
   Loader2,
   Phone,
   Search,
-  ShieldCheck,
-  Sparkles,
   X,
   ChevronDown,
   ChevronUp,
-  MessageSquareText,
+  MoreHorizontal,
 } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -31,14 +28,24 @@ type Initial = {
   zone: string;
   availability: string;
   verifiedOnly: boolean;
+
+  // kept for compatibility (not shown anymore)
   listingId: string;
   dropoff: string;
   buyerPhone: string;
   note: string;
+
   baseMessage: string;
   pickupLocation: string;
   listingTitle: string | null;
 };
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] ?? "D";
+  const b = parts[1]?.[0] ?? "";
+  return (a + b).toUpperCase();
+}
 
 export default function DeliveryClient({
   initial,
@@ -54,19 +61,17 @@ export default function DeliveryClient({
   );
   const [verifiedOnly, setVerifiedOnly] = useState<boolean>(!!initial.verifiedOnly);
 
-  const [dropoff, setDropoff] = useState(initial.dropoff);
-  const [buyerPhone, setBuyerPhone] = useState(initial.buyerPhone);
-  const [note, setNote] = useState(initial.note);
-
-  const [message, setMessage] = useState(initial.baseMessage);
+  // keep the message but remove the heavy editor UI
+  const [message] = useState(initial.baseMessage);
 
   const [toast, setToast] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
 
-  // ✅ Collapsible message section:
-  // - Open by default when coming from a listing (because pickup/item context matters)
-  // - Collapsed for generic delivery discovery
-  const [showMessage, setShowMessage] = useState<boolean>(!!initial.listingTitle);
+  // filters collapse to reduce page “noise”
+  const [showFilters, setShowFilters] = useState(false);
+
+  // per-card “More” toggle
+  const [openMoreId, setOpenMoreId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -88,19 +93,6 @@ export default function DeliveryClient({
     });
   }, [riders, q, zone, availability, verifiedOnly]);
 
-  const helpfulMessageTemplate = useMemo(() => {
-    const parts = [
-      initial.listingTitle
-        ? `Hi, I need delivery for an order on JABU MARKET.\nItem: ${initial.listingTitle}\nPickup: ${initial.pickupLocation}`
-        : `Hi, I need a delivery agent.`,
-      dropoff ? `Drop-off: ${dropoff}` : `Drop-off: (my location)`,
-      buyerPhone ? `My Phone: ${buyerPhone}` : "",
-      note ? `Note: ${note}` : "",
-    ].filter(Boolean);
-
-    return parts.join("\n");
-  }, [dropoff, buyerPhone, note, initial.listingTitle, initial.pickupLocation]);
-
   function showToast(text: string) {
     setToast(text);
     window.setTimeout(() => setToast(null), 2200);
@@ -118,200 +110,117 @@ export default function DeliveryClient({
     }
   }
 
-  const messageSummary = useMemo(() => {
-    const oneLine = message.replace(/\n+/g, " ").trim();
-    if (!oneLine) return "No message set";
-    return oneLine.length > 90 ? `${oneLine.slice(0, 90)}…` : oneLine;
-  }, [message]);
-
   return (
     <div className="space-y-4">
-      {/* Controls */}
+      {/* Minimal top bar (search + filter toggle) */}
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-zinc-900">Find a delivery agent</p>
-            <p className="mt-1 text-xs text-zinc-600">Search, filter, then message on WhatsApp.</p>
-          </div>
-          <div className="grid h-10 w-10 place-items-center rounded-2xl border bg-zinc-50">
-            <Filter className="h-4 w-4 text-zinc-800" />
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_180px]">
-          <div className="flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5">
-            <Search className="h-4 w-4 text-zinc-500" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name / phone / WhatsApp…"
-              className="w-full bg-transparent text-sm outline-none"
-            />
-            {q ? (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className="rounded-xl border bg-white p-2 hover:bg-zinc-50"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
+            <p className="text-sm font-semibold text-zinc-900">Delivery agents</p>
+            <p className="mt-1 text-xs text-zinc-600">
+              Tap WhatsApp to message an agent.
+            </p>
           </div>
 
-          <select
-            value={zone}
-            onChange={(e) => setZone(e.target.value)}
-            className="rounded-2xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900"
-          >
-            {ZONES.map((z) => (
-              <option key={z} value={z}>
-                {z === "all" ? "All zones" : z}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl border bg-white p-1">
-          {(["all", "available", "busy"] as Availability[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setAvailability(t)}
-              className={cn(
-                "rounded-xl px-3 py-2 text-xs font-semibold capitalize",
-                availability === t ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border bg-zinc-50 px-3 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-zinc-900">Verified only</p>
-            <p className="text-[11px] text-zinc-600">Show only delivery agents verified by admin.</p>
-          </div>
           <button
             type="button"
-            onClick={() => setVerifiedOnly((v) => !v)}
-            className={cn(
-              "h-9 w-16 rounded-full border p-1 transition",
-              verifiedOnly ? "bg-black" : "bg-white"
-            )}
-            aria-pressed={verifiedOnly}
+            onClick={() => setShowFilters((s) => !s)}
+            className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
           >
-            <span
-              className={cn(
-                "block h-7 w-7 rounded-full bg-white shadow transition",
-                verifiedOnly ? "translate-x-7" : "translate-x-0"
-              )}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* ✅ Quick message (optional) - collapsible */}
-      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <button
-          type="button"
-          onClick={() => setShowMessage((s) => !s)}
-          className="flex w-full items-start justify-between gap-3 text-left"
-        >
-          <div className="flex items-start gap-2">
-            <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-2xl border bg-zinc-50">
-              <MessageSquareText className="h-4 w-4 text-zinc-800" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-zinc-900">Quick message (optional)</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                {showMessage ? "Edit what will be sent to WhatsApp." : messageSummary}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-1 inline-flex items-center gap-2">
-            <span className="rounded-full border bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-800">
-              {showMessage ? "Hide" : "Edit"}
-            </span>
-            {showMessage ? (
+            <Filter className="h-4 w-4" />
+            Filters
+            {showFilters ? (
               <ChevronUp className="h-4 w-4 text-zinc-700" />
             ) : (
               <ChevronDown className="h-4 w-4 text-zinc-700" />
             )}
-          </div>
-        </button>
+          </button>
+        </div>
 
-        {showMessage ? (
-          <div className="mt-4">
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setMessage(helpfulMessageTemplate)}
-                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-                title="Regenerate message from fields"
-              >
-                <Sparkles className="h-4 w-4" />
-                Regenerate
-              </button>
+        <div className="mt-3 flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5">
+          <Search className="h-4 w-4 text-zinc-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name / phone / WhatsApp…"
+            className="w-full bg-transparent text-sm outline-none"
+          />
+          {q ? (
+            <button
+              type="button"
+              onClick={() => setQ("")}
+              className="rounded-xl border bg-white p-2 hover:bg-zinc-50"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
 
-              <button
-                type="button"
-                onClick={() => copyText(message)}
-                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-                disabled={copying}
+        {showFilters ? (
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-2 sm:grid-cols-[1fr_240px]">
+              <div className="grid grid-cols-3 gap-2 rounded-2xl border bg-white p-1">
+                {(["all", "available", "busy"] as Availability[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setAvailability(t)}
+                    className={cn(
+                      "rounded-xl px-3 py-2 text-xs font-semibold capitalize",
+                      availability === t
+                        ? "bg-black text-white"
+                        : "text-zinc-800 hover:bg-zinc-50"
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                value={zone}
+                onChange={(e) => setZone(e.target.value)}
+                className="rounded-2xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900"
               >
-                {copying ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Copy className="h-4 w-4" />
+                {ZONES.map((z) => (
+                  <option key={z} value={z}>
+                    {z === "all" ? "All zones" : z}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setVerifiedOnly((v) => !v)}
+              className={cn(
+                "flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left",
+                verifiedOnly ? "bg-zinc-50" : "bg-white"
+              )}
+              aria-pressed={verifiedOnly}
+            >
+              <div>
+                <p className="text-xs font-semibold text-zinc-900">Verified only</p>
+                <p className="mt-0.5 text-[11px] text-zinc-600">
+                  Show only agents verified by admin.
+                </p>
+              </div>
+
+              <span
+                className={cn(
+                  "h-9 w-16 rounded-full border p-1 transition",
+                  verifiedOnly ? "bg-black" : "bg-white"
                 )}
-                Copy
-              </button>
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700">Drop-off (optional)</label>
-                <input
-                  value={dropoff}
-                  onChange={(e) => setDropoff(e.target.value)}
-                  placeholder="e.g. Male Hostel 4, Gate B"
-                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
+              >
+                <span
+                  className={cn(
+                    "block h-7 w-7 rounded-full bg-white shadow transition",
+                    verifiedOnly ? "translate-x-7" : "translate-x-0"
+                  )}
                 />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700">My phone (optional)</label>
-                <input
-                  value={buyerPhone}
-                  onChange={(e) => setBuyerPhone(e.target.value)}
-                  placeholder="e.g. 08012345678"
-                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
-                />
-              </div>
-
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-xs font-semibold text-zinc-700">Note (optional)</label>
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. Call when you get to the gate..."
-                  className="h-11 w-full rounded-2xl border bg-white px-3 text-sm outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-3xl border bg-zinc-50 p-3">
-              <p className="text-xs font-semibold text-zinc-900">Message preview (editable)</p>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={7}
-                className="mt-2 w-full resize-none rounded-2xl border bg-white p-3 text-sm text-zinc-900 outline-none"
-              />
-            </div>
+              </span>
+            </button>
           </div>
         ) : null}
       </div>
@@ -319,65 +228,84 @@ export default function DeliveryClient({
       {/* Results */}
       <div className="rounded-3xl border bg-white shadow-sm">
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-zinc-700" />
-            <p className="text-sm font-semibold text-zinc-900">
-              Delivery Agents <span className="text-xs text-zinc-500">({filtered.length})</span>
-            </p>
-          </div>
+          <p className="text-sm font-semibold text-zinc-900">
+            Agents <span className="text-xs text-zinc-500">({filtered.length})</span>
+          </p>
         </div>
 
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-zinc-900">No delivery agents found</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Try removing filters or searching by phone/WhatsApp.
-            </p>
+            <p className="text-sm font-semibold text-zinc-900">No agents found</p>
+            <p className="mt-1 text-sm text-zinc-600">Try clearing filters or searching again.</p>
           </div>
         ) : (
           <div className="grid gap-3 p-4 sm:grid-cols-2">
             {filtered.map((r) => {
+              const name = r.name ?? "Unnamed delivery agent";
               const wa = (r.whatsapp ?? r.phone)?.trim() || "";
               const canWhatsApp = !!wa;
 
               const href = canWhatsApp ? getWhatsAppLink(wa, message) : null;
+              const numberToCopy = r.phone ? `+${r.phone}` : wa ? `+${wa}` : "";
+
+              const isMoreOpen = openMoreId === r.id;
 
               return (
                 <div key={r.id} className="rounded-3xl border bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-900">
-                        {r.name ?? "Unnamed delivery agent"}
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Zone: {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
-                      </p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border bg-zinc-50 text-xs font-extrabold text-zinc-800">
+                        {initials(name)}
+                      </div>
 
-                      {r.fee_note ? <p className="mt-2 text-xs text-zinc-700">{r.fee_note}</p> : null}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900">{name}</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {r.zone ?? "—"} • {r.is_available ? "Available" : "Busy"}
+                        </p>
 
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {r.verified ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Verified
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {r.verified ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Verified
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
+                              Not verified
+                            </span>
+                          )}
+
+                          <span
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                              r.is_available
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-amber-200 bg-amber-50 text-amber-800"
+                            )}
+                          >
+                            {r.is_available ? "Available now" : "Currently busy"}
                           </span>
-                        ) : (
-                          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-semibold text-zinc-700">
-                            Not verified
-                          </span>
-                        )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-xs text-zinc-500">Phone</p>
-                      <p className="text-xs font-semibold text-zinc-900">
-                        {r.phone ? `+${r.phone}` : "—"}
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenMoreId((cur) => (cur === r.id ? null : r.id))}
+                      className={cn(
+                        "inline-flex items-center justify-center rounded-2xl border bg-white p-2 hover:bg-zinc-50",
+                        (!r.phone && !wa) && "opacity-50"
+                      )}
+                      disabled={!r.phone && !wa}
+                      aria-label="More actions"
+                    >
+                      <MoreHorizontal className="h-4 w-4 text-zinc-800" />
+                    </button>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  {/* Primary action */}
+                  <div className="mt-4">
                     <a
                       href={href ?? "#"}
                       onClick={(e) => {
@@ -386,45 +314,59 @@ export default function DeliveryClient({
                       target={href ? "_blank" : undefined}
                       rel={href ? "noreferrer" : undefined}
                       className={cn(
-                        "rounded-2xl px-3 py-2 text-center text-sm font-semibold no-underline",
+                        "block w-full rounded-2xl px-3 py-3 text-center text-sm font-semibold no-underline",
                         href ? "bg-black text-white hover:bg-zinc-800" : "bg-zinc-200 text-zinc-500"
                       )}
                     >
                       WhatsApp
                     </a>
 
-                    <a
-                      href={r.phone ? `tel:+${r.phone}` : "#"}
-                      onClick={(e) => {
-                        if (!r.phone) e.preventDefault();
-                      }}
-                      className={cn(
-                        "rounded-2xl border bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50",
-                        !r.phone && "pointer-events-none opacity-50"
-                      )}
-                    >
-                      <span className="inline-flex items-center justify-center gap-2">
-                        <Phone className="h-4 w-4" /> Call
-                      </span>
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={() => copyText(r.phone ? `+${r.phone}` : wa ? `+${wa}` : "")}
-                      disabled={!r.phone && !wa}
-                      className={cn(
-                        "col-span-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50",
-                        (!r.phone && !wa) && "opacity-50"
-                      )}
-                    >
-                      Copy number
-                    </button>
+                    {!canWhatsApp ? (
+                      <p className="mt-2 text-xs text-amber-700">
+                        No WhatsApp number set for this agent.
+                      </p>
+                    ) : null}
                   </div>
 
-                  {!canWhatsApp ? (
-                    <p className="mt-3 text-xs text-amber-700">
-                      No WhatsApp number set for this delivery agent.
-                    </p>
+                  {/* “the rest” (Call + Copy) */}
+                  {isMoreOpen ? (
+                    <div className="mt-3 rounded-2xl border bg-zinc-50 p-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <a
+                          href={r.phone ? `tel:+${r.phone}` : "#"}
+                          onClick={(e) => {
+                            if (!r.phone) e.preventDefault();
+                          }}
+                          className={cn(
+                            "rounded-2xl border bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50",
+                            !r.phone && "pointer-events-none opacity-50"
+                          )}
+                        >
+                          <span className="inline-flex items-center justify-center gap-2">
+                            <Phone className="h-4 w-4" /> Call
+                          </span>
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => copyText(numberToCopy)}
+                          disabled={!numberToCopy || copying}
+                          className={cn(
+                            "rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50",
+                            (!numberToCopy || copying) && "opacity-50"
+                          )}
+                        >
+                          <span className="inline-flex items-center justify-center gap-2">
+                            {copying ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                            Copy
+                          </span>
+                        </button>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               );

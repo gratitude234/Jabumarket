@@ -63,6 +63,13 @@ function normalizeQuery(v: string) {
   return v.trim().replace(/\s+/g, " ");
 }
 
+function safeSearchTerm(v: string) {
+  return normalizeQuery(v)
+    .replace(/[,%*()\[\]{}]/g, " ")
+    .replace(/["'`]/g, " ")
+    .trim();
+}
+
 type SortKey = "newest" | "oldest" | "downloads_desc" | "downloads_asc";
 
 type MaterialTypeKey =
@@ -691,6 +698,10 @@ export default function MaterialsClient() {
   const typeParam = (sp.get("type") ?? "all") as MaterialTypeKey;
   const sortParam = (sp.get("sort") ?? "newest") as SortKey;
 
+  // Scope toggle: mine vs all
+  const mineParam = sp.get("mine") ?? "";
+  const mineOnly = mineParam === "1";
+
   const verifiedOnly = verifiedParam === "1";
   const featuredOnly = featuredParam === "1";
 
@@ -727,6 +738,13 @@ export default function MaterialsClient() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
+  // Personalization
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [myBadge, setMyBadge] = useState<string | null>(null);
+  const [scopeDept, setScopeDept] = useState<string>("");
+  const [scopeLevel, setScopeLevel] = useState<number | null>(null);
+  const [scopeSemesterDb, setScopeSemesterDb] = useState<string>("");
+
   // Saved
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -747,7 +765,7 @@ export default function MaterialsClient() {
 
   const filtersKey = useMemo(() => {
     return [
-      normalizeQuery(qParam),
+      safeSearchTerm(qParam),
       levelParam,
       semesterParam,
       facultyParam,
@@ -758,6 +776,7 @@ export default function MaterialsClient() {
       sortParam,
       verifiedOnly ? "v1" : "v0",
       featuredOnly ? "f1" : "f0",
+      mineOnly ? "m1" : "m0",
     ].join("|");
   }, [
     qParam,
@@ -771,6 +790,7 @@ export default function MaterialsClient() {
     sortParam,
     verifiedOnly,
     featuredOnly,
+    mineOnly,
   ]);
 
   // Reset list when filters change
@@ -849,16 +869,113 @@ export default function MaterialsClient() {
 
   useEffect(() => setQ(qParam), [qParam]);
 
+  // Load user scope badge (department/level/semester) for "My materials".
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user ?? null;
+        if (!user) {
+          if (mounted) {
+            setPrefsLoaded(true);
+            setMyBadge(null);
+          }
+          return;
+        }
+
+        const legacy = await supabase
+          .from("study_user_preferences")
+          .select("department,level,semester")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        let deptName = "";
+        let level: number | null = null;
+        let semester = "";
+
+        if (!legacy.error && legacy.data) {
+          deptName = String((legacy.data as any)?.department ?? "").trim();
+          level = (legacy.data as any)?.level ?? null;
+          semester = String((legacy.data as any)?.semester ?? "").trim();
+        } else {
+          const norm = await supabase
+            .from("study_preferences")
+            .select("level")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (!norm.error && norm.data) level = (norm.data as any)?.level ?? null;
+        }
+
+        const badgeParts: string[] = [];
+        if (deptName) badgeParts.push(deptName);
+        if (typeof level === "number" && Number.isFinite(level)) badgeParts.push(`${level}L`);
+        if (semester) badgeParts.push(semester.toLowerCase() === "first" ? "1st" : semester.toLowerCase() === "second" ? "2nd" : semester);
+
+        if (mounted) {
+          setMyBadge(badgeParts.length ? badgeParts.join(" • ") : null);
+          setScopeDept(deptName);
+          setScopeLevel(typeof level === "number" && Number.isFinite(level) ? level : null);
+          setScopeSemesterDb(mapSemesterParamToDb(semester));
+          setPrefsLoaded(true);
+        }
+      } catch {
+        if (mounted) {
+          setPrefsLoaded(true);
+          setMyBadge(null);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Auto-enable "My materials" after onboarding (unless user already chose a scope).
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    if (mineParam) return;
+    if (!myBadge) return;
+
+    router.replace(
+      buildHref(pathname, {
+        q: normalizeQuery(q) || null,
+        level: levelParam || null,
+        semester: semesterParam || null,
+        faculty: facultyParam || null,
+        dept: deptParam || null,
+        course: courseParam || null,
+        session: sessionParam || null,
+        type: typeParam !== "all" ? typeParam : null,
+        sort: sortParam !== "newest" ? sortParam : null,
+        verified: verifiedOnly ? "1" : null,
+        featured: featuredOnly ? "1" : null,
+        mine: "1",
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsLoaded]);
+
   // Load filter options
   useEffect(() => {
     let mounted = true;
     (async () => {
       setOptionsLoading(true);
-      const cRes = await supabase
+      let q = supabase
         .from("study_courses")
         .select("id,faculty,department,level,semester,course_code,course_title")
         .order("course_code", { ascending: true })
         .limit(3000);
+
+      // When in "My materials", keep dropdowns scoped too (best-effort).
+      if (mineOnly) {
+        if (scopeDept) q = q.eq("department", scopeDept);
+        if (typeof scopeLevel === "number" && Number.isFinite(scopeLevel)) q = q.eq("level", scopeLevel);
+        if (scopeSemesterDb) q = q.eq("semester", scopeSemesterDb);
+      }
+
+      const cRes = await q;
 
       if (!mounted) return;
 
@@ -875,7 +992,7 @@ export default function MaterialsClient() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [mineOnly, scopeDept, scopeLevel, scopeSemesterDb]);
 
   const facultyOptions = useMemo(() => {
     const uniq = new Set<string>();
@@ -930,69 +1047,31 @@ export default function MaterialsClient() {
     }
 
     try {
-      let query = supabase
-        .from("study_materials")
-        .select(
-          `
-            id,title,description,file_url,file_path,session,approved,created_at,downloads,course_id,
-            material_type,featured,verified,
-            study_courses:course_id!inner(id,faculty,department,level,semester,course_code,course_title)
-          `,
-          { count: "exact" }
-        )
-        .eq("approved", true);
+      const url = new URL("/api/study/materials", window.location.origin);
+      url.searchParams.set("page", String(nextPage));
+      url.searchParams.set("page_size", String(PAGE_SIZE));
 
       const qNorm = normalizeQuery(qParam);
-      if (qNorm) {
-        query = query.or(
-          `title.ilike.%${qNorm}%,description.ilike.%${qNorm}%,study_courses.course_code.ilike.%${qNorm}%,study_courses.course_title.ilike.%${qNorm}%,study_courses.department.ilike.%${qNorm}%,study_courses.faculty.ilike.%${qNorm}%`
-        );
-      }
+      if (qNorm) url.searchParams.set("q", qNorm);
+      if (levelParam) url.searchParams.set("level", String(levelParam));
+      if (semesterParam) url.searchParams.set("semester", String(semesterParam));
+      if (facultyParam) url.searchParams.set("faculty", String(facultyParam));
+      if (deptParam) url.searchParams.set("dept", String(deptParam));
+      if (courseParam) url.searchParams.set("course", String(courseParam));
+      if (sessionParam.trim()) url.searchParams.set("session", sessionParam.trim());
+      if (typeParam && typeParam !== "all") url.searchParams.set("type", String(typeParam));
+      if (verifiedOnly) url.searchParams.set("verified", "1");
+      if (featuredOnly) url.searchParams.set("featured", "1");
+      if (sortParam) url.searchParams.set("sort", String(sortParam));
+      if (mineOnly) url.searchParams.set("mine", "1");
 
-      if (levelParam) {
-        const lv = Number(levelParam);
-        if (Number.isFinite(lv)) query = query.eq("study_courses.level", lv);
-      }
+      const res = await fetch(url.toString(), { cache: "no-store" });
+      const json = await res.json();
 
-      if (semesterParam) {
-        const sem = mapSemesterParamToDb(semesterParam);
-        if (sem) query = query.eq("study_courses.semester", sem);
-      }
-
-      if (facultyParam) query = query.eq("study_courses.faculty", facultyParam);
-      if (deptParam) query = query.eq("study_courses.department", deptParam);
-      if (courseParam) query = query.eq("study_courses.course_code", courseParam.trim().toUpperCase());
-
-      const sess = sessionParam.trim();
-      if (sess) query = query.ilike("session", `%${sess}%`);
-
-      const dbType = mapMaterialTypeToDb(typeParam);
-      if (dbType) query = query.eq("material_type", dbType);
-
-      if (verifiedOnly) query = query.eq("verified", true);
-      if (featuredOnly) query = query.eq("featured", true);
-
-      if (sortParam === "oldest") query = query.order("created_at", { ascending: true });
-      else if (sortParam === "downloads_desc")
-        query = query.order("downloads", { ascending: false, nullsFirst: false });
-      else if (sortParam === "downloads_asc") query = query.order("downloads", { ascending: true, nullsFirst: false });
-      else query = query.order("created_at", { ascending: false });
-
-      const from = (nextPage - 1) * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-
-      const res = await query.range(from, to);
-
-      if (res.error) {
-        const msg = res.error.message || "Unknown error";
+      if (!res.ok || !json?.ok) {
+        const msg = json?.error || "Unknown error";
         setLoadError(msg);
-
-        if (msg.includes("material_type") || msg.includes("featured") || msg.includes("verified")) {
-          setSchemaHint(
-            "Your database is missing some columns (material_type / featured / verified). Add them to study_materials, then refresh this page."
-          );
-        }
-
+        if (json?.schemaHint) setSchemaHint(String(json.schemaHint));
         if (isFirst) {
           setMaterials([]);
           setTotal(0);
@@ -1000,10 +1079,10 @@ export default function MaterialsClient() {
         return;
       }
 
-      const totalCount = res.count ?? 0;
-      setTotal(totalCount);
+      const totalCount = Number(json?.total ?? 0);
+      setTotal(Number.isFinite(totalCount) ? totalCount : 0);
 
-      const newRows = ((res.data as any[]) ?? []).filter(Boolean) as MaterialRow[];
+      const newRows = ((json?.items as any[]) ?? []).filter(Boolean) as MaterialRow[];
 
       setMaterials((prev) => {
         if (isFirst) return newRows;
@@ -1048,6 +1127,7 @@ export default function MaterialsClient() {
           sort: sortParam !== "newest" ? sortParam : null,
           verified: verifiedOnly ? "1" : null,
           featured: featuredOnly ? "1" : null,
+          mine: mineOnly ? "1" : null,
         })
       );
     }, 350);
@@ -1070,6 +1150,7 @@ export default function MaterialsClient() {
     sortParam,
     verifiedOnly,
     featuredOnly,
+    mineOnly,
   ]);
 
   function openFilters() {
@@ -1100,6 +1181,7 @@ export default function MaterialsClient() {
         sort: draftSort !== "newest" ? draftSort : null,
         verified: draftVerified ? "1" : null,
         featured: draftFeatured ? "1" : null,
+        mine: mineOnly ? "1" : null,
       })
     );
     setDrawerOpen(false);
@@ -1107,7 +1189,11 @@ export default function MaterialsClient() {
 
   function clearAll() {
     setQ("");
-    router.replace(pathname);
+    router.replace(
+      buildHref(pathname, {
+        mine: mineOnly ? "1" : null,
+      })
+    );
   }
 
   async function bumpDownloads(materialId: string) {
@@ -1132,7 +1218,9 @@ export default function MaterialsClient() {
       sessionParam ||
       (typeParam && typeParam !== "all") ||
       verifiedOnly ||
-      featuredOnly
+      featuredOnly ||
+      (sortParam && sortParam !== "newest") ||
+      mineOnly
   );
 
   const showingFrom = total === 0 ? 0 : 1;
@@ -1193,8 +1281,79 @@ export default function MaterialsClient() {
       </div>
 
       <Card className="rounded-3xl">
-        <PageHeader title="Materials" subtitle="Approved past questions, handouts, slides & notes." right={null} />
+        <PageHeader
+          title="Materials"
+          subtitle="Approved past questions, handouts, slides & notes."
+          right={
+            <div className="hidden sm:flex items-center gap-2">
+              {myBadge ? (
+                <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
+                  <Star className="h-4 w-4" />
+                  {myBadge}
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
+                <Sparkles className="h-4 w-4" />
+                {activeSortLabel}
+              </span>
+            </div>
+          }
+        />
       </Card>
+
+      {/* Scope toggle */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip
+          active={mineOnly}
+          onClick={() =>
+            router.replace(
+              buildHref(pathname, {
+                q: qParam || null,
+                level: levelParam || null,
+                semester: semesterParam || null,
+                faculty: facultyParam || null,
+                dept: deptParam || null,
+                course: courseParam || null,
+                session: sessionParam || null,
+                type: typeParam !== "all" ? typeParam : null,
+                sort: sortParam !== "newest" ? sortParam : null,
+                verified: verifiedOnly ? "1" : null,
+                featured: featuredOnly ? "1" : null,
+                mine: "1",
+              })
+            )
+          }
+          title="Show materials tailored to your department/level/semester (when available)"
+        >
+          <Star className="h-4 w-4" />
+          My materials
+        </Chip>
+        <Chip
+          active={!mineOnly}
+          onClick={() =>
+            router.replace(
+              buildHref(pathname, {
+                q: qParam || null,
+                level: levelParam || null,
+                semester: semesterParam || null,
+                faculty: facultyParam || null,
+                dept: deptParam || null,
+                course: courseParam || null,
+                session: sessionParam || null,
+                type: typeParam !== "all" ? typeParam : null,
+                sort: sortParam !== "newest" ? sortParam : null,
+                verified: verifiedOnly ? "1" : null,
+                featured: featuredOnly ? "1" : null,
+                mine: null,
+              })
+            )
+          }
+          title="Browse materials across all departments"
+        >
+          <BookOpen className="h-4 w-4" />
+          All materials
+        </Chip>
+      </div>
 
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
       <div className="sticky top-16 z-30">

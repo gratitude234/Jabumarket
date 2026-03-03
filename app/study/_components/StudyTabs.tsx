@@ -10,20 +10,8 @@ type Tab = {
   match?: "exact" | "prefix";
 };
 
-const tabs: Tab[] = [
-  { href: "/study", label: "Home", match: "exact" },
-  { href: "/study/materials", label: "Materials", match: "prefix" },
-  { href: "/study/practice", label: "Practice", match: "prefix" },
-  { href: "/study/library", label: "Library", match: "prefix" },
-  { href: "/study/history", label: "History", match: "prefix" },
-  { href: "/study/questions", label: "Questions", match: "prefix" },
-];
-
 function isActive(pathname: string, tab: Tab) {
   if (tab.match === "exact") return pathname === tab.href;
-
-  // Strict prefix match: "/study/materials" matches "/study/materials" and "/study/materials/..."
-  // but not "/study/materials-archive"
   return pathname === tab.href || pathname.startsWith(tab.href + "/");
 }
 
@@ -31,16 +19,46 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-export default function StudyTabs() {
+type ContributorStatus = "not_applied" | "pending" | "approved" | "rejected";
+
+export default function StudyTabs({
+  showUploadTab = false,
+  contributorStatus,
+}: {
+  showUploadTab?: boolean;
+  contributorStatus?: ContributorStatus;
+}) {
   const pathname = usePathname();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const tabs: Tab[] = useMemo(() => {
+    const base: Tab[] = [
+      { href: "/study", label: "Home", match: "exact" },
+      { href: "/study/materials", label: "Materials", match: "prefix" },
+      { href: "/study/practice", label: "Practice", match: "prefix" },
+      { href: "/study/library", label: "Library", match: "prefix" },
+      { href: "/study/history", label: "History", match: "prefix" },
+      { href: "/study/questions", label: "Questions", match: "prefix" },
+    ];
+
+    // Only show upload if user is approved Course Rep / Dept Librarian
+    if (showUploadTab) {
+      base.splice(2, 0, { href: "/study/materials/upload", label: "Upload", match: "prefix" });
+    }
+
+    // If not approved yet, surface the workflow as a first-class tab
+    if (!showUploadTab && contributorStatus && contributorStatus !== "approved") {
+      base.splice(1, 0, { href: "/study/apply-rep", label: "Contribute", match: "prefix" });
+    }
+
+    return base;
+  }, [showUploadTab, contributorStatus]);
 
   const activeHref = useMemo(() => {
     const t = tabs.find((tab) => isActive(pathname, tab));
     return t?.href ?? "/study";
-  }, [pathname]);
+  }, [pathname, tabs]);
 
-  // Smoothly scroll active tab into view on mount / route change (mobile polish)
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -48,7 +66,6 @@ export default function StudyTabs() {
     const el = scroller.querySelector<HTMLAnchorElement>(`a[data-tab="${activeHref}"]`);
     if (!el) return;
 
-    // If it’s already visible enough, do nothing; otherwise center it.
     el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [activeHref]);
 
@@ -61,7 +78,6 @@ export default function StudyTabs() {
       )}
     >
       <div className="relative px-4 py-3 md:px-4 md:py-2">
-        {/* Edge fades to hint horizontal scroll (mobile) */}
         <div className="pointer-events-none absolute left-4 top-0 h-full w-6 bg-gradient-to-r from-background/90 to-transparent md:from-card/90" />
         <div className="pointer-events-none absolute right-4 top-0 h-full w-6 bg-gradient-to-l from-background/90 to-transparent md:from-card/90" />
 
@@ -69,7 +85,6 @@ export default function StudyTabs() {
           ref={scrollerRef}
           className={cn(
             "flex items-center gap-2 overflow-x-auto",
-            // Hide scrollbar (no plugin needed)
             "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           )}
         >

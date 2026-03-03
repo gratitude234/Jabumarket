@@ -508,6 +508,12 @@ export default function OnboardingClient() {
         user_id: user.id,
         updated_at: new Date().toISOString(),
       } as any);
+
+      // Also touch normalized prefs so Study Home doesn't keep prompting.
+      await supabase.from("study_preferences").upsert({
+        user_id: user.id,
+        updated_at: new Date().toISOString(),
+      } as any);
     } catch {
       // ignore
     }
@@ -559,6 +565,20 @@ export default function OnboardingClient() {
 
       const { error } = await supabase.from("study_user_preferences").upsert(payload);
       if (error) throw error;
+
+      // Keep the normalized table in sync (used by Study Home personalization).
+      // Even in manual mode (no IDs), we still store `level` so the banner disappears.
+      const normalized: any = {
+        user_id: user.id,
+        level,
+        updated_at: new Date().toISOString(),
+      };
+      if (!manualMode) {
+        normalized.faculty_id = facultyId;
+        normalized.department_id = departmentId;
+      }
+      const normRes = await supabase.from("study_preferences").upsert(normalized);
+      if (normRes.error) throw normRes.error;
 
       setBanner({ tone: "success", title: "Saved", description: "Taking you to Study…" });
 

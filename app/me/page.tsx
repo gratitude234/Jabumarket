@@ -1,276 +1,699 @@
 // app/me/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
-  ShieldAlert,
-  User,
-  Phone,
-  MapPin,
-  Store,
-  ArrowRight,
-  LogOut,
-  Save,
-  Sparkles,
-  UploadCloud,
+  BookOpen,
+  Building2,
+  ChevronRight,
   FileText,
-  X,
-  Loader2,
-  Package,
-  ChevronDown,
-  ChevronUp,
-  PencilLine,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  ShieldCheck,
+  Store,
+  User,
 } from "lucide-react";
+
+import { supabase } from "@/lib/supabase";
+
+/* --------------------------------- Types -------------------------------- */
+
+type TabKey = "overview" | "profile" | "verification" | "account";
 
 type VendorType = "food" | "mall" | "student" | "other";
 
-type VerificationStatus =
-  | "unverified"
-  | "requested"
-  | "under_review"
-  | "verified"
-  | "rejected"
-  | "suspended";
+type Me = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+};
 
 type Vendor = {
   id: string;
-  user_id?: string | null;
-  name: string;
+  user_id: string;
+  name: string | null;
   whatsapp: string | null;
   phone: string | null;
   location: string | null;
-  vendor_type: VendorType;
+  vendor_type: VendorType | null;
 
-  // legacy
-  verified?: boolean | null;
+  verified: boolean | null;
+  verification_status: string | null;
 
-  // new
-  verification_status?: VerificationStatus | null;
-  verification_requested_at?: string | null;
-  verified_at?: string | null;
-  rejected_at?: string | null;
-  rejection_reason?: string | null;
-  suspended_at?: string | null;
-  suspension_reason?: string | null;
-};
-
-type VerificationRequest = {
-  id: string;
-  vendor_id: string;
-  status: "requested" | "under_review" | "approved" | "rejected";
-  note: string | null;
+  verified_at: string | null;
+  rejected_at: string | null;
   rejection_reason: string | null;
-  created_at: string;
-  reviewed_at: string | null;
+
+  created_at?: string;
 };
 
-type VerificationDoc = {
-  id: string;
-  vendor_id: string;
-  doc_type: string;
-  file_path: string;
-  created_at: string;
+type StudyRole = "course_rep" | "dept_librarian";
+type StudyStatus = "not_applied" | "pending" | "approved" | "rejected";
+
+type StudyScope = {
+  faculty_id: string | null;
+  department_id: string | null;
+  levels: number[] | null;
+  all_levels: boolean;
 };
 
-type Banner = { type: "success" | "error" | "info"; text: string } | null;
+type StudyMeResponse =
+  | { ok: false; code?: string; message?: string }
+  | {
+      ok: true;
+      status: StudyStatus;
+      role: StudyRole | null;
+      scope: StudyScope | null;
+      rep: { created_at: string; active: boolean | null } | null;
+      application:
+        | null
+        | {
+            id: string;
+            created_at: string;
+            status: string;
+            role: string | null;
+            faculty_id: string | null;
+            department_id: string | null;
+            level: number | null;
+            levels: number[] | null;
+            decision_reason: string | null;
+            note: string | null;
+          };
+    };
 
-const DOC_TYPES = [
-  { key: "id_card", label: "ID Card" },
-  { key: "utility_bill", label: "Utility Bill" },
-  { key: "business_reg", label: "Business Reg." },
-  { key: "selfie", label: "Selfie" },
-] as const;
+type RoleFlags = {
+  // Market
+  isVendor: boolean;
+  isVerifiedVendor: boolean;
 
-function isNoRowError(err: any) {
-  const msg = String(err?.message ?? "");
-  const code = String(err?.code ?? "");
-  return code === "PGRST116" || msg.toLowerCase().includes("0 rows");
+  // Study
+  studyLoading: boolean;
+  studyStatus: StudyStatus | null;
+  studyRole: StudyRole | null;
+  isStudyContributor: boolean; // approved rep or librarian
+};
+
+/* -------------------------------- Helpers -------------------------------- */
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
 }
 
-function isAbortError(err: any) {
-  const name = String(err?.name ?? "");
-  const msg = String(err?.message ?? "");
-  return name === "AbortError" || msg.toLowerCase().includes("aborted");
+function initials(nameOrEmail?: string | null) {
+  const s = (nameOrEmail ?? "").trim();
+  if (!s) return "U";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] ?? "U";
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (a + b).toUpperCase();
+}
+
+function pillTone(kind: "good" | "warn" | "base") {
+  if (kind === "good") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (kind === "warn") return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-zinc-50 text-zinc-700 border-zinc-200";
+}
+
+function normalizePhone(input?: string | null) {
+  if (!input) return "";
+  return input.replace(/[^\d+]/g, "").trim();
 }
 
 function defaultVendorNameFromEmail(email?: string | null) {
-  if (!email) return "New Vendor";
-  const prefix = email.split("@")[0]?.trim();
-  return prefix ? prefix : "New Vendor";
+  const e = (email ?? "").trim();
+  if (!e) return "My Store";
+  const local = e.split("@")[0] ?? "My Store";
+  return local
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase())
+    .slice(0, 40);
 }
 
-function normalizePhone(s: string) {
-  return s.replace(/[^\d]/g, "");
-}
+/* ---------------------------------- Page --------------------------------- */
 
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+export default function MePage() {
+  const router = useRouter();
+  const sp = useSearchParams();
 
-/**
- * ✅ Hydration-safe datetime formatter:
- * Avoids toLocaleString() during first render, which can vary by runtime/timezone.
- * Deterministic UTC output to prevent hydration mismatches.
- */
-function formatDateTimeUTC(iso: string) {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "—";
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const min = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
-}
+  const [loading, setLoading] = useState(true);
+  const [me, setMe] = useState<Me | null>(null);
+  const [vendor, setVendor] = useState<Vendor | null>(null);
 
-function Chip({
-  tone = "neutral",
-  children,
-}: {
-  tone?: "neutral" | "good" | "warn" | "bad";
-  children: React.ReactNode;
-}) {
-  const styles =
-    tone === "good"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : tone === "warn"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : tone === "bad"
-      ? "bg-rose-50 text-rose-700 border-rose-200"
-      : "bg-zinc-50 text-zinc-700 border-zinc-200";
+  const [study, setStudy] = useState<StudyMeResponse | null>(null);
+  const [studyLoading, setStudyLoading] = useState(true);
+
+  const activeTab = (sp.get("tab") as TabKey) || "overview";
+
+  const roles: RoleFlags = useMemo(() => {
+    const isVendor = !!vendor?.id;
+    const isVerifiedVendor = !!vendor?.verified || vendor?.verification_status === "verified";
+
+    let studyStatus: StudyStatus | null = null;
+    let studyRole: StudyRole | null = null;
+    let isStudyContributor = false;
+
+    if (study && "ok" in study && study.ok === true) {
+      studyStatus = study.status;
+      studyRole = study.role;
+      isStudyContributor = study.status === "approved" && !!study.role;
+    }
+
+    return {
+      isVendor,
+      isVerifiedVendor,
+      studyLoading,
+      studyStatus,
+      studyRole,
+      isStudyContributor,
+    };
+  }, [vendor, study, studyLoading]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
+      setLoading(true);
+
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      const nextMe: Me = {
+        id: user.id,
+        email: user.email ?? null,
+        full_name: (user.user_metadata as any)?.full_name ?? null,
+      };
+
+      const { data: v, error: vErr } = await supabase
+        .from("vendors")
+        .select(
+          "id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at"
+        )
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      setMe(nextMe);
+      setVendor(vErr ? null : ((v as any) ?? null));
+      setLoading(false);
+    }
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadStudyRole() {
+      setStudyLoading(true);
+      try {
+        const res = await fetch("/api/study/rep-applications/me", { method: "GET" });
+        const json = (await res.json()) as StudyMeResponse;
+        if (!mounted) return;
+        setStudy(json);
+      } catch (e: any) {
+        if (!mounted) return;
+        setStudy({ ok: false, message: e?.message ?? "Failed to load study role" });
+      } finally {
+        if (mounted) setStudyLoading(false);
+      }
+    }
+
+    loadStudyRole();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  function setTab(tab: TabKey) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    router.replace(url.pathname + url.search);
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-6">
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="h-16 w-16 rounded-2xl bg-zinc-100" />
+          <div className="mt-4 h-5 w-40 rounded bg-zinc-100" />
+          <div className="mt-2 h-4 w-56 rounded bg-zinc-100" />
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="h-12 rounded-xl bg-zinc-100" />
+            <div className="h-12 rounded-xl bg-zinc-100" />
+            <div className="h-12 rounded-xl bg-zinc-100" />
+            <div className="h-12 rounded-xl bg-zinc-100" />
+          </div>
+          <div className="mt-6 h-10 rounded-xl bg-zinc-100" />
+        </div>
+      </div>
+    );
+  }
+
+  const displayName = me?.full_name || vendor?.name || "My Account";
+  const displaySub = me?.email || "—";
+
   return (
-    <span
-      className={cx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
-        styles
-      )}
-    >
-      {children}
-    </span>
-  );
-}
+    <div className="mx-auto w-full max-w-3xl px-4 py-6">
+      <HeaderCard
+        name={displayName}
+        sub={displaySub}
+        avatarText={initials(displayName || me?.email)}
+        roles={roles}
+        vendorName={vendor?.name ?? null}
+      />
 
-function BannerView({
-  banner,
-  onClose,
-}: {
-  banner: Banner;
-  onClose: () => void;
-}) {
-  if (!banner) return null;
-  const base =
-    "rounded-2xl border p-3 text-sm flex items-start justify-between gap-3";
-  const tone =
-    banner.type === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : banner.type === "error"
-      ? "border-rose-200 bg-rose-50 text-rose-800"
-      : "border-zinc-200 bg-zinc-50 text-zinc-800";
-  return (
-    <div className={cx(base, tone)} role="status">
-      <span>{banner.text}</span>
-      <button
-        onClick={onClose}
-        className="rounded-xl border bg-white/70 p-2 hover:bg-white"
-        aria-label="Close"
-        type="button"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      <div className="mt-4">
+        <QuickActions roles={roles} />
+      </div>
+
+      <div className="mt-6 rounded-2xl border bg-white shadow-sm">
+        <Tabs active={activeTab} onChange={setTab} />
+
+        <div className="p-4">
+          {activeTab === "overview" && (
+            <OverviewTab roles={roles} vendor={vendor} study={study} />
+          )}
+
+          {activeTab === "profile" && (
+            <ProfileTab
+              roles={roles}
+              me={me}
+              vendor={vendor}
+              onVendorUpdated={(v) => setVendor(v)}
+              onMeUpdated={(m) => setMe(m)}
+            />
+          )}
+
+          {activeTab === "verification" && (
+            <VerificationTab
+              roles={roles}
+              vendor={vendor}
+              onVendorUpdated={(v) => setVendor(v)}
+            />
+          )}
+
+          {activeTab === "account" && <AccountTab me={me} onSignOut={signOut} />}
+        </div>
+      </div>
+
+      <div className="mt-4 text-center text-xs text-zinc-500">
+        Tip: bookmark this page — your account hub.
+      </div>
     </div>
   );
 }
 
-function statusMeta(v: Vendor | null) {
-  const status = (v?.verification_status ?? null) as VerificationStatus | null;
-  const legacyVerified = v?.verified === true;
+/* ----------------------------- UI Components ----------------------------- */
 
-  const isVerified = status === "verified" || legacyVerified;
+function HeaderCard(props: {
+  name: string;
+  sub: string;
+  avatarText: string;
+  roles: RoleFlags;
+  vendorName: string | null;
+}) {
+  const { roles } = props;
 
-  if (isVerified) {
-    return {
-      tone: "good" as const,
-      label: "Verified",
-      hint: "Your profile is verified and appears publicly with a verified badge.",
-    };
-  }
+  return (
+    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100 text-lg font-semibold text-zinc-700">
+          {props.avatarText}
+        </div>
 
-  if (status === "requested") {
-    return {
-      tone: "warn" as const,
-      label: "Request sent",
-      hint: "Your request has been received. An admin will review it soon.",
-    };
-  }
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-lg font-semibold text-zinc-900">
+              {props.name}
+            </h1>
 
-  if (status === "under_review") {
-    return {
-      tone: "warn" as const,
-      label: "Under review",
-      hint: "An admin is currently reviewing your verification request.",
-    };
-  }
+            {roles.isVendor && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("base")
+                )}
+              >
+                <Store className="h-3.5 w-3.5" />
+                Vendor
+              </span>
+            )}
 
-  if (status === "rejected") {
-    return {
-      tone: "bad" as const,
-      label: "Rejected",
-      hint: "Your request was rejected. Fix the issue and re-apply.",
-    };
-  }
+            {roles.studyLoading ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("base")
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Study…
+              </span>
+            ) : roles.isStudyContributor ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("good")
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                {roles.studyRole === "dept_librarian" ? "Dept Librarian" : "Course Rep"}
+              </span>
+            ) : roles.studyStatus && roles.studyStatus !== "not_applied" ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("warn")
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                {roles.studyStatus === "pending"
+                  ? "Rep application: pending"
+                  : "Rep application: rejected"}
+              </span>
+            ) : null}
 
-  if (status === "suspended") {
-    return {
-      tone: "bad" as const,
-      label: "Suspended",
-      hint: "Your verification has been suspended. Contact support or admin.",
-    };
-  }
+            {roles.isVerifiedVendor ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("good")
+                )}
+              >
+                <BadgeCheck className="h-3.5 w-3.5" />
+                Verified
+              </span>
+            ) : roles.isVendor ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("warn")
+                )}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Not verified
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                  pillTone("base")
+                )}
+              >
+                <User className="h-3.5 w-3.5" />
+                Student
+              </span>
+            )}
+          </div>
 
-  return {
-    tone: "neutral" as const,
-    label: "Unverified",
-    hint: "Upload proof documents (optional) and request verification when ready.",
-  };
+          <p className="mt-1 truncate text-sm text-zinc-600">{props.sub}</p>
+
+          {roles.isVendor && props.vendorName ? (
+            <p className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+              <Building2 className="h-3.5 w-3.5" />
+              Store:{" "}
+              <span className="font-medium text-zinc-700">{props.vendorName}</span>
+            </p>
+          ) : null}
+        </div>
+
+        <Link
+          href="/settings"
+          className="inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
+        </Link>
+      </div>
+    </div>
+  );
 }
 
-function friendlyVendorType(t: VendorType) {
-  if (t === "food") return "Food Vendor";
-  if (t === "mall") return "Mall Store";
-  if (t === "student") return "Student Seller";
-  return "Other";
+function QuickActions({ roles }: { roles: RoleFlags }) {
+  const cards = [
+    {
+      href: roles.isVendor ? "/my-listings" : "/market",
+      icon: <LayoutDashboard className="h-4 w-4" />,
+      title: roles.isVendor ? "My Listings" : "Explore Market",
+      desc: roles.isVendor ? "Manage your products" : "Browse products & vendors",
+    },
+    roles.isStudyContributor
+      ? {
+          href: "/study/materials/upload",
+          icon: <FileText className="h-4 w-4" />,
+          title: "Upload Material",
+          desc: "Add course files",
+        }
+      : {
+          href: "/study",
+          icon: <BookOpen className="h-4 w-4" />,
+          title: "Study",
+          desc: "Materials & practice",
+        },
+    roles.isStudyContributor
+      ? {
+          href: "/study/materials/my",
+          icon: <BookOpen className="h-4 w-4" />,
+          title: "My Uploads",
+          desc: "Track approval status",
+        }
+      : roles.studyStatus && roles.studyStatus !== "not_applied"
+      ? {
+          href: "/study/apply-rep",
+          icon: <ShieldCheck className="h-4 w-4" />,
+          title: "My Application",
+          desc: roles.studyStatus === "pending" ? "Waiting for review" : "See rejection reason",
+        }
+      : {
+          href: "/study/apply-rep",
+          icon: <ShieldCheck className="h-4 w-4" />,
+          title: "Become a Rep",
+          desc: "Apply for upload access",
+        },
+    roles.isVendor
+      ? {
+          href: "/me?tab=verification",
+          icon: <Store className="h-4 w-4" />,
+          title: "Verification",
+          desc: "Upload docs & request",
+        }
+      : {
+          href: "/support",
+          icon: <ChevronRight className="h-4 w-4" />,
+          title: "Help & Support",
+          desc: "Get assistance fast",
+        },
+  ] as const;
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {cards.map((c) => (
+        <Link
+          key={c.title}
+          href={c.href}
+          className="rounded-2xl border bg-white p-3 shadow-sm transition hover:bg-zinc-50"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-xl border bg-white p-2">{c.icon}</div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-zinc-900">{c.title}</div>
+              <div className="mt-0.5 text-xs text-zinc-600">{c.desc}</div>
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
 }
 
-export default function MePage() {
-  const router = useRouter();
-  const aliveRef = useRef(true);
+function Tabs(props: { active: TabKey; onChange: (t: TabKey) => void }) {
+  const items: Array<{ key: TabKey; label: string }> = [
+    { key: "overview", label: "Overview" },
+    { key: "profile", label: "Profile" },
+    { key: "verification", label: "Verification" },
+    { key: "account", label: "Account" },
+  ];
 
-  const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState<string | null>(null);
-  const [vendor, setVendor] = useState<Vendor | null>(null);
+  return (
+    <div className="flex gap-2 overflow-x-auto border-b p-2">
+      {items.map((it) => {
+        const isActive = props.active === it.key;
+        return (
+          <button
+            key={it.key}
+            onClick={() => props.onChange(it.key)}
+            className={cn(
+              "whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium",
+              isActive ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"
+            )}
+          >
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
-  const [banner, setBanner] = useState<Banner>(null);
-  const [saving, setSaving] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+/* --------------------------------- Tabs --------------------------------- */
 
-  const [requests, setRequests] = useState<VerificationRequest[]>([]);
-  const [docs, setDocs] = useState<VerificationDoc[]>([]);
-  const [docsLoading, setDocsLoading] = useState(false);
+function OverviewTab({
+  roles,
+  vendor,
+  study,
+}: {
+  roles: RoleFlags;
+  vendor: Vendor | null;
+  study: StudyMeResponse | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">What you can do here</div>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-700">
+          <li>Manage your profile details</li>
+          <li>Track vendor verification (if you sell)</li>
+          <li>Track Study contributor status and uploads</li>
+        </ul>
+      </div>
 
-  const [docType, setDocType] =
-    useState<(typeof DOC_TYPES)[number]["key"]>("id_card");
-  const [docFile, setDocFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">JABU Study</div>
 
-  // ✅ collapse/expand vendor details form
-  const [detailsOpen, setDetailsOpen] = useState(true);
+        {roles.studyLoading ? (
+          <p className="mt-1 text-sm text-zinc-700">Loading your contributor status…</p>
+        ) : study && "ok" in study && study.ok ? (
+          <div className="mt-2 text-sm text-zinc-800">
+            <div>
+              <span className="text-zinc-500">Status:</span>{" "}
+              <span className="font-semibold">{study.status}</span>
+            </div>
+            <div className="mt-1">
+              <span className="text-zinc-500">Role:</span>{" "}
+              <span className="font-semibold">{study.role ?? "—"}</span>
+            </div>
 
-  // Separate editable form state
-  const [form, setForm] = useState({
+            {study.status === "approved" ? (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Link
+                  href="/study/materials/upload"
+                  className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                >
+                  Upload material
+                </Link>
+                <Link
+                  href="/study/materials/my"
+                  className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                >
+                  My uploads
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <Link
+                  href="/study/apply-rep"
+                  className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                >
+                  Manage application
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-700">
+            Couldn’t load your study contributor status right now.
+          </p>
+        )}
+      </div>
+
+      {roles.isVendor ? (
+        <div className="rounded-2xl border p-3">
+          <div className="text-sm font-semibold text-zinc-900">JabuMarket</div>
+          <p className="mt-1 text-sm text-zinc-700">
+            Store: <span className="font-medium">{vendor?.name ?? "—"}</span>
+          </p>
+          <p className="mt-1 text-sm text-zinc-700">
+            Verification:{" "}
+            <span className="font-medium">{vendor?.verified ? "Verified" : "Not verified"}</span>
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border p-3">
+          <div className="text-sm font-semibold text-zinc-900">Want to sell on JabuMarket?</div>
+          <p className="mt-1 text-sm text-zinc-700">
+            Create a vendor profile and start posting listings.
+          </p>
+          <Link
+            href="/post"
+            className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            Become a vendor
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfileTab({
+  roles,
+  me,
+  vendor,
+  onVendorUpdated,
+  onMeUpdated,
+}: {
+  roles: RoleFlags;
+  me: Me | null;
+  vendor: Vendor | null;
+  onVendorUpdated: (v: Vendor) => void;
+  onMeUpdated: (m: Me) => void;
+}) {
+  /* Account identity */
+  const [fullName, setFullName] = useState(me?.full_name ?? "");
+  const [savingName, setSavingName] = useState(false);
+  const nameDirty = (me?.full_name ?? "") !== fullName;
+
+  useEffect(() => setFullName(me?.full_name ?? ""), [me?.id]);
+
+  async function saveName() {
+    const next = fullName.trim();
+    if (!next) return;
+
+    setSavingName(true);
+    try {
+      const { data, error } = await supabase.auth.updateUser({ data: { full_name: next } });
+      if (error) throw error;
+
+      onMeUpdated({
+        id: data.user?.id ?? me?.id ?? "",
+        email: data.user?.email ?? me?.email ?? null,
+        full_name: (data.user?.user_metadata as any)?.full_name ?? next,
+      });
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  /* Vendor profile (only if vendor exists) */
+  const [vendorForm, setVendorForm] = useState({
     name: "",
     whatsapp: "",
     phone: "",
@@ -278,315 +701,771 @@ export default function MePage() {
     vendor_type: "student" as VendorType,
   });
 
-  const [touched, setTouched] = useState({
+  const [vendorTouched, setVendorTouched] = useState({
     name: false,
     whatsapp: false,
     phone: false,
     location: false,
   });
 
-  function setToast(next: Banner) {
-    setBanner(next);
-  }
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
   useEffect(() => {
-    if (!banner) return;
-    const id = window.setTimeout(() => setBanner(null), 4500);
-    return () => window.clearTimeout(id);
-  }, [banner]);
-
-  function syncFormFromVendor(v: Vendor | null) {
-    if (!v) return;
-    setForm({
-      name: v.name ?? "",
-      whatsapp: v.whatsapp ?? "",
-      phone: v.phone ?? "",
-      location: v.location ?? "",
-      vendor_type: v.vendor_type ?? "student",
+    if (!vendor) return;
+    setVendorForm({
+      name: vendor.name ?? "",
+      whatsapp: vendor.whatsapp ?? "",
+      phone: vendor.phone ?? "",
+      location: vendor.location ?? "",
+      vendor_type: (vendor.vendor_type ?? "student") as VendorType,
     });
-    setTouched({ name: false, whatsapp: false, phone: false, location: false });
-  }
+    setVendorTouched({ name: false, whatsapp: false, phone: false, location: false });
+  }, [vendor?.id]);
 
-  async function loadRequestsAndDocs(vendorId: string) {
-    setDocsLoading(true);
-    try {
-      const { data: reqs } = await supabase
-        .from("vendor_verification_requests")
-        .select("id,vendor_id,status,note,rejection_reason,created_at,reviewed_at")
-        .eq("vendor_id", vendorId)
-        .order("created_at", { ascending: false });
-
-      const { data: ds } = await supabase
-        .from("vendor_verification_docs")
-        .select("id,vendor_id,doc_type,file_path,created_at")
-        .eq("vendor_id", vendorId)
-        .order("created_at", { ascending: false });
-
-      if (!aliveRef.current) return;
-      setRequests((reqs ?? []) as any);
-      setDocs((ds ?? []) as any);
-    } catch {
-      // ignore
-    } finally {
-      if (aliveRef.current) setDocsLoading(false);
-    }
-  }
-
-  async function load() {
-    if (!aliveRef.current) return;
-
-    setBanner(null);
-    setLoading(true);
-
-    try {
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-
-      if (userErr) {
-        const m = String(userErr?.message ?? "").toLowerCase();
-        if (m.includes("auth session missing") || m.includes("session missing")) {
-          setLoading(false);
-          router.replace("/login");
-          return;
-        }
-        throw userErr;
-      }
-
-      const user = userData.user;
-      if (!user) {
-        setLoading(false);
-        router.replace("/login");
-        return;
-      }
-
-      setEmail(user.email ?? null);
-
-      const { data: v, error } = await supabase
-        .from("vendors")
-        .select(
-          "id, user_id, name, whatsapp, phone, location, vendor_type, verified, verification_status, verification_requested_at, verified_at, rejected_at, rejection_reason, suspended_at, suspension_reason"
-        )
-        .eq("user_id", user.id)
-        .single();
-
-      if (error && isNoRowError(error)) {
-        const name = defaultVendorNameFromEmail(user.email);
-
-        const { data: created, error: createErr } = await supabase
-          .from("vendors")
-          .insert({
-            user_id: user.id,
-            name,
-            whatsapp: null,
-            phone: null,
-            location: null,
-            vendor_type: "student",
-            verified: false,
-            verification_status: "unverified",
-          })
-          .select(
-            "id, user_id, name, whatsapp, phone, location, vendor_type, verified, verification_status, verification_requested_at, verified_at, rejected_at, rejection_reason, suspended_at, suspension_reason"
-          )
-          .single();
-
-        if (createErr) throw createErr;
-
-        const next = created as Vendor;
-        setVendor(next);
-        syncFormFromVendor(next);
-        setDetailsOpen(true);
-        setToast({
-          type: "info",
-          text: "Your vendor profile was created. Please complete your details below.",
-        });
-        await loadRequestsAndDocs(next.id);
-        return;
-      }
-
-      if (error) throw error;
-
-      const next = (v ?? null) as Vendor | null;
-      setVendor(next);
-      syncFormFromVendor(next);
-      if (next?.id) await loadRequestsAndDocs(next.id);
-    } catch (err: any) {
-      if (isAbortError(err)) return;
-
-      console.error(err);
-      if (aliveRef.current) {
-        setToast({ type: "error", text: err?.message ?? "Something went wrong." });
-        setVendor(null);
-      }
-    } finally {
-      if (aliveRef.current) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    aliveRef.current = true;
-
-    load();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      load();
-    });
-
-    return () => {
-      aliveRef.current = false;
-      sub.subscription.unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const validation = useMemo(() => {
-    const name = form.name.trim();
-    const whatsappDigits = normalizePhone(form.whatsapp);
-    const phoneDigits = normalizePhone(form.phone);
-
+  const vendorValidation = useMemo(() => {
     const errors: Record<string, string> = {};
+    const name = vendorForm.name.trim();
+    const whatsappDigits = normalizePhone(vendorForm.whatsapp);
+    const phoneDigits = normalizePhone(vendorForm.phone);
 
-    if (!name) errors.name = "Name is required.";
-    if (form.whatsapp.trim() && whatsappDigits.length < 7)
-      errors.whatsapp = "Enter a valid WhatsApp number.";
-    if (form.phone.trim() && phoneDigits.length < 7)
-      errors.phone = "Enter a valid phone number.";
+    if (!name) errors.name = "Store/Display name is required.";
+    if (vendorForm.whatsapp.trim() && whatsappDigits.length < 7) errors.whatsapp = "Enter a valid WhatsApp number.";
+    if (vendorForm.phone.trim() && phoneDigits.length < 7) errors.phone = "Enter a valid phone number.";
 
-    const canSave = Object.keys(errors).length === 0;
-    return { errors, canSave, whatsappDigits, phoneDigits };
-  }, [form]);
+    return { errors, canSave: Object.keys(errors).length === 0 };
+  }, [vendorForm]);
 
-  const dirty = useMemo(() => {
+  const vendorDirty = useMemo(() => {
     if (!vendor) return false;
     return (
-      (vendor.name ?? "") !== form.name ||
-      (vendor.whatsapp ?? "") !== form.whatsapp ||
-      (vendor.phone ?? "") !== form.phone ||
-      (vendor.location ?? "") !== form.location ||
-      (vendor.vendor_type ?? "student") !== form.vendor_type
+      (vendor.name ?? "") !== vendorForm.name ||
+      (vendor.whatsapp ?? "") !== vendorForm.whatsapp ||
+      (vendor.phone ?? "") !== vendorForm.phone ||
+      (vendor.location ?? "") !== vendorForm.location ||
+      (vendor.vendor_type ?? "student") !== vendorForm.vendor_type
     );
-  }, [vendor, form]);
+  }, [vendor, vendorForm]);
 
-  const meta = statusMeta(vendor);
-
-  const myListingsHref = "/my-listings";
-
-  async function saveProfile() {
+  async function saveVendor() {
     if (!vendor) return;
 
-    setTouched({ name: true, whatsapp: true, phone: true, location: true });
-
-    if (!validation.canSave) {
-      setToast({ type: "error", text: "Please fix the highlighted fields." });
+    setVendorTouched({ name: true, whatsapp: true, phone: true, location: true });
+    if (!vendorValidation.canSave) {
+      setBanner({ type: "error", text: "Please fix the highlighted fields." });
       return;
     }
 
-    setSaving(true);
+    setVendorSaving(true);
     setBanner(null);
 
     try {
-      const { error } = await supabase
-        .from("vendors")
-        .update({
-          name: form.name.trim(),
-          whatsapp: form.whatsapp.trim() || null,
-          phone: form.phone.trim() || null,
-          location: form.location.trim() || null,
-          vendor_type: form.vendor_type,
-        })
-        .eq("id", vendor.id);
-
-      if (error) throw error;
-
-      const next: Vendor = {
-        ...vendor,
-        name: form.name.trim(),
-        whatsapp: form.whatsapp.trim() || null,
-        phone: form.phone.trim() || null,
-        location: form.location.trim() || null,
-        vendor_type: form.vendor_type,
+      const payload = {
+        name: vendorForm.name.trim(),
+        whatsapp: vendorForm.whatsapp.trim() || null,
+        phone: vendorForm.phone.trim() || null,
+        location: vendorForm.location.trim() || null,
+        vendor_type: vendorForm.vendor_type,
       };
 
-      setVendor(next);
-      setToast({ type: "success", text: "Saved successfully." });
+      const { error } = await supabase.from("vendors").update(payload).eq("id", vendor.id);
+      if (error) throw error;
 
-      setDetailsOpen(false);
+      onVendorUpdated({ ...vendor, ...payload } as any);
+      setBanner({ type: "success", text: "Vendor profile saved." });
+      setVendorTouched({ name: false, whatsapp: false, phone: false, location: false });
     } catch (e: any) {
-      setToast({ type: "error", text: e?.message ?? "Save failed." });
+      setBanner({ type: "error", text: e?.message ?? "Save failed." });
     } finally {
-      setSaving(false);
+      setVendorSaving(false);
     }
   }
 
-  async function requestVerification() {
+  function cancelVendor() {
     if (!vendor) return;
-
-    const isVerified =
-      vendor.verification_status === "verified" || vendor.verified === true;
-    if (isVerified) {
-      setToast({ type: "info", text: "You are already verified." });
-      return;
-    }
-    if (vendor.verification_status === "suspended") {
-      setToast({
-        type: "error",
-        text: "Your verification is suspended. Contact an admin.",
-      });
-      return;
-    }
-
-    setVerifying(true);
+    setVendorForm({
+      name: vendor.name ?? "",
+      whatsapp: vendor.whatsapp ?? "",
+      phone: vendor.phone ?? "",
+      location: vendor.location ?? "",
+      vendor_type: (vendor.vendor_type ?? "student") as VendorType,
+    });
+    setVendorTouched({ name: false, whatsapp: false, phone: false, location: false });
     setBanner(null);
+  }
 
-    try {
-      const { data: openReq } = await supabase
-        .from("vendor_verification_requests")
-        .select("id,status")
-        .eq("vendor_id", vendor.id)
-        .in("status", ["requested", "under_review"])
-        .maybeSingle();
+  /* Study profile */
+  type Semester = "first" | "second" | "summer";
+  type FacultyRow = { id: string; name: string; sort_order?: number | null };
+  type DeptRow = {
+    id: string;
+    faculty_id: string;
+    display_name?: string | null;
+    official_name?: string | null;
+    sort_order?: number | null;
+  };
 
-      if (openReq?.id) {
-        setToast({ type: "info", text: "You already have a pending request." });
-        await loadRequestsAndDocs(vendor.id);
+  const [studyLoading, setStudyLoading] = useState(true);
+  const [faculties, setFaculties] = useState<FacultyRow[]>([]);
+  const [departments, setDepartments] = useState<DeptRow[]>([]);
+  const [manualMode, setManualMode] = useState(false);
+
+  const [studyForm, setStudyForm] = useState({
+    faculty_id: "",
+    department_id: "",
+    faculty: "",
+    department: "",
+    level: 100,
+    semester: "first" as Semester,
+  });
+
+  const [studySaving, setStudySaving] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadStudyPrefs() {
+      setStudyLoading(true);
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (!user) return;
+
+        const facRes = await supabase
+          .from("study_faculties_clean")
+          .select("id,name,sort_order")
+          .order("sort_order", { ascending: true });
+
+        const prefRes = await supabase
+          .from("study_user_preferences")
+          .select("faculty_id,department_id,faculty,department,level,semester")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (!mounted) return;
+
+        setFaculties((facRes.data ?? []) as any);
+
+        const d: any = prefRes.data ?? null;
+        if (d) {
+          const hasIds = typeof d.faculty_id === "string" && typeof d.department_id === "string";
+          setManualMode(!hasIds && (!!d.faculty || !!d.department));
+
+          setStudyForm((s) => ({
+            ...s,
+            faculty_id: d.faculty_id ?? "",
+            department_id: d.department_id ?? "",
+            faculty: d.faculty ?? "",
+            department: d.department ?? "",
+            level: typeof d.level === "number" ? d.level : 100,
+            semester: (d.semester as Semester) || "first",
+          }));
+        }
+      } finally {
+        if (mounted) setStudyLoading(false);
+      }
+    }
+
+    loadStudyPrefs();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDepts() {
+      if (manualMode) return;
+      if (!studyForm.faculty_id) {
+        setDepartments([]);
         return;
       }
 
-      const { error: reqErr } = await supabase
-        .from("vendor_verification_requests")
-        .insert({
-          vendor_id: vendor.id,
-          status: "requested",
-          note: docs.length
-            ? `Submitted with ${docs.length} document(s).`
-            : "No documents attached (optional).",
-        });
+      const depRes = await supabase
+        .from("study_departments_clean")
+        .select("id,faculty_id,display_name,official_name,sort_order")
+        .eq("faculty_id", studyForm.faculty_id)
+        .order("sort_order", { ascending: true });
 
-      if (reqErr) throw reqErr;
+      if (!mounted) return;
+      setDepartments((depRes.data ?? []) as any);
+    }
 
-      const { error: vErr } = await supabase
-        .from("vendors")
-        .update({
-          verification_status: "requested",
-          verification_requested_at: new Date().toISOString(),
-          rejection_reason: null,
-          rejected_at: null,
-        })
-        .eq("id", vendor.id);
+    loadDepts();
+    return () => {
+      mounted = false;
+    };
+  }, [manualMode, studyForm.faculty_id]);
 
-      if (vErr) console.warn(vErr);
+  const studyValid = useMemo(() => {
+    const lvlOk = [100, 200, 300, 400, 500, 600, 700].includes(Number(studyForm.level));
+    if (!lvlOk) return false;
+    if (!studyForm.semester) return false;
 
-      setToast({ type: "success", text: "Verification request sent." });
-      await load();
+    if (manualMode) return !!studyForm.faculty.trim() && !!studyForm.department.trim();
+    return !!studyForm.faculty_id && !!studyForm.department_id;
+  }, [studyForm, manualMode]);
+
+  async function saveStudy() {
+    setStudySaving(true);
+    setBanner(null);
+
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+      if (!user) return;
+
+      const level = Number(studyForm.level);
+      const semester = studyForm.semester;
+
+      const selectedFaculty = manualMode
+        ? studyForm.faculty.trim()
+        : faculties.find((f) => f.id === studyForm.faculty_id)?.name ?? "";
+
+      const selectedDeptRow = manualMode ? null : departments.find((d) => d.id === studyForm.department_id) ?? null;
+
+      const selectedDepartment = manualMode
+        ? studyForm.department.trim()
+        : String(selectedDeptRow?.display_name || selectedDeptRow?.official_name || "").trim();
+
+      const payload: any = {
+        user_id: user.id,
+        faculty: selectedFaculty,
+        department: selectedDepartment,
+        level,
+        semester,
+        updated_at: new Date().toISOString(),
+        faculty_id: manualMode ? null : studyForm.faculty_id,
+        department_id: manualMode ? null : studyForm.department_id,
+      };
+
+      const prefRes = await supabase.from("study_user_preferences").upsert(payload);
+      if (prefRes.error) throw prefRes.error;
+
+      const normalized: any = {
+        user_id: user.id,
+        level,
+        updated_at: new Date().toISOString(),
+        faculty_id: manualMode ? null : studyForm.faculty_id,
+        department_id: manualMode ? null : studyForm.department_id,
+      };
+
+      const normRes = await supabase.from("study_preferences").upsert(normalized);
+      if (normRes.error) throw normRes.error;
+
+      setBanner({ type: "success", text: "Study profile saved." });
     } catch (e: any) {
-      setToast({ type: "error", text: e?.message ?? "Could not send request." });
+      setBanner({ type: "error", text: e?.message ?? "Couldn’t save study profile." });
     } finally {
-      setVerifying(false);
+      setStudySaving(false);
+    }
+  }
+
+  const vendErr = vendorValidation.errors;
+
+  return (
+    <div className="space-y-3">
+      {banner ? (
+        <div
+          className={cn(
+            "rounded-2xl border p-3 text-sm",
+            banner.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : banner.type === "error"
+              ? "border-rose-200 bg-rose-50 text-rose-800"
+              : "border-zinc-200 bg-zinc-50 text-zinc-800"
+          )}
+          role="status"
+        >
+          {banner.text}
+        </div>
+      ) : null}
+
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">Account identity</div>
+        <p className="mt-1 text-sm text-zinc-600">This name shows across the app.</p>
+
+        <div className="mt-3 grid gap-2">
+          <Field label="Full name" value={fullName} onChange={setFullName} placeholder="e.g. Gratitude Developers" />
+
+          {nameDirty ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFullName(me?.full_name ?? "")}
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                disabled={savingName}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveName}
+                className={cn(
+                  "rounded-xl px-3 py-2 text-sm font-semibold",
+                  savingName ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+                )}
+                disabled={savingName || !fullName.trim()}
+              >
+                {savingName ? "Saving…" : "Save name"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 text-xs text-zinc-500">
+          Email: <span className="font-medium text-zinc-700">{me?.email ?? "—"}</span>
+        </div>
+      </div>
+
+      {roles.isVendor && vendor ? (
+        <div className="rounded-2xl border p-3">
+          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
+          <p className="mt-1 text-sm text-zinc-600">What customers see when viewing your store.</p>
+
+          <div className="mt-4 grid gap-3">
+            <Field
+              label="Store / Display name"
+              value={vendorForm.name}
+              onChange={(v) => setVendorForm((s) => ({ ...s, name: v }))}
+              onBlur={() => setVendorTouched((t) => ({ ...t, name: true }))}
+              placeholder={defaultVendorNameFromEmail(me?.email)}
+              error={vendorTouched.name ? vendErr.name : undefined}
+            />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="WhatsApp"
+                value={vendorForm.whatsapp}
+                onChange={(v) => setVendorForm((s) => ({ ...s, whatsapp: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, whatsapp: true }))}
+                placeholder="+234 801 234 5678"
+                error={vendorTouched.whatsapp ? vendErr.whatsapp : undefined}
+              />
+              <Field
+                label="Phone"
+                value={vendorForm.phone}
+                onChange={(v) => setVendorForm((s) => ({ ...s, phone: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, phone: true }))}
+                placeholder="+234 701 234 5678"
+                error={vendorTouched.phone ? vendErr.phone : undefined}
+              />
+            </div>
+
+            <Field
+              label="Location"
+              value={vendorForm.location}
+              onChange={(v) => setVendorForm((s) => ({ ...s, location: v }))}
+              onBlur={() => setVendorTouched((t) => ({ ...t, location: true }))}
+              placeholder="e.g. JABU Campus / Male Hostels"
+              error={vendorTouched.location ? vendErr.location : undefined}
+            />
+
+            <div>
+              <div className="text-xs font-semibold text-zinc-700">Vendor type</div>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
+                  const active = vendorForm.vendor_type === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
+                      className={cn(
+                        "rounded-xl border px-3 py-2 text-sm font-semibold capitalize",
+                        active ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-800 hover:bg-zinc-50"
+                      )}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {vendorDirty ? (
+            <div className="sticky bottom-0 -mx-3 mt-4 border-t bg-white/90 px-3 py-3 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-zinc-600">
+                  Unsaved vendor changes
+                  {!vendorValidation.canSave ? (
+                    <span className="ml-2 font-semibold text-rose-700">• Fix errors to save</span>
+                  ) : null}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={cancelVendor}
+                    className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                    disabled={vendorSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveVendor}
+                    disabled={vendorSaving || !vendorValidation.canSave}
+                    className={cn(
+                      "rounded-xl px-3 py-2 text-sm font-semibold",
+                      vendorSaving || !vendorValidation.canSave
+                        ? "bg-zinc-200 text-zinc-600"
+                        : "bg-zinc-900 text-white hover:bg-zinc-800"
+                    )}
+                  >
+                    {vendorSaving ? "Saving…" : "Save vendor"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-2xl border p-3">
+          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
+          <p className="mt-1 text-sm text-zinc-700">
+            Not a vendor yet? Create a vendor profile to sell on JabuMarket.
+          </p>
+          <Link
+            href="/post"
+            className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            Become a vendor
+          </Link>
+        </div>
+      )}
+
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">Study profile</div>
+        <p className="mt-1 text-sm text-zinc-600">
+          Used to personalize courses/materials and improve “For you”.
+        </p>
+
+        {studyLoading ? (
+          <div className="mt-3 space-y-2">
+            <div className="h-10 rounded-xl bg-zinc-100" />
+            <div className="h-10 rounded-xl bg-zinc-100" />
+            <div className="h-10 rounded-xl bg-zinc-100" />
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-semibold text-zinc-700">Mode</div>
+              <button
+                type="button"
+                onClick={() => setManualMode((v) => !v)}
+                className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+              >
+                {manualMode ? "Use official list" : "Can’t find mine? Type manually"}
+              </button>
+            </div>
+
+            {!manualMode ? (
+              <>
+                <label className="block">
+                  <div className="text-xs font-semibold text-zinc-700">Faculty</div>
+                  <select
+                    value={studyForm.faculty_id}
+                    onChange={(e) =>
+                      setStudyForm((s) => ({
+                        ...s,
+                        faculty_id: e.target.value,
+                        department_id: "",
+                      }))
+                    }
+                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  >
+                    <option value="">Select faculty</option>
+                    {faculties.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <div className="text-xs font-semibold text-zinc-700">Department</div>
+                  <select
+                    value={studyForm.department_id}
+                    onChange={(e) => setStudyForm((s) => ({ ...s, department_id: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    disabled={!studyForm.faculty_id}
+                  >
+                    <option value="">{studyForm.faculty_id ? "Select department" : "Pick faculty first"}</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {String(d.display_name || d.official_name || "").trim()}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : (
+              <>
+                <Field
+                  label="Faculty (manual)"
+                  value={studyForm.faculty}
+                  onChange={(v) => setStudyForm((s) => ({ ...s, faculty: v }))}
+                  placeholder="e.g. Science"
+                />
+                <Field
+                  label="Department (manual)"
+                  value={studyForm.department}
+                  onChange={(v) => setStudyForm((s) => ({ ...s, department: v }))}
+                  placeholder="e.g. Computer Science"
+                />
+              </>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <div className="text-xs font-semibold text-zinc-700">Level</div>
+                <select
+                  value={String(studyForm.level)}
+                  onChange={(e) => setStudyForm((s) => ({ ...s, level: Number(e.target.value) }))}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                >
+                  {[100, 200, 300, 400, 500, 600, 700].map((lv) => (
+                    <option key={lv} value={lv}>
+                      {lv} Level
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <div className="text-xs font-semibold text-zinc-700">Semester</div>
+                <select
+                  value={studyForm.semester}
+                  onChange={(e) => setStudyForm((s) => ({ ...s, semester: e.target.value as any }))}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                >
+                  <option value="first">1st Semester</option>
+                  <option value="second">2nd Semester</option>
+                  <option value="summer">Summer</option>
+                </select>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={saveStudy}
+              disabled={!studyValid || studySaving}
+              className={cn(
+                "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
+                !studyValid || studySaving ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+              )}
+            >
+              {studySaving ? "Saving…" : "Save study profile"}
+            </button>
+
+            {!studyValid ? (
+              <p className="text-xs text-zinc-500">
+                Please complete faculty + department and ensure level/semester are selected.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VerificationTab({
+  roles,
+  vendor,
+  onVendorUpdated,
+}: {
+  roles: RoleFlags;
+  vendor: Vendor | null;
+  onVendorUpdated: (v: Vendor) => void;
+}) {
+  type RequestStatus = "requested" | "under_review" | "approved" | "rejected";
+  type RequestRow = {
+    id: string;
+    vendor_id: string;
+    status: RequestStatus;
+    note: string | null;
+    rejection_reason: string | null;
+    created_at: string;
+    reviewed_at: string | null;
+    reviewed_by: string | null;
+  };
+
+  type DocRow = {
+    id: string;
+    vendor_id: string;
+    doc_type: string;
+    file_path: string;
+    created_at: string;
+  };
+
+  const BUCKET = "vendor-verification";
+
+  const [loading, setLoading] = useState(true);
+  const [req, setReq] = useState<RequestRow | null>(null);
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [banner, setBanner] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+  const [docType, setDocType] = useState("id_card");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const [note, setNote] = useState("");
+  const [requesting, setRequesting] = useState(false);
+
+  const isVerified = !!vendor?.verified || vendor?.verification_status === "verified";
+  const pending = req?.status === "requested" || req?.status === "under_review";
+  const canUploadDocs = !isVerified && !pending;
+  const canDeleteDocs = !isVerified && !pending;
+
+  const canRequest =
+    !!vendor?.id && !isVerified && !pending && !!docs.length && (!req || req.status === "rejected");
+
+  const step = useMemo(() => {
+    if (isVerified) return 4;
+    if (!req) return 1;
+    if (req.status === "requested") return 2;
+    if (req.status === "under_review") return 3;
+    if (req.status === "approved") return 4;
+    if (req.status === "rejected") return 1;
+    return 1;
+  }, [req, isVerified]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
+      setLoading(true);
+      setBanner(null);
+      setReq(null);
+      setDocs([]);
+
+      if (!roles.isVendor || !vendor?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data: r, error: rErr } = await supabase
+          .from("vendor_verification_requests")
+          .select("id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by")
+          .eq("vendor_id", vendor.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (rErr) throw rErr;
+        const latest = (r?.[0] ?? null) as any;
+
+        const { data: d, error: dErr } = await supabase
+          .from("vendor_verification_docs")
+          .select("id,vendor_id,doc_type,file_path,created_at")
+          .eq("vendor_id", vendor.id)
+          .order("created_at", { ascending: false });
+
+        const docsRows = dErr ? [] : ((d ?? []) as any);
+
+        if (!mounted) return;
+        setReq(latest);
+        setDocs(docsRows);
+      } catch (e: any) {
+        if (!mounted) return;
+        setBanner({ type: "error", text: e?.message ?? "Failed to load verification data." });
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [roles.isVendor, vendor?.id]);
+
+  async function refreshStatus() {
+    if (!roles.isVendor || !vendor?.id) return;
+
+    const { data: r, error: rErr } = await supabase
+      .from("vendor_verification_requests")
+      .select("id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by")
+      .eq("vendor_id", vendor.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (!rErr) {
+      const latest = (r?.[0] ?? null) as any;
+      setReq(latest);
+    }
+
+    const { data: v2 } = await supabase
+      .from("vendors")
+      .select("verified,verification_status,verified_at,rejected_at,rejection_reason")
+      .eq("id", vendor.id)
+      .maybeSingle();
+
+    if (v2) onVendorUpdated({ ...vendor, ...(v2 as any) });
+  }
+
+  useEffect(() => {
+    if (!roles.isVendor || !vendor?.id) return;
+    if (isVerified) return;
+
+    const t = setInterval(() => {
+      refreshStatus();
+    }, 8000);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roles.isVendor, vendor?.id, isVerified]);
+
+  async function openDoc(path: string) {
+    try {
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60);
+      if (error) throw error;
+      if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Could not open document." });
+    }
+  }
+
+  async function deleteDoc(doc: { id: string; file_path: string }) {
+    if (!vendor?.id) return;
+    if (!canDeleteDocs) {
+      setBanner({ type: "info", text: "You can’t delete documents while a request is pending review." });
+      return;
+    }
+
+    setBanner(null);
+
+    try {
+      const { error: delRowErr } = await supabase
+        .from("vendor_verification_docs")
+        .delete()
+        .eq("id", doc.id)
+        .eq("vendor_id", vendor.id);
+
+      if (delRowErr) throw delRowErr;
+
+      await supabase.storage.from(BUCKET).remove([doc.file_path]);
+
+      setDocs((prev) => prev.filter((x) => x.id !== doc.id));
+      setBanner({ type: "success", text: "Document deleted." });
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message ?? "Delete failed." });
     }
   }
 
   async function uploadDoc() {
-    if (!vendor) return;
-    if (!docFile) {
-      setToast({ type: "error", text: "Choose a file first." });
+    if (!vendor?.id) return;
+    if (!file) {
+      setBanner({ type: "error", text: "Choose a file to upload." });
+      return;
+    }
+    if (!canUploadDocs) {
+      setBanner({ type: "info", text: "Uploads are locked while your request is being reviewed." });
       return;
     }
 
@@ -594,582 +1473,454 @@ export default function MePage() {
     setBanner(null);
 
     try {
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
+      const ext = (file.name.split(".").pop() || "bin").toLowerCase();
+      const safeType = docType.replace(/[^\w-]/g, "_");
+      const path = `${vendor.id}/${Date.now()}_${safeType}.${ext}`;
 
-      const user = userData.user;
-      if (!user) {
-        setToast({ type: "error", text: "Please log in again." });
-        router.replace("/login");
-        return;
-      }
-
-      const bucket = "vendor-verification";
-      const safeName = docFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${user.id}/${docType}-${Date.now()}-${safeName}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(bucket)
-        .upload(path, docFile, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: docFile.type || undefined,
-        });
-
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
+        upsert: false,
+        contentType: file.type || undefined,
+      });
       if (upErr) throw upErr;
 
-      const { error: insErr } = await supabase
+      const { data: row, error: insErr } = await supabase
         .from("vendor_verification_docs")
-        .insert({
-          vendor_id: vendor.id,
-          doc_type: docType,
-          file_path: path,
-        });
+        .insert({ vendor_id: vendor.id, doc_type: docType, file_path: path })
+        .select("id,vendor_id,doc_type,file_path,created_at")
+        .single();
 
       if (insErr) throw insErr;
 
-      setDocFile(null);
-      const el = document.getElementById("doc-file") as HTMLInputElement | null;
-      if (el) el.value = "";
-
-      setToast({ type: "success", text: "Uploaded." });
-      await loadRequestsAndDocs(vendor.id);
+      setDocs((prev) => [row as any, ...prev]);
+      setFile(null);
+      setBanner({ type: "success", text: "Document uploaded." });
     } catch (e: any) {
-      setToast({ type: "error", text: e?.message ?? "Upload failed." });
+      setBanner({ type: "error", text: e?.message ?? "Upload failed." });
     } finally {
       setUploading(false);
     }
   }
 
-  async function openDoc(path: string) {
+  async function submitRequest() {
+    if (!vendor?.id) return;
+
+    if (!docs.length) {
+      setBanner({ type: "error", text: "Upload at least one document before requesting verification." });
+      return;
+    }
+    if (!canRequest) {
+      setBanner({ type: "info", text: "You already have a pending request, or you’re verified." });
+      return;
+    }
+
+    setRequesting(true);
+    setBanner(null);
+
     try {
-      const bucket = "vendor-verification";
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, 60);
-      if (error) throw error;
-      if (data?.signedUrl)
-        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      const { data: created, error: cErr } = await supabase
+        .from("vendor_verification_requests")
+        .insert({
+          vendor_id: vendor.id,
+          status: "requested",
+          note: note.trim() || null,
+          rejection_reason: null,
+        })
+        .select("id,vendor_id,status,note,rejection_reason,created_at,reviewed_at,reviewed_by")
+        .single();
+
+      if (cErr) throw cErr;
+
+      await supabase.from("vendors").update({ verification_status: "requested" }).eq("id", vendor.id);
+
+      setReq(created as any);
+      setNote("");
+      setBanner({ type: "success", text: "Verification requested. You’ll be reviewed soon." });
+
+      onVendorUpdated({
+        ...vendor,
+        verification_status: "requested",
+        verified: false,
+      });
     } catch (e: any) {
-      setToast({ type: "error", text: e?.message ?? "Could not open document." });
+      setBanner({ type: "error", text: e?.message ?? "Request failed." });
+    } finally {
+      setRequesting(false);
     }
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
-    router.replace("/login");
+  if (!roles.isVendor || !vendor) {
+    return (
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">Verification</div>
+        <p className="mt-1 text-sm text-zinc-700">
+          Verification is for vendors. Create a vendor profile to request verification.
+        </p>
+        <Link
+          href="/post"
+          className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+        >
+          Become a vendor
+        </Link>
+      </div>
+    );
   }
 
-  const lastDecision = useMemo(() => {
-    const decided = requests.find(
-      (r) => r.status === "approved" || r.status === "rejected"
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-10 rounded-xl bg-zinc-100" />
+        <div className="h-24 rounded-2xl bg-zinc-100" />
+        <div className="h-40 rounded-2xl bg-zinc-100" />
+      </div>
     );
-    return decided ?? null;
-  }, [requests]);
+  }
 
-  const hasOpenRequest = useMemo(() => {
-    return requests.some(
-      (r) => r.status === "requested" || r.status === "under_review"
+  if (isVerified) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-sm font-semibold text-emerald-900">✅ Vendor verified</div>
+          <p className="mt-1 text-sm text-emerald-800">
+            Your store is verified. Customers will see your verified badge.
+          </p>
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 text-sm text-emerald-900">
+            <div>
+              <span className="text-emerald-700">Store:</span>{" "}
+              <span className="font-semibold">{vendor?.name ?? "—"}</span>
+            </div>
+            <div className="mt-1">
+              <span className="text-emerald-700">Verified at:</span>{" "}
+              <span className="font-semibold">{vendor?.verified_at ?? "—"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border p-3">
+          <div className="text-sm font-semibold text-zinc-900">Next</div>
+          <p className="mt-1 text-sm text-zinc-700">
+            Focus on improving your store profile and listings.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Link
+              href="/me?tab=profile"
+              className="inline-flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+            >
+              Edit profile
+            </Link>
+            <Link
+              href="/my-listings"
+              className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              My listings
+            </Link>
+          </div>
+        </div>
+      </div>
     );
-  }, [requests]);
+  }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 pb-24">
-      <header className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
+    <div className="space-y-3">
+      {banner ? (
+        <div
+          className={cn(
+            "rounded-2xl border p-3 text-sm",
+            banner.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : banner.type === "error"
+              ? "border-rose-200 bg-rose-50 text-rose-800"
+              : "border-zinc-200 bg-zinc-50 text-zinc-800"
+          )}
+          role="status"
+        >
+          {banner.text}
+        </div>
+      ) : null}
+
+      <Stepper step={step} req={req} vendor={vendor} />
+
+      <div className="rounded-2xl border p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-lg font-semibold text-zinc-900">My Profile</p>
+            <div className="text-sm font-semibold text-zinc-900">1) Upload documents</div>
             <p className="mt-1 text-sm text-zinc-600">
-              Manage your vendor details and verification.
+              Upload clear proof to speed up approval (ID card, student ID, business doc, etc).
             </p>
-            {email ? (
-              <p className="mt-1 text-xs text-zinc-500">Signed in as {email}</p>
-            ) : null}
           </div>
-
-          <button
-            onClick={logout}
-            className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            type="button"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Chip tone={meta.tone}>{meta.label}</Chip>
-          {vendor?.vendor_type ? (
-            <Chip>
-              <Store className="h-3.5 w-3.5" />
-              {friendlyVendorType(vendor.vendor_type)}
-            </Chip>
-          ) : null}
-          {vendor?.location ? (
-            <Chip>
-              <MapPin className="h-3.5 w-3.5" />
-              {vendor.location}
-            </Chip>
+          {pending ? (
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700">
+              Locked (pending review)
+            </span>
           ) : null}
         </div>
 
-        <div className="mt-3 rounded-2xl border bg-zinc-50 p-3 text-xs text-zinc-700">
-          {meta.hint}
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <Link
-            href={myListingsHref}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
-            <Package className="h-4 w-4" />
-            My Listings / Products
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => {
-              setDetailsOpen(true);
-              const el = document.getElementById("vendor-details-section");
-              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-          >
-            <PencilLine className="h-4 w-4" />
-            Edit My Details
-          </button>
-        </div>
-      </header>
-
-      <BannerView banner={banner} onClose={() => setBanner(null)} />
-
-      <section
-        id="vendor-details-section"
-        className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-base font-semibold text-zinc-900">Vendor details</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              These details show on your vendor page.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((v) => !v)}
-              className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-              aria-expanded={detailsOpen}
-              aria-controls="vendor-details-content"
-            >
-              {detailsOpen ? (
-                <>
-                  <ChevronUp className="h-4 w-4" />
-                  Collapse
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-4 w-4" />
-                  Expand
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={saveProfile}
-              disabled={saving || !dirty || !validation.canSave || !detailsOpen}
-              className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
-              type="button"
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save
-            </button>
-          </div>
-        </div>
-
-        {!detailsOpen && !loading && vendor ? (
-          <div className="mt-4 rounded-3xl border bg-zinc-50 p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border bg-white p-3">
-                <p className="text-xs font-semibold text-zinc-600">Shop name</p>
-                <p className="mt-1 text-sm font-semibold text-zinc-900">
-                  {vendor.name || "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-white p-3">
-                <p className="text-xs font-semibold text-zinc-600">Vendor type</p>
-                <p className="mt-1 text-sm font-semibold text-zinc-900">
-                  {friendlyVendorType(vendor.vendor_type)}
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-white p-3">
-                <p className="text-xs font-semibold text-zinc-600">WhatsApp</p>
-                <p className="mt-1 text-sm font-semibold text-zinc-900">
-                  {vendor.whatsapp || "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-white p-3">
-                <p className="text-xs font-semibold text-zinc-600">Phone</p>
-                <p className="mt-1 text-sm font-semibold text-zinc-900">
-                  {vendor.phone || "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-white p-3 sm:col-span-2">
-                <p className="text-xs font-semibold text-zinc-600">Location</p>
-                <p className="mt-1 text-sm font-semibold text-zinc-900">
-                  {vendor.location || "—"}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setDetailsOpen(true)}
-              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-            >
-              <PencilLine className="h-4 w-4" />
-              Edit details
-            </button>
-          </div>
-        ) : null}
-
-        <div id="vendor-details-content">
-          {loading && detailsOpen ? (
-            <div className="mt-5 grid gap-3">
-              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-              <div className="h-11 w-full animate-pulse rounded-2xl bg-zinc-100" />
-            </div>
-          ) : detailsOpen ? (
-            <div className="mt-5 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">Shop name</span>
-                <div
-                  className={cx(
-                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                    touched.name && validation.errors.name
-                      ? "border-rose-300"
-                      : "border-zinc-200"
-                  )}
-                >
-                  <User className="h-4 w-4 text-zinc-500" />
-                  <input
-                    value={form.name}
-                    onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                    onBlur={() => setTouched((p) => ({ ...p, name: true }))}
-                    className="w-full bg-transparent text-sm outline-none"
-                    placeholder="e.g. Mama Put Kitchen"
-                  />
-                </div>
-                {touched.name && validation.errors.name ? (
-                  <span className="text-xs text-rose-700">{validation.errors.name}</span>
-                ) : null}
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">
-                  WhatsApp (recommended)
-                </span>
-                <div
-                  className={cx(
-                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                    touched.whatsapp && validation.errors.whatsapp
-                      ? "border-rose-300"
-                      : "border-zinc-200"
-                  )}
-                >
-                  <Phone className="h-4 w-4 text-zinc-500" />
-                  <input
-                    value={form.whatsapp}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, whatsapp: e.target.value }))
-                    }
-                    onBlur={() => setTouched((p) => ({ ...p, whatsapp: true }))}
-                    className="w-full bg-transparent text-sm outline-none"
-                    placeholder="e.g. 2348012345678"
-                  />
-                </div>
-                {touched.whatsapp && validation.errors.whatsapp ? (
-                  <span className="text-xs text-rose-700">{validation.errors.whatsapp}</span>
-                ) : null}
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">Phone (optional)</span>
-                <div
-                  className={cx(
-                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                    touched.phone && validation.errors.phone
-                      ? "border-rose-300"
-                      : "border-zinc-200"
-                  )}
-                >
-                  <Phone className="h-4 w-4 text-zinc-500" />
-                  <input
-                    value={form.phone}
-                    onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                    onBlur={() => setTouched((p) => ({ ...p, phone: true }))}
-                    className="w-full bg-transparent text-sm outline-none"
-                    placeholder="e.g. 08012345678"
-                  />
-                </div>
-                {touched.phone && validation.errors.phone ? (
-                  <span className="text-xs text-rose-700">{validation.errors.phone}</span>
-                ) : null}
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">Location</span>
-                <div
-                  className={cx(
-                    "flex items-center gap-2 rounded-2xl border bg-white px-3 py-2.5",
-                    touched.location && validation.errors.location
-                      ? "border-rose-300"
-                      : "border-zinc-200"
-                  )}
-                >
-                  <MapPin className="h-4 w-4 text-zinc-500" />
-                  <input
-                    value={form.location}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, location: e.target.value }))
-                    }
-                    onBlur={() => setTouched((p) => ({ ...p, location: true }))}
-                    className="w-full bg-transparent text-sm outline-none"
-                    placeholder="e.g. JABU Hostel Area"
-                  />
-                </div>
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-zinc-700">Vendor type</span>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
-                    const active = form.vendor_type === t;
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setForm((p) => ({ ...p, vendor_type: t }))}
-                        className={cx(
-                          "rounded-2xl border px-3 py-2 text-sm font-semibold transition",
-                          active
-                            ? "border-zinc-900 bg-zinc-900 text-white"
-                            : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
-                        )}
-                      >
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
-              </label>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-base font-semibold text-zinc-900">Verification</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Verified vendors look more trustworthy and appear in the public vendor directory.
-            </p>
-          </div>
-
-          <button
-            onClick={requestVerification}
-            disabled={
-              verifying ||
-              loading ||
-              !vendor ||
-              hasOpenRequest ||
-              vendor?.verification_status === "under_review"
-            }
-            className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
-            type="button"
-          >
-            {verifying ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-            {hasOpenRequest ? "Request pending" : "Request verification"}
-          </button>
-        </div>
-
-        {vendor?.verification_status === "rejected" && vendor?.rejection_reason ? (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
-            <div className="flex items-start gap-2">
-              <ShieldAlert className="mt-0.5 h-4 w-4" />
-              <div>
-                <p className="font-semibold">Rejected</p>
-                <p className="mt-1 text-rose-800">Reason: {vendor.rejection_reason}</p>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-5 rounded-3xl border bg-zinc-50 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-zinc-900">Upload proof (optional)</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                Bucket: <span className="font-semibold">vendor-verification</span> (private).
-              </p>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Upload path must start with your user id:{" "}
-                <span className="font-mono">auth.uid()/...</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-[200px_1fr_auto]">
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <label className="block sm:col-span-1">
+            <div className="text-xs font-semibold text-zinc-700">Doc type</div>
             <select
               value={docType}
-              onChange={(e) => setDocType(e.target.value as any)}
-              className="h-11 rounded-2xl border bg-white px-3 text-sm"
+              onChange={(e) => setDocType(e.target.value)}
+              className={cn(
+                "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+                canUploadDocs ? "border-zinc-200 focus:border-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-400"
+              )}
+              disabled={!canUploadDocs}
             >
-              {DOC_TYPES.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
+              <option value="id_card">ID Card</option>
+              <option value="student_id">Student ID</option>
+              <option value="business_doc">Business Document</option>
+              <option value="utility_bill">Utility Bill</option>
+              <option value="other">Other</option>
             </select>
+          </label>
 
+          <label className="block sm:col-span-2">
+            <div className="text-xs font-semibold text-zinc-700">File</div>
             <input
-              id="doc-file"
               type="file"
               accept="image/*,application/pdf"
-              onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
-              className="h-11 rounded-2xl border bg-white px-3 text-sm"
-            />
-
-            <button
-              type="button"
-              onClick={uploadDoc}
-              disabled={uploading || !docFile || !vendor}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-60"
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UploadCloud className="h-4 w-4" />
+              disabled={!canUploadDocs}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className={cn(
+                "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none",
+                !canUploadDocs ? "border-zinc-200 bg-zinc-50 text-zinc-400" : "border-zinc-200 focus:border-zinc-400"
               )}
-              Upload
-            </button>
-          </div>
+            />
+          </label>
+        </div>
 
-          <div className="mt-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-zinc-700">Your documents</p>
-              {docsLoading ? <span className="text-xs text-zinc-500">Loading…</span> : null}
-            </div>
+        <button
+          type="button"
+          onClick={uploadDoc}
+          disabled={uploading || !file || !canUploadDocs}
+          className={cn(
+            "mt-3 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
+            uploading || !file || !canUploadDocs
+              ? "bg-zinc-200 text-zinc-600"
+              : "bg-zinc-900 text-white hover:bg-zinc-800"
+          )}
+        >
+          {uploading ? "Uploading…" : "Upload document"}
+        </button>
 
-            {docs.length === 0 ? (
-              <p className="mt-2 text-xs text-zinc-600">No documents uploaded yet.</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {docs.map((d) => (
-                  <li
-                    key={d.id}
-                    className="flex items-center justify-between gap-3 rounded-2xl border bg-white p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-zinc-900">
-                        {d.doc_type}
-                      </p>
-                      <p className="truncate text-xs text-zinc-600">{d.file_path}</p>
+        {pending ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            Your request is being reviewed — uploads and deletions are locked to keep your submission stable.
+          </p>
+        ) : null}
+
+        <div className="mt-4">
+          <div className="text-xs font-semibold text-zinc-700">Uploaded documents</div>
+          {docs.length ? (
+            <div className="mt-2 space-y-2">
+              {docs.map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border bg-white p-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-zinc-900">
+                      {d.doc_type.replace(/_/g, " ")}
                     </div>
+                    <div className="truncate text-xs text-zinc-500">{d.file_path}</div>
+                  </div>
+
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => openDoc(d.file_path)}
-                      className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                      className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
                     >
-                      <FileText className="h-4 w-4" />
-                      Open
+                      View
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
 
-        <div className="mt-5">
-          <p className="text-xs font-semibold text-zinc-700">Request history</p>
-          {requests.length === 0 ? (
-            <p className="mt-2 text-xs text-zinc-600">No verification requests yet.</p>
-          ) : (
-            <div className="mt-2 space-y-2">
-              {requests.slice(0, 3).map((r) => (
-                <div key={r.id} className="rounded-2xl border bg-white p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Chip
-                      tone={
-                        r.status === "approved"
-                          ? "good"
-                          : r.status === "rejected"
-                          ? "bad"
-                          : "warn"
-                      }
+                    <button
+                      type="button"
+                      onClick={() => deleteDoc({ id: d.id, file_path: d.file_path })}
+                      disabled={!canDeleteDocs}
+                      className={cn(
+                        "rounded-xl border px-3 py-1.5 text-xs font-semibold",
+                        !canDeleteDocs ? "bg-zinc-100 text-zinc-400" : "bg-white text-rose-700 hover:bg-rose-50 border-rose-200"
+                      )}
                     >
-                      {r.status}
-                    </Chip>
-
-                    {/* ✅ Hydration-safe time display */}
-                    <span className="text-xs text-zinc-500">
-                      {formatDateTimeUTC(r.created_at)}
-                    </span>
+                      Delete
+                    </button>
                   </div>
-
-                  {r.rejection_reason ? (
-                    <p className="mt-2 text-xs text-rose-700">
-                      Reason: {r.rejection_reason}
-                    </p>
-                  ) : null}
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="mt-2 text-sm text-zinc-600">No documents uploaded yet.</p>
           )}
+        </div>
+      </div>
 
-          {lastDecision?.status === "approved" ? (
-            <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-              <div className="flex items-start gap-2">
-                <BadgeCheck className="mt-0.5 h-4 w-4" />
-                <div>
-                  <p className="font-semibold">Approved</p>
-                  <p className="mt-1 text-emerald-800">You are verified. ✅</p>
-                </div>
-              </div>
-            </div>
+      <div className="rounded-2xl border p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-900">2) Request verification</div>
+            <p className="mt-1 text-sm text-zinc-600">
+              When you request, admins will review your docs and approve or reject with a reason.
+            </p>
+          </div>
+
+          {req ? (
+            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold text-zinc-700">
+              Status: {req.status.replace(/_/g, " ")}
+            </span>
           ) : null}
         </div>
 
-        <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-zinc-900">Go to vendors directory</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Check how your profile appears publicly.
-            </p>
+        {req?.status === "rejected" ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            <div className="font-semibold">Rejected</div>
+            <div className="mt-1">
+              Reason:{" "}
+              <span className="font-medium">
+                {req.rejection_reason || vendor.rejection_reason || "—"}
+              </span>
+            </div>
+            <div className="mt-2 text-rose-700">Fix your docs/details and submit a new request.</div>
           </div>
-          <button
-            type="button"
-            onClick={() => router.push("/vendors")}
-            className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
-            Open <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      </section>
+        ) : null}
+
+        {req && (req.status === "requested" || req.status === "under_review" || req.status === "approved") ? (
+          <div className="mt-3 rounded-xl border bg-zinc-50 p-3 text-sm text-zinc-800">
+            <div className="font-semibold">Request in progress</div>
+            <div className="mt-1 text-zinc-700">
+              Your request is{" "}
+              <span className="font-medium">{req.status.replace(/_/g, " ")}</span>.
+              You don’t need to submit again.
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <label className="block">
+              <div className="text-xs font-semibold text-zinc-700">Note (optional)</div>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Anything admins should know? e.g. ‘I’m a campus vendor at male hostel gate.’"
+                className="mt-1 min-h-[88px] w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={submitRequest}
+              disabled={!canRequest || requesting}
+              className={cn(
+                "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
+                !canRequest || requesting ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+              )}
+            >
+              {requesting ? "Submitting…" : "Request verification"}
+            </button>
+
+            {!docs.length ? <p className="text-xs text-zinc-500">Upload at least one document to enable request.</p> : null}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">Current status</div>
+        <p className="mt-1 text-sm text-zinc-700">
+          {isVerified ? "✅ You’re verified." : req ? `Your latest request is: ${req.status.replace(/_/g, " ")}.` : "No request submitted yet."}
+        </p>
+      </div>
     </div>
+  );
+}
+
+function Stepper({ step, req, vendor }: { step: number; req: any; vendor: Vendor }) {
+  const steps = [
+    { n: 1, title: "Upload docs", desc: "Add proof documents" },
+    { n: 2, title: "Request", desc: "Submit for review" },
+    { n: 3, title: "Review", desc: "Admins check your docs" },
+    { n: 4, title: "Result", desc: "Approved / Rejected" },
+  ];
+
+  return (
+    <div className="rounded-2xl border bg-white p-3">
+      <div className="text-sm font-semibold text-zinc-900">Verification</div>
+      <div className="mt-1 text-sm text-zinc-600">
+        Status:{" "}
+        <span className="font-semibold text-zinc-800">
+          {vendor.verified || vendor.verification_status === "verified"
+            ? "verified"
+            : req?.status
+            ? String(req.status).replace(/_/g, " ")
+            : "not started"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {steps.map((s) => {
+          const done = s.n < step;
+          const active = s.n === step;
+          return (
+            <div key={s.n} className="min-w-0">
+              <div
+                className={cn(
+                  "flex items-center justify-center rounded-xl border px-2 py-2 text-xs font-semibold",
+                  done
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : active
+                    ? "border-zinc-900 bg-zinc-900 text-white"
+                    : "border-zinc-200 bg-white text-zinc-600"
+                )}
+              >
+                {s.title}
+              </div>
+              <div className="mt-1 truncate text-[11px] text-zinc-500">{s.desc}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AccountTab({ me, onSignOut }: { me: Me | null; onSignOut: () => Promise<void> }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border p-3">
+        <div className="text-sm font-semibold text-zinc-900">Account</div>
+        <p className="mt-1 text-sm text-zinc-700">
+          Email: <span className="font-medium">{me?.email ?? "—"}</span>
+        </p>
+      </div>
+
+      <button
+        onClick={onSignOut}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+      >
+        <LogOut className="h-4 w-4" />
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+function Field(props: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  error?: string;
+  onChange: (v: string) => void;
+  onBlur?: () => void;
+}) {
+  return (
+    <label className="block">
+      <div className="text-xs font-semibold text-zinc-700">{props.label}</div>
+      <input
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        onBlur={props.onBlur}
+        placeholder={props.placeholder}
+        className={cn(
+          "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none",
+          props.error ? "border-rose-300 focus:border-rose-400" : "border-zinc-200 focus:border-zinc-400"
+        )}
+      />
+      {props.error ? <div className="mt-1 text-xs font-medium text-rose-700">{props.error}</div> : null}
+    </label>
   );
 }

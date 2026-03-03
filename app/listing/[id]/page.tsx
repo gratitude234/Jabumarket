@@ -172,15 +172,15 @@ export default async function ListingPage({
   const isActive = listing.status === "active";
   const isVerified = Boolean(vendor?.verified);
 
-  const whatsappRaw = cleanDigits(vendor?.whatsapp);
+  const whatsappRaw = String(vendor?.whatsapp ?? "");
   const phoneRaw = cleanDigits(vendor?.phone);
-  const contactPhone = phoneRaw || whatsappRaw;
-
-  const hasWhatsApp = whatsappRaw.length >= 8;
-  const hasPhone = contactPhone.length >= 8;
+  const contactPhone = phoneRaw || cleanDigits(vendor?.whatsapp);
 
   const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
-  const waLink = hasWhatsApp ? getWhatsAppLink(whatsappRaw, waText) : "";
+  const waLink = getWhatsAppLink(whatsappRaw, waText);
+
+  const hasWhatsApp = Boolean(waLink);
+  const hasPhone = contactPhone.length >= 8;
 
   const postedAt = formatDateTime(listing.created_at);
 
@@ -543,7 +543,7 @@ export default async function ListingPage({
             <div className="mt-2">
               {!isSold && isActive && isFoodListing ? (
                 <Link
-                  href={`/couriers?listing=${listing.id}`}
+                  href={`/delivery?listing=${listing.id}`}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
                 >
                   <Truck className="h-4 w-4" />

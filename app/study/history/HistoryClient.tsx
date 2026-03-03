@@ -50,14 +50,14 @@ const TABLE_SETS = "study_quiz_sets";
 
 type AttemptRow = {
   id: string;
-  quiz_set_id: string | null;
+  set_id: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   // optional fields (won’t break UI if missing)
   submitted_at?: string | null;
   status?: string | null;
-  correct?: number | null;
-  total?: number | null;
+  score?: number | null;
+  total_questions?: number | null;
 
   // joined set info (optional)
   study_quiz_sets?: {
@@ -272,8 +272,8 @@ function AttemptCard({ a }: { a: AttemptRow }) {
     (a.status ? ["submitted", "completed", "finished"].includes(a.status.toLowerCase()) : false);
 
   const score =
-    typeof a.correct === "number" && typeof a.total === "number" && a.total > 0
-      ? `${a.correct}/${a.total}`
+    typeof a.score === "number" && typeof a.total_questions === "number" && a.total_questions > 0
+      ? `${a.score}/${a.total_questions}`
       : null;
 
   return (
@@ -333,9 +333,9 @@ function AttemptCard({ a }: { a: AttemptRow }) {
           <ArrowRight className="h-4 w-4" />
         </Link>
 
-        {a.quiz_set_id ? (
+        {a.set_id ? (
           <Link
-            href={`/study/practice/${a.quiz_set_id}`}
+            href={`/study/practice/${a.set_id}`}
             className={cn(
               "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground no-underline",
               "hover:bg-secondary/50",
@@ -481,8 +481,8 @@ export default function HistoryClient() {
         .from(TABLE_ATTEMPTS)
         .select(
           `
-          id,quiz_set_id,created_at,updated_at,submitted_at,status,correct,total,
-          ${TABLE_SETS}:quiz_set_id(id,title,course_code)
+          id,set_id,created_at,updated_at,submitted_at,status,score,total_questions,
+          ${TABLE_SETS}(id,title,course_code)
         `,
           { count: "exact" }
         )

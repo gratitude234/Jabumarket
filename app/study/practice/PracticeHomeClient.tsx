@@ -12,17 +12,18 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
-  Filter,
   Hash,
   Search,
   SlidersHorizontal,
   Sparkles,
-  Star,
   X,
   SortAsc,
   SortDesc,
   Play,
   History,
+  Info,
+  Flame,
+  Layers,
 } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -48,7 +49,6 @@ function formatWhen(iso?: string | null) {
 }
 
 type SortKey = "newest" | "oldest";
-
 const SORTS: Array<{ key: SortKey; label: string; icon: React.ReactNode }> = [
   { key: "newest", label: "Newest", icon: <SortDesc className="h-4 w-4" /> },
   { key: "oldest", label: "Oldest", icon: <SortAsc className="h-4 w-4" /> },
@@ -57,36 +57,35 @@ const SORTS: Array<{ key: SortKey; label: string; icon: React.ReactNode }> = [
 const LEVELS = ["100", "200", "300", "400", "500"] as const;
 const SEMESTERS = ["1st", "2nd", "summer"] as const;
 
+type ViewKey = "for_you" | "recent" | "all";
+
 type QuizSetRow = {
   id: string;
   title: string | null;
   description: string | null;
 
-  // common fields (may exist)
   course_code?: string | null;
   level?: number | null;
-  semester?: string | null; // could be first/second/summer or 1st/2nd
+  semester?: string | null;
 
-  // publishing flags (optional)
   published?: boolean | null;
   approved?: boolean | null;
 
-  // stats (optional)
   questions_count?: number | null;
   total_questions?: number | null;
 
+  time_limit_minutes?: number | null;
   created_at?: string | null;
 };
 
 type LatestAttempt = {
   id: string;
-  quiz_set_id: string | null;
+  set_id: string | null;
   created_at: string | null;
   updated_at?: string | null;
 
-  // optional progress fields
-  correct?: number | null;
-  total?: number | null;
+  score?: number | null;
+  total_questions?: number | null;
 
   study_quiz_sets?: {
     id: string;
@@ -95,10 +94,7 @@ type LatestAttempt = {
   } | null;
 };
 
-function buildHref(
-  path: string,
-  params: Record<string, string | number | null | undefined>
-) {
+function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
   const sp = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
     if (v === null || v === undefined) return;
@@ -300,15 +296,110 @@ function safeSemesterLabel(v?: string | null) {
   if (!s) return "";
   if (s === "first") return "1st";
   if (s === "second") return "2nd";
-  return s; // "summer" or already "1st"
+  return s;
+}
+
+function pill(text: string, icon?: React.ReactNode) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+      {icon ? icon : null}
+      {text}
+    </span>
+  );
+}
+
+function PrimaryButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+        "hover:opacity-90 disabled:opacity-60",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
+        "hover:bg-secondary/50",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MiniTabs({
+  value,
+  onChange,
+}: {
+  value: ViewKey;
+  onChange: (v: ViewKey) => void;
+}) {
+  const items: Array<{ k: ViewKey; label: string; icon: React.ReactNode }> = [
+    { k: "for_you", label: "For you", icon: <Sparkles className="h-4 w-4" /> },
+    { k: "recent", label: "Recent", icon: <History className="h-4 w-4" /> },
+    { k: "all", label: "All sets", icon: <Layers className="h-4 w-4" /> },
+  ];
+
+  return (
+    <div className="flex w-full items-center gap-2 overflow-auto rounded-3xl border border-border bg-background p-2">
+      {items.map((it) => {
+        const active = value === it.k;
+        return (
+          <button
+            key={it.k}
+            type="button"
+            onClick={() => onChange(it.k)}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+            )}
+          >
+            {it.icon}
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function QuizSetCard({
   s,
   onStart,
+  onPreview,
 }: {
   s: QuizSetRow;
   onStart: () => void;
+  onPreview: () => void;
 }) {
   const title = (s.title ?? "Untitled set").trim() || "Untitled set";
   const code = (s.course_code ?? "").toString().trim().toUpperCase();
@@ -321,6 +412,11 @@ function QuizSetCard({
       ? s.total_questions
       : null;
 
+  const time =
+    typeof s.time_limit_minutes === "number" && Number.isFinite(s.time_limit_minutes)
+      ? `${s.time_limit_minutes} min`
+      : "";
+
   return (
     <Card className="rounded-3xl p-4">
       <div className="flex items-start justify-between gap-3">
@@ -331,37 +427,12 @@ function QuizSetCard({
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {code ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
-                <Hash className="h-3.5 w-3.5" />
-                {code}
-              </span>
-            ) : null}
-
-            {level ? (
-              <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                {level}
-              </span>
-            ) : null}
-
-            {sem ? (
-              <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                {sem} sem
-              </span>
-            ) : null}
-
-            {qCount !== null ? (
-              <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                {qCount} questions
-              </span>
-            ) : null}
-
-            {s.created_at ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                {formatWhen(s.created_at)}
-              </span>
-            ) : null}
+            {code ? pill(code, <Hash className="h-3.5 w-3.5" />) : null}
+            {level ? pill(level) : null}
+            {sem ? pill(`${sem} sem`, <Clock className="h-3.5 w-3.5" />) : null}
+            {qCount !== null ? pill(`${qCount} questions`) : null}
+            {time ? pill(time) : null}
+            {s.created_at ? pill(formatWhen(s.created_at)) : null}
           </div>
         </div>
 
@@ -370,19 +441,18 @@ function QuizSetCard({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onStart}
-        className={cn(
-          "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
-          "hover:opacity-90",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        )}
-      >
-        <Play className="h-4 w-4" />
-        Start practice
-        <ArrowRight className="h-4 w-4" />
-      </button>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <PrimaryButton onClick={onStart}>
+          <Play className="h-4 w-4" />
+          Start
+          <ArrowRight className="h-4 w-4" />
+        </PrimaryButton>
+
+        <SecondaryButton onClick={onPreview}>
+          <Info className="h-4 w-4" />
+          Preview
+        </SecondaryButton>
+      </div>
     </Card>
   );
 }
@@ -399,13 +469,20 @@ export default function PracticeHomeClient() {
   const semesterParam = sp.get("semester") ?? "";
   const sortParam = (sp.get("sort") ?? "newest") as SortKey;
 
-  // (optional) published-only toggle
+  // view tab
+  const viewParam = (sp.get("view") ?? "for_you") as ViewKey;
+
+  // published-only toggle
   const publishedParam = sp.get("published") ?? "";
   const publishedOnly = publishedParam === "1";
 
   // Local state
   const [q, setQ] = useState(qParam);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Preview sheet
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSet, setPreviewSet] = useState<QuizSetRow | null>(null);
 
   // Drawer drafts
   const [draftCourse, setDraftCourse] = useState(courseParam);
@@ -423,8 +500,9 @@ export default function PracticeHomeClient() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schemaHint, setSchemaHint] = useState<string | null>(null);
 
-  // Continue/resume
+  // Attempts
   const [latestAttempt, setLatestAttempt] = useState<LatestAttempt | null>(null);
+  const [recentAttempts, setRecentAttempts] = useState<LatestAttempt[]>([]);
 
   // toast
   const [toast, setToast] = useState<string | null>(null);
@@ -434,7 +512,7 @@ export default function PracticeHomeClient() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  // Pagination (load more)
+  // Pagination
   const PAGE_SIZE = 12;
   const [page, setPage] = useState(1);
 
@@ -446,13 +524,13 @@ export default function PracticeHomeClient() {
       semesterParam,
       sortParam,
       publishedOnly ? "p1" : "p0",
+      viewParam,
     ].join("|");
-  }, [qParam, courseParam, levelParam, semesterParam, sortParam, publishedOnly]);
+  }, [qParam, courseParam, levelParam, semesterParam, sortParam, publishedOnly, viewParam]);
 
-  // keep q synced
   useEffect(() => setQ(qParam), [qParam]);
 
-  // debounce search to URL
+  // debounce search to URL (keeps mobile typing smooth)
   const debounceRef = useRef<number | null>(null);
   useEffect(() => {
     const qNorm = normalizeQuery(q);
@@ -468,6 +546,7 @@ export default function PracticeHomeClient() {
           semester: semesterParam || null,
           sort: sortParam !== "newest" ? sortParam : null,
           published: publishedOnly ? "1" : null,
+          view: viewParam !== "for_you" ? viewParam : null,
         })
       );
     }, 350);
@@ -485,6 +564,7 @@ export default function PracticeHomeClient() {
     semesterParam,
     sortParam,
     publishedOnly,
+    viewParam,
   ]);
 
   // Reset list when filters change
@@ -495,7 +575,7 @@ export default function PracticeHomeClient() {
     setTotal(0);
   }, [filtersKey]);
 
-  // Load latest attempt (best-effort)
+  // Load latest + recent attempts (best-effort)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -503,36 +583,42 @@ export default function PracticeHomeClient() {
         const { data: auth } = await supabase.auth.getUser();
         const uid = auth?.user?.id;
         if (!uid) {
-          if (mounted) setLatestAttempt(null);
+          if (mounted) {
+            setLatestAttempt(null);
+            setRecentAttempts([]);
+          }
           return;
         }
 
-        // NOTE: adjust table name if yours differs.
-        // This is defensive: if table doesn't exist, it will just fail silently.
         const res = await supabase
           .from("study_practice_attempts")
           .select(
             `
-            id,quiz_set_id,created_at,updated_at,correct,total,
-            study_quiz_sets:quiz_set_id(id,title,course_code)
+            id,set_id,created_at,updated_at,score,total_questions,
+            study_quiz_sets(id,title,course_code)
           `
           )
           .eq("user_id", uid)
           .order("updated_at", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(1);
+          .limit(6);
 
         if (!mounted) return;
 
         if (res.error) {
           setLatestAttempt(null);
+          setRecentAttempts([]);
           return;
         }
 
-        const row = (res.data as any[])?.[0] ?? null;
-        setLatestAttempt(row ? (row as LatestAttempt) : null);
+        const rows = ((res.data as any[]) ?? []).filter(Boolean) as LatestAttempt[];
+        setLatestAttempt(rows[0] ?? null);
+        setRecentAttempts(rows.slice(0, 6));
       } catch {
-        if (mounted) setLatestAttempt(null);
+        if (mounted) {
+          setLatestAttempt(null);
+          setRecentAttempts([]);
+        }
       }
     })();
 
@@ -553,19 +639,12 @@ export default function PracticeHomeClient() {
     }
 
     try {
-      // NOTE: adjust table/columns if yours differs.
-      // Defensive select: includes optional fields if present.
-      let query = supabase
-        .from("study_quiz_sets")
-        .select(
-          `
-          id,title,description,course_code,level,semester,published,approved,questions_count,total_questions,created_at
-        `,
-          { count: "exact" }
-        );
+      // request optional columns if they exist in your schema
+      const selectFields =
+        "id,title,description,course_code,level,semester,time_limit_minutes,published,questions_count,created_at";
 
-      // default filter: show only published/approved if those columns exist
-      // If your schema doesn’t have them, Supabase will error — we catch and show schemaHint.
+      let query = supabase.from("study_quiz_sets").select(selectFields, { count: "exact" });
+
       if (publishedOnly) query = query.eq("published", true);
 
       const qNorm = normalizeQuery(qParam);
@@ -584,11 +663,9 @@ export default function PracticeHomeClient() {
       }
 
       if (semesterParam) {
-        // allow both "1st"/"2nd" and "first"/"second" in DB
-        const sem = semesterParam.trim().toLowerCase();
-        if (sem === "1st") query = query.in("semester", ["1st", "first"]);
-        else if (sem === "2nd") query = query.in("semester", ["2nd", "second"]);
-        else query = query.eq("semester", sem);
+        // flexible match (your DB might store "first/second/summer" or "1st/2nd/summer")
+        const s = semesterParam.trim().toLowerCase();
+        if (s) query = query.eq("semester", s);
       }
 
       if (sortParam === "oldest") query = query.order("created_at", { ascending: true });
@@ -603,15 +680,15 @@ export default function PracticeHomeClient() {
         const msg = res.error.message || "Unknown error";
         setLoadError(msg);
 
-        // Provide hints if columns aren't present
         if (
           msg.includes("published") ||
           msg.includes("approved") ||
           msg.includes("questions_count") ||
-          msg.includes("total_questions")
+          msg.includes("time_limit_minutes") ||
+          msg.includes("semester")
         ) {
           setSchemaHint(
-            "Your practice sets table is missing some optional columns (published/approved/questions_count/total_questions). The page will still work, but you can add them for richer UX."
+            "Some optional columns are missing (e.g., semester/time_limit/questions_count/published). The page still works — add them later for richer UX."
           );
         }
 
@@ -643,7 +720,6 @@ export default function PracticeHomeClient() {
     }
   }
 
-  // initial fetch
   useEffect(() => {
     fetchPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -667,6 +743,7 @@ export default function PracticeHomeClient() {
         semester: draftSemester || null,
         sort: draftSort !== "newest" ? draftSort : null,
         published: draftPublished ? "1" : null,
+        view: viewParam !== "for_you" ? viewParam : null,
       })
     );
     setDrawerOpen(false);
@@ -674,7 +751,21 @@ export default function PracticeHomeClient() {
 
   function clearAll() {
     setQ("");
-    router.replace(pathname);
+    router.replace(buildHref(pathname, { view: viewParam !== "for_you" ? viewParam : null }));
+  }
+
+  function setView(v: ViewKey) {
+    router.replace(
+      buildHref(pathname, {
+        q: qParam || null,
+        course: courseParam || null,
+        level: levelParam || null,
+        semester: semesterParam || null,
+        sort: sortParam !== "newest" ? sortParam : null,
+        published: publishedOnly ? "1" : null,
+        view: v !== "for_you" ? v : null,
+      })
+    );
   }
 
   const hasAnyFilters = Boolean(
@@ -687,15 +778,56 @@ export default function PracticeHomeClient() {
   );
 
   const activeSortLabel = SORTS.find((s) => s.key === sortParam)?.label ?? "Newest";
-
   const showingFrom = total === 0 ? 0 : 1;
   const showingTo = Math.min(total, sets.length);
+
+  // derived view data
+  const forYouSets = useMemo(() => {
+    // lightweight "for you": prefer sets matching active level/semester/course filters if present
+    // (later you can replace with actual user profile dept/level logic)
+    if (!sets.length) return [];
+    const wantCourse = courseParam.trim().toUpperCase();
+    const wantLevel = Number(levelParam || NaN);
+    const wantSem = semesterParam.trim().toLowerCase();
+
+    const scored = sets.map((s) => {
+      let score = 0;
+      const code = (s.course_code ?? "").toString().trim().toUpperCase();
+      if (wantCourse && code === wantCourse) score += 3;
+      if (Number.isFinite(wantLevel) && typeof s.level === "number" && s.level === wantLevel) score += 2;
+      if (wantSem && (s.semester ?? "").toString().trim().toLowerCase() === wantSem) score += 1;
+      // small bias to newer
+      if (s.created_at) score += 0.2;
+      return { s, score };
+    });
+
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map((x) => x.s);
+  }, [sets, courseParam, levelParam, semesterParam]);
+
+  const visibleSets = useMemo(() => {
+    if (viewParam === "for_you") return forYouSets.length ? forYouSets : sets;
+    return sets;
+  }, [viewParam, forYouSets, sets]);
+
+  const showRecentEmpty = viewParam === "recent" && recentAttempts.length === 0;
+
+  function openPreview(s: QuizSetRow) {
+    setPreviewSet(s);
+    setPreviewOpen(true);
+  }
+
+  function startSet(id: string) {
+    router.push(`/study/practice/${id}`);
+  }
 
   return (
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs />
 
-      {/* Top bar: MATCH StudyHome (no max-w container) */}
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
           href="/study"
@@ -722,10 +854,11 @@ export default function PracticeHomeClient() {
         </Link>
       </div>
 
+      {/* Header */}
       <Card className="rounded-3xl">
         <PageHeader
           title="Practice"
-          subtitle="Practice past questions and track your improvement."
+          subtitle="Pick a set, preview it, and start in one tap."
           right={
             <span className="hidden sm:inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
               <Sparkles className="h-4 w-4" />
@@ -735,14 +868,12 @@ export default function PracticeHomeClient() {
         />
       </Card>
 
-      {/* Continue card (best-effort) */}
-      {latestAttempt?.quiz_set_id ? (
+      {/* Continue card */}
+      {latestAttempt?.set_id ? (
         <Card className="rounded-3xl p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-muted-foreground">
-                Continue where you stopped
-              </p>
+              <p className="text-sm font-semibold text-muted-foreground">Continue</p>
               <p className="mt-1 truncate text-base font-semibold text-foreground">
                 {(latestAttempt.study_quiz_sets?.title ?? "Practice set").trim() || "Practice set"}
               </p>
@@ -759,10 +890,11 @@ export default function PracticeHomeClient() {
               </div>
             </div>
 
-            <Link
-              href={`/study/practice/${latestAttempt.quiz_set_id}`}
+            <button
+              type="button"
+              onClick={() => startSet(String(latestAttempt.set_id))}
               className={cn(
-                "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
+                "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
                 "hover:opacity-90",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
@@ -770,10 +902,13 @@ export default function PracticeHomeClient() {
               <Play className="h-4 w-4" />
               Continue
               <ArrowRight className="h-4 w-4" />
-            </Link>
+            </button>
           </div>
         </Card>
       ) : null}
+
+      {/* Tabs: For you / Recent / All */}
+      <MiniTabs value={viewParam} onChange={setView} />
 
       {/* Sticky search + filters */}
       <div className="sticky top-16 z-30">
@@ -783,7 +918,7 @@ export default function PracticeHomeClient() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search course code, set title, topic…"
+              placeholder="Search course code, title, topic…"
               className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
 
@@ -837,7 +972,7 @@ export default function PracticeHomeClient() {
             </div>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
-              Tip: Try <span className="font-semibold">GST101</span> or “Anatomy”.
+              Tip: try <span className="font-semibold">GST101</span> or “Anatomy”.
             </p>
           )}
 
@@ -854,6 +989,7 @@ export default function PracticeHomeClient() {
                       semester: semesterParam || null,
                       sort: sortParam !== "newest" ? sortParam : null,
                       published: publishedOnly ? "1" : null,
+                      view: viewParam !== "for_you" ? viewParam : null,
                     })
                   )
                 }
@@ -877,6 +1013,7 @@ export default function PracticeHomeClient() {
                       semester: semesterParam || null,
                       sort: sortParam !== "newest" ? sortParam : null,
                       published: publishedOnly ? "1" : null,
+                      view: viewParam !== "for_you" ? viewParam : null,
                     })
                   )
                 }
@@ -898,6 +1035,7 @@ export default function PracticeHomeClient() {
                       semester: null,
                       sort: sortParam !== "newest" ? sortParam : null,
                       published: publishedOnly ? "1" : null,
+                      view: viewParam !== "for_you" ? viewParam : null,
                     })
                   )
                 }
@@ -929,79 +1067,144 @@ export default function PracticeHomeClient() {
         </div>
       ) : null}
 
-      {/* Results */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {loading ? (
-          <>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="rounded-3xl" />
+      {/* RECENT VIEW */}
+      {viewParam === "recent" ? (
+        showRecentEmpty ? (
+          <EmptyState
+            icon={<History className="h-5 w-5" />}
+            title="No recent attempts yet"
+            description="Start any practice set and your recent attempts will show here."
+            action={
+              <Link
+                href="/study/materials"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
+                  "hover:opacity-90",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                )}
+              >
+                <Flame className="h-4 w-4" />
+                Browse Materials
+              </Link>
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            {recentAttempts.map((a) => (
+              <Card key={a.id} className="rounded-3xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-semibold text-foreground">
+                      {(a.study_quiz_sets?.title ?? "Practice set").trim() || "Practice set"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {a.study_quiz_sets?.course_code ? (
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                          {String(a.study_quiz_sets.course_code).toUpperCase()}
+                        </span>
+                      ) : null}
+                      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatWhen(a.updated_at ?? a.created_at)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {a.set_id ? (
+                    <button
+                      type="button"
+                      onClick={() => startSet(String(a.set_id))}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
+                        "hover:opacity-90",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      )}
+                    >
+                      <Play className="h-4 w-4" />
+                      Open
+                    </button>
+                  ) : null}
+                </div>
+              </Card>
             ))}
-          </>
-        ) : sets.length === 0 ? (
-          <div className="sm:col-span-2">
-            <EmptyState
-              icon={<BookOpen className="h-5 w-5" />}
-              title="No practice sets found"
-              description={
-                hasAnyFilters
-                  ? "Try clearing filters or searching a different course/topic."
-                  : "No sets have been published yet. Check Materials or come back later."
-              }
-              action={
-                <Link
-                  href="/study/materials"
+          </div>
+        )
+      ) : (
+        <>
+          {/* RESULTS */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {loading ? (
+              <>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonCard key={i} className="rounded-3xl" />
+                ))}
+              </>
+            ) : visibleSets.length === 0 ? (
+              <div className="sm:col-span-2">
+                <EmptyState
+                  icon={<BookOpen className="h-5 w-5" />}
+                  title="No practice sets found"
+                  description={
+                    hasAnyFilters
+                      ? "Try clearing filters or searching a different course/topic."
+                      : "No sets have been published yet. Check Materials or come back later."
+                  }
+                  action={
+                    <Link
+                      href="/study/materials"
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
+                        "hover:opacity-90",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      )}
+                    >
+                      <Flame className="h-4 w-4" />
+                      Browse Materials
+                    </Link>
+                  }
+                />
+              </div>
+            ) : (
+              visibleSets.map((s) => (
+                <QuizSetCard
+                  key={s.id}
+                  s={s}
+                  onStart={() => startSet(s.id)}
+                  onPreview={() => openPreview(s)}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Load more (only on All sets view) */}
+          {!loading && sets.length > 0 && viewParam === "all" ? (
+            <div className="flex justify-center">
+              {hasMore ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const next = page + 1;
+                    setPage(next);
+                    await fetchPage(next);
+                  }}
+                  disabled={loadingMore}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
-                    "hover:opacity-90",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground",
+                    "hover:bg-secondary/50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    loadingMore ? "opacity-70" : ""
                   )}
                 >
-                  <Filter className="h-4 w-4" />
-                  Browse Materials
-                </Link>
-              }
-            />
-          </div>
-        ) : (
-          sets.map((s) => (
-            <QuizSetCard
-              key={s.id}
-              s={s}
-              onStart={() => {
-                router.push(`/study/practice/${s.id}`);
-              }}
-            />
-          ))
-        )}
-      </div>
-
-      {/* Load more */}
-      {!loading && sets.length > 0 ? (
-        <div className="flex justify-center">
-          {hasMore ? (
-            <button
-              type="button"
-              onClick={async () => {
-                const next = page + 1;
-                setPage(next);
-                await fetchPage(next);
-              }}
-              disabled={loadingMore}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground",
-                "hover:bg-secondary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                loadingMore ? "opacity-70" : ""
+                  {loadingMore ? "Loading…" : "Load more"}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              ) : (
+                <p className="text-sm font-semibold text-muted-foreground">You’ve reached the end.</p>
               )}
-            >
-              {loadingMore ? "Loading…" : "Load more"}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          ) : (
-            <p className="text-sm font-semibold text-muted-foreground">You’ve reached the end.</p>
-          )}
-        </div>
-      ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
 
       {/* Filters drawer */}
       <Drawer
@@ -1067,16 +1270,33 @@ export default function PracticeHomeClient() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2">
-          <SelectRow
-            label="Course code"
-            value={draftCourse}
-            onChange={setDraftCourse}
-            options={[]}
-            placeholder="e.g., GST101 (type below)"
-          />
-          <p className="text-xs text-muted-foreground -mt-1">
-            Tip: Type the course code in the search bar (it matches codes too).
+        {/* Course: mobile-first typed input (better than empty select) */}
+        <div className="mt-3 rounded-3xl border border-border bg-background p-3">
+          <p className="text-sm font-semibold text-foreground">Course</p>
+          <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
+            <Hash className="h-4 w-4 text-muted-foreground" />
+            <input
+              value={draftCourse}
+              onChange={(e) => setDraftCourse(e.target.value)}
+              placeholder="e.g., GST101 or CSC201"
+              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {draftCourse ? (
+              <button
+                type="button"
+                onClick={() => setDraftCourse("")}
+                className={cn(
+                  "grid h-9 w-9 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                )}
+                aria-label="Clear course"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            You can also search course codes in the main search bar.
           </p>
         </div>
 
@@ -1111,6 +1331,77 @@ export default function PracticeHomeClient() {
             Filters apply when you tap <span className="font-semibold">Apply</span>. Search updates automatically.
           </p>
         </div>
+      </Drawer>
+
+      {/* Preview sheet */}
+      <Drawer
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title="Preview"
+        footer={
+          previewSet ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  startSet(previewSet.id);
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+                  "hover:opacity-90",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                )}
+              >
+                <Play className="h-4 w-4" />
+                Start
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
+                  "hover:bg-secondary/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                )}
+              >
+                Close
+              </button>
+            </div>
+          ) : null
+        }
+      >
+        {previewSet ? (
+          <div className="space-y-3">
+            <div className="rounded-3xl border border-border bg-background p-4">
+              <p className="text-base font-semibold text-foreground">
+                {(previewSet.title ?? "Untitled set").trim() || "Untitled set"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {previewSet.description ? previewSet.description : "Practice past questions and test yourself."}
+              </p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {previewSet.course_code ? pill(String(previewSet.course_code).toUpperCase(), <Hash className="h-3.5 w-3.5" />) : null}
+                {typeof previewSet.level === "number" ? pill(`${previewSet.level}L`) : null}
+                {previewSet.semester ? pill(`${safeSemesterLabel(previewSet.semester)} sem`, <Clock className="h-3.5 w-3.5" />) : null}
+                {typeof previewSet.questions_count === "number" ? pill(`${previewSet.questions_count} questions`) : null}
+                {typeof previewSet.time_limit_minutes === "number" ? pill(`${previewSet.time_limit_minutes} min`) : pill("Untimed")}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-muted/40 p-4">
+              <p className="text-sm font-semibold text-foreground">Before you start</p>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                <li>• Answer carefully and review after.</li>
+                <li>• Use “History” to track your improvement.</li>
+                <li>• If a set is missing, check Materials or try later.</li>
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing to preview.</p>
+        )}
       </Drawer>
 
       {/* Toast */}
