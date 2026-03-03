@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
@@ -135,7 +135,7 @@ function defaultVendorNameFromEmail(email?: string | null) {
 
 /* ---------------------------------- Page --------------------------------- */
 
-export default function MePage() {
+function MeInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -1922,5 +1922,13 @@ function Field(props: {
       />
       {props.error ? <div className="mt-1 text-xs font-medium text-rose-700">{props.error}</div> : null}
     </label>
+  );
+}
+
+export default function MePage() {
+  return (
+    <Suspense fallback={<div className="mx-auto w-full max-w-4xl px-4 py-6">Loading…</div>}>
+      <MeInner />
+    </Suspense>
   );
 }
