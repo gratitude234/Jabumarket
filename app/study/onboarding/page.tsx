@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 function OnboardingFallback() {
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
+    <div className="space-y-4 pb-28 md:pb-6">
       <Card className="rounded-3xl">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

@@ -5,7 +5,8 @@ import { Flag } from "lucide-react";
 import { Card } from "../../../_components/StudyUI";
 import OptionCard from "../parts/OptionCard";
 import ResponsePanel from "../parts/ResponsePanel";
-import { cn, normalize, QuizOption, QuizQuestion } from "../usePracticeEngine";
+import { cn, normalize } from "@/lib/utils";
+import type { QuizOption, QuizQuestion } from "@/lib/types";
 
 function readAutoReveal() {
   if (typeof window === "undefined") return true;

@@ -1,8 +1,5 @@
+export { cn } from "@/lib/utils";
 // app/me/_components/utils.ts
-
-export function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 export function initials(nameOrEmail?: string | null) {
   const s = (nameOrEmail ?? "").trim();
@@ -22,6 +19,19 @@ export function pillTone(kind: "good" | "warn" | "base") {
 export function normalizePhone(input?: string | null) {
   if (!input) return "";
   return input.replace(/[^\d+]/g, "").trim();
+}
+
+export function avatarGradient(name?: string | null): string {
+  const palettes: [string, string][] = [
+    ["#c2410c", "#ea580c"],
+    ["#7c3aed", "#a855f7"],
+    ["#0f766e", "#14b8a6"],
+    ["#1d4ed8", "#3b82f6"],
+    ["#b45309", "#d97706"],
+    ["#be123c", "#f43f5e"],
+  ];
+  const i = ((name ?? "U").charCodeAt(0)) % palettes.length;
+  return `linear-gradient(135deg, ${palettes[i][0]}, ${palettes[i][1]})`;
 }
 
 export function defaultVendorNameFromEmail(email?: string | null) {

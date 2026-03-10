@@ -1,5 +1,6 @@
-// app/admin/vendors/page.tsx
 "use client";
+// app/admin/vendors/page.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -61,10 +62,6 @@ const TYPE_LABEL: Record<VendorType, string> = {
   student: "Student",
   other: "Other",
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalizePhone(input?: string | null) {
   if (!input) return "";

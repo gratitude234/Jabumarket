@@ -14,6 +14,10 @@ export type PracticeAttemptRow = {
   score: number | null;
   total_questions: number | null;
   time_spent_seconds: number | null;
+  study_quiz_sets: {
+    title: string | null;
+    course_code: string | null;
+  } | null;
 };
 
 export async function getLatestAttempt(): Promise<PracticeAttemptRow | null> {
@@ -23,7 +27,7 @@ export async function getLatestAttempt(): Promise<PracticeAttemptRow | null> {
   // Prefer in-progress first, then most recent submitted.
   const { data, error } = await supabase
     .from("study_practice_attempts")
-    .select("id,user_id,set_id,status,started_at,submitted_at,score,total_questions,time_spent_seconds")
+    .select("id,user_id,set_id,status,started_at,submitted_at,score,total_questions,time_spent_seconds,study_quiz_sets(title,course_code)")
     .eq("user_id", userId)
     .order("status", { ascending: true })
     .order("started_at", { ascending: false })
@@ -57,12 +61,42 @@ export async function upsertDailyPracticeActivity(points: number) {
     );
 }
 
+/**
+ * Returns the set of YYYY-MM-DD date strings on which the user practiced,
+ * for the last `days` calendar days (default 14).
+ */
+export async function get14DayActivity(days = 14): Promise<Set<string>> {
+  const userId = await getAuthedUserId();
+  if (!userId) return new Set();
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const sinceDate = since.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("study_daily_activity")
+    .select("activity_date,did_practice")
+    .eq("user_id", userId)
+    .gte("activity_date", sinceDate)
+    .order("activity_date", { ascending: false });
+
+  if (error || !Array.isArray(data)) return new Set();
+
+  const active = new Set<string>();
+  for (const r of data as any[]) {
+    if (r?.activity_date && r?.did_practice === true) {
+      active.add(String(r.activity_date));
+    }
+  }
+  return active;
+}
+
 export async function getPracticeStreak(): Promise<{ streak: number; didPracticeToday: boolean }> {
   const userId = await getAuthedUserId();
   if (!userId) return { streak: 0, didPracticeToday: false };
 
-  // Fetch last 14 days to compute streak.
-  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  // Fetch enough days to cover the longest realistic streak without truncating.
+  const STREAK_LOOKBACK_DAYS = 90;
+  const since = new Date(Date.now() - STREAK_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const sinceDate = since.toISOString().slice(0, 10);
 
   const { data, error } = await supabase
@@ -88,7 +122,7 @@ export async function getPracticeStreak(): Promise<{ streak: number; didPractice
   let cursor = new Date(today);
   if (!didToday) cursor = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
     const k = cursor.toISOString().slice(0, 10);
     if (map.get(k) === true) {
       streak += 1;

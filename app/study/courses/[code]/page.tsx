@@ -1,5 +1,6 @@
-// app/study/courses/[code]/page.tsx
 "use client";
+// app/study/courses/[code]/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -80,10 +81,6 @@ type QuestionRow = {
   upvotes_count: number | null;
   solved: boolean | null;
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");
@@ -577,7 +574,7 @@ export default function CourseHubPage() {
   const pageTitle = code || "Course";
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4">
+    <div className="space-y-4 pb-28 md:pb-6">
       {/* Top nav */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -1024,6 +1021,6 @@ export default function CourseHubPage() {
           </div>
         </>
       ) : null}
-    </main>
+    </div>
   );
 }

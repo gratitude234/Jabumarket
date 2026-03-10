@@ -1,14 +1,11 @@
-// app/admin/page.tsx
 "use client";
+// app/admin/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ArrowRight, Bike, Store, Truck, FileText } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function StatCard({
   title,

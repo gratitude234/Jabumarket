@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Search,
 } from "lucide-react";
+import VendorReviews, { VendorRatingBadge } from "@/components/vendor/VendorReviews";
 
 type SortKey = "newest" | "price_asc" | "price_desc";
 
@@ -139,12 +140,14 @@ export default async function VendorProfilePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<{ q?: string; sort?: SortKey; page?: string }>;
+  params: { id: string } | Promise<{ id: string }>;
+  searchParams?:
+    | { q?: string; sort?: SortKey; page?: string }
+    | Promise<{ q?: string; sort?: SortKey; page?: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const { id } = await params;
-  const sp = (searchParams ? await searchParams : {}) as {
+  const sp = ((searchParams ? await searchParams : {}) ?? {}) as {
     q?: string;
     sort?: SortKey;
     page?: string;
@@ -260,6 +263,8 @@ export default async function VendorProfilePage({
                   <span className="rounded-full border bg-white px-2 py-1 text-[10px] font-semibold text-zinc-700">
                     {vendorTypeLabel(vendor.vendor_type)}
                   </span>
+
+                  <VendorRatingBadge vendorId={vendor.id} />
                 </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-zinc-600">
@@ -446,6 +451,9 @@ export default async function VendorProfilePage({
           ) : null}
         </>
       )}
+
+      {/* Vendor Reviews */}
+      <VendorReviews vendorId={vendor.id} />
 
       {/* Mobile sticky action bar (kept above your bottom nav) */}
       <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 px-4">

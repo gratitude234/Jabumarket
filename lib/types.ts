@@ -11,6 +11,8 @@ export type ListingRow = {
   price_label: string | null;
   location: string | null;
   image_url: string | null;
+  /** Multi-image support — array of public URLs. Falls back to [image_url] if absent. */
+  image_urls?: string[] | null;
   negotiable: boolean | null;
   status: "active" | "sold" | "inactive";
   created_at: string | null;
@@ -70,7 +72,35 @@ export type VendorVerificationDocRow = {
   created_at: string;
 };
 
-// Campus transport directory (cars/keke) (lightweight: no transport "orders" in-app)
+// ---------------------------------------------------------------------------
+// Study Hub — Practice engine types (moved from usePracticeEngine.ts — Step 2.5)
+// ---------------------------------------------------------------------------
+
+export type QuizSet = {
+  id: string;
+  title: string;
+  description: string | null;
+  course_code: string | null;
+  level: string | null;
+  time_limit_minutes: number | null;
+};
+
+export type QuizQuestion = {
+  id: string;
+  prompt: string;
+  explanation: string | null;
+  position: number | null;
+};
+
+export type QuizOption = {
+  id: string;
+  question_id: string;
+  text: string;
+  is_correct: boolean;
+  position: number | null;
+};
+
+export type ReviewTab = "all" | "wrong" | "flagged" | "unanswered";
 export type CourierRow = {
   id: string;
   name: string;
@@ -97,4 +127,18 @@ export type RiderRow = {
   is_available: boolean | null;
   verified: boolean;
   created_at: string | null;
+};
+export type DeliveryStatus = "open" | "accepted" | "picked_up" | "delivered" | "cancelled";
+
+export type DeliveryRequestRow = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  vendor_id: string | null;
+  rider_id: string | null;
+  dropoff: string;
+  note: string | null;
+  status: DeliveryStatus;
+  created_at: string;
+  updated_at: string;
 };

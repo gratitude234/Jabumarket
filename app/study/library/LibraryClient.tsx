@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,10 +22,6 @@ import {
 import { toggleSaved, getAuthedUserId } from "@/lib/studySaved";
 
 import StudyTabs from "../_components/StudyTabs";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 type SavedRow = {
   id: string;

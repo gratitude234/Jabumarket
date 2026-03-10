@@ -1,5 +1,6 @@
-// app/couriers/CouriersClient.tsx
 "use client";
+// app/couriers/CouriersClient.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -18,10 +19,6 @@ import {
   MessageSquareText,
   Sparkles,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 export default function CouriersClient({
   couriers,

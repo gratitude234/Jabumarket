@@ -5,6 +5,11 @@ function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
 }
 
+function isListingNew(createdAt: string | null | undefined): boolean {
+  if (!createdAt) return false;
+  return Date.now() - new Date(createdAt).getTime() < 24 * 60 * 60 * 1000;
+}
+
 export default function ListingCard({ listing }: { listing: ListingRow }) {
   const priceText =
     listing.price !== null
@@ -14,12 +19,14 @@ export default function ListingCard({ listing }: { listing: ListingRow }) {
   const typeLabel = listing.listing_type === "product" ? "Product" : "Service";
   const isSold = listing.status === "sold";
   const isInactive = listing.status === "inactive";
+  const isNew = !isSold && !isInactive && isListingNew(listing.created_at);
 
   return (
     <Link
       href={`/listing/${listing.id}`}
       className={[
-        "group block overflow-hidden rounded-2xl border bg-white no-underline",
+        // Mobile stays the same; desktop gets slightly richer affordances.
+        "group block overflow-hidden rounded-2xl border bg-white no-underline transition md:hover:shadow-sm",
         (isSold || isInactive) ? "opacity-80" : "",
       ].join(" ")}
     >
@@ -35,7 +42,7 @@ export default function ListingCard({ listing }: { listing: ListingRow }) {
           ].join(" ")}
         />
 
-        {/* Status badge */}
+        {/* Status / New badge */}
         {isSold ? (
           <div className="absolute left-3 top-3">
             <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
@@ -46,6 +53,12 @@ export default function ListingCard({ listing }: { listing: ListingRow }) {
           <div className="absolute left-3 top-3">
             <span className="rounded-full bg-zinc-700 px-3 py-1 text-xs font-semibold text-white">
               INACTIVE
+            </span>
+          </div>
+        ) : isNew ? (
+          <div className="absolute left-3 top-3">
+            <span className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow-sm">
+              NEW
             </span>
           </div>
         ) : null}
@@ -65,14 +78,16 @@ export default function ListingCard({ listing }: { listing: ListingRow }) {
       </div>
 
       {/* Content */}
-      <div className="p-3">
-        <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
+      <div className="p-3 md:p-4">
+        <p className="line-clamp-2 text-sm font-semibold text-zinc-900 md:text-[15px]">
           {listing.title}
         </p>
 
         <div className="mt-1 flex items-end justify-between gap-2">
-          <p className="text-sm font-bold text-zinc-900">{priceText}</p>
-          <span className="text-xs text-zinc-500">{listing.category}</span>
+          <p className="text-sm font-bold text-zinc-900 md:text-[15px]">{priceText}</p>
+          <span className="text-xs text-zinc-500 md:rounded-full md:bg-zinc-100 md:px-2 md:py-1 md:text-[11px]">
+            {listing.category}
+          </span>
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-2 text-xs text-zinc-500">

@@ -1,5 +1,6 @@
-// app/study/history/[attemptId]/AttemptReviewClient.tsx
 "use client";
+// app/study/history/[attemptId]/AttemptReviewClient.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,10 +22,6 @@ import {
   ChevronUp,
   AlertTriangle,
 } from "lucide-react";
-
-function cn(...p: Array<string | false | null | undefined>) {
-  return p.filter(Boolean).join(" ");
-}
 
 function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");
@@ -49,6 +46,22 @@ function fmtDuration(seconds?: number | null) {
   const s = seconds % 60;
   if (m <= 0) return `${s}s`;
   return `${m}m ${s}s`;
+}
+
+type GradeTier = {
+  label: string;
+  className: string; // Tailwind classes for the badge
+};
+
+function scoreGrade(correct: number, total: number): { pct: number; grade: GradeTier } {
+  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+  let grade: GradeTier;
+  if (pct >= 70)      grade = { label: "A",  className: "border-emerald-300/50 bg-emerald-100/40 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" };
+  else if (pct >= 60) grade = { label: "B",  className: "border-blue-300/50 bg-blue-100/40 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300" };
+  else if (pct >= 50) grade = { label: "C",  className: "border-amber-300/50 bg-amber-100/40 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300" };
+  else if (pct >= 45) grade = { label: "D",  className: "border-orange-300/50 bg-orange-100/40 text-orange-800 dark:bg-orange-950/30 dark:text-orange-300" };
+  else                grade = { label: "F",  className: "border-rose-300/50 bg-rose-100/40 text-rose-800 dark:bg-rose-950/30 dark:text-rose-300" };
+  return { pct, grade };
 }
 
 type AttemptRow = {
@@ -453,7 +466,7 @@ export default function AttemptReviewClient() {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4">
+      <div className="space-y-4 pb-28 md:pb-6">
         <Card className="rounded-3xl">
           <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading review…
@@ -465,7 +478,7 @@ export default function AttemptReviewClient() {
 
   if (err || !attempt || !setMeta) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4">
+      <div className="space-y-4 pb-28 md:pb-6">
         <button
           type="button"
           onClick={() => router.back()}
@@ -499,7 +512,7 @@ export default function AttemptReviewClient() {
       : "border-amber-300/40 bg-amber-100/30 text-foreground dark:bg-amber-950/20";
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4">
+    <div className="space-y-4 pb-28 md:pb-6">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -560,10 +573,32 @@ export default function AttemptReviewClient() {
 
           {setMeta.description ? <p className="mt-2 text-sm text-muted-foreground">{normalize(setMeta.description)}</p> : null}
 
+          {/* Score — percentage + grade (step 3.6) */}
+          {(() => {
+            const { pct, grade } = scoreGrade(derived.correct, derived.total);
+            return (
+              <div className="mt-4 flex items-center gap-4">
+                <div className="min-w-0">
+                  <p className="text-4xl font-extrabold tracking-tight text-foreground leading-none">
+                    {pct}%
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {derived.correct} correct out of {derived.total}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border text-2xl font-extrabold",
+                    grade.className
+                  )}
+                >
+                  {grade.label}
+                </span>
+              </div>
+            );
+          })()}
+
           <div className="mt-3 flex flex-wrap gap-2">
-            <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-extrabold text-foreground">
-              Score: {derived.correct}/{derived.total}
-            </span>
             <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-extrabold text-foreground">
               Wrong: {derived.wrong}
             </span>
@@ -574,7 +609,7 @@ export default function AttemptReviewClient() {
               Time: {fmtDuration(attempt.time_spent_seconds)}
             </span>
             <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-extrabold text-foreground">
-              Submitted: {fmtDate(attempt.submitted_at)}
+              {fmtDate(attempt.submitted_at)}
             </span>
           </div>
 
@@ -860,7 +895,7 @@ export default function AttemptReviewClient() {
         style={{ paddingBottom: APP_BOTTOM_NAV_H }}
         aria-label="Review controls"
       >
-        <div className="mx-auto w-full max-w-5xl px-4 pb-3">
+        <div className="pb-3">
           <div className="rounded-3xl border border-border bg-background/80 p-3 shadow-lg backdrop-blur">
             <div className="flex items-center justify-between gap-2">
               <button

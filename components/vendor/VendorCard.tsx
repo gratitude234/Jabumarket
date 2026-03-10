@@ -26,12 +26,14 @@ export default function VendorCard({ vendor }: { vendor: VendorCardVendor }) {
   return (
     <Link
       href={`/vendors/${vendor.id}`}
-      className="group block rounded-3xl border bg-white p-4 shadow-sm transition hover:shadow-md"
+      className="group block rounded-3xl border bg-white p-4 shadow-sm transition hover:shadow-md md:rounded-2xl md:p-5"
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 md:items-center">
         <div className="min-w-0">
-          <p className="truncate font-semibold text-zinc-900">{name}</p>
-          <p className="mt-1 text-xs text-zinc-600">{typeLabel(vendor.vendor_type)}</p>
+          <p className="truncate font-semibold text-zinc-900 md:text-[15px]">{name}</p>
+          <p className="mt-1 text-xs text-zinc-600 md:mt-0 md:text-[12px]">
+            {typeLabel(vendor.vendor_type)}
+          </p>
         </div>
 
         {vendor.verified ? (
@@ -47,14 +49,14 @@ export default function VendorCard({ vendor }: { vendor: VendorCardVendor }) {
       </div>
 
       {loc ? (
-        <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-zinc-600">
+        <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-zinc-600 md:mt-2">
           <MapPin className="h-4 w-4" />
           <span className="truncate">{loc}</span>
         </div>
       ) : null}
 
-      <div className="mt-4">
-        <span className="inline-flex items-center gap-1 text-sm font-medium text-zinc-900">
+      <div className="mt-4 md:mt-3">
+        <span className="inline-flex items-center gap-1 text-sm font-medium text-zinc-900 md:text-[15px]">
           View profile
           <span className="transition-transform group-hover:translate-x-0.5">→</span>
         </span>

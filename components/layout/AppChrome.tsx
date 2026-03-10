@@ -6,6 +6,9 @@ import TopNav from "@/components/layout/TopNav";
 import BottomNav from "@/components/layout/BottomNav";
 import MobileTopBar from "@/components/layout/MobileTopBar";
 
+const APP_CONTAINER =
+  "mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl lg:px-8";
+
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin");
@@ -27,9 +30,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         <TopNav />
       </Suspense>
 
-      <main
-        className={["mx-auto max-w-6xl px-4 py-6", "pb-20 md:pb-8"].join(" ")}
-      >
+      <main className={[APP_CONTAINER, "py-6 md:py-8", "pb-20 md:pb-8"].join(" ")}>
         {children}
       </main>
 

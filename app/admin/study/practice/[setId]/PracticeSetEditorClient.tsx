@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -16,10 +17,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");

@@ -1,5 +1,6 @@
-// app/admin/study/page.tsx
 "use client";
+// app/admin/study/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,8 @@ import {
   Flag,
   BookOpen,
   MessageSquareText,
+  CalendarDays,
+  Activity,
 } from "lucide-react";
 
 type Semester = "first" | "second" | "summer";
@@ -87,10 +90,6 @@ const TYPE_LABEL: Record<MaterialType, string> = {
   timetable: "Timetable",
   other: "Other",
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");
@@ -870,10 +869,10 @@ export default function AdminStudyPage() {
     setMutating((prev) => ({ ...prev, [id]: "approve" }));
     setBanner(null);
 
-	    const resp = await fetch(`/api/study-admin/materials/${id}/approve`, {
+    const resp = await fetch(`/api/admin/study/materials/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-	      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, approved: true }),
     });
 
     const json = await resp.json().catch(() => null);
@@ -913,7 +912,7 @@ export default function AdminStudyPage() {
     setMutating((prev) => ({ ...prev, [row.id]: "reject" }));
     setBanner(null);
 
-	    const resp = await fetch(`/api/study-admin/materials/${row.id}/delete`, {
+    const resp = await fetch(`/api/admin/study/materials/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: row.id }),
@@ -954,7 +953,7 @@ export default function AdminStudyPage() {
     setBulkBusy(true);
     setBanner(null);
 
-	    const resp = await fetch("/api/study-admin/materials/bulk-approve", {
+    const resp = await fetch("/api/admin/study/materials/bulk-approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: selectedIds }),
@@ -1035,8 +1034,6 @@ export default function AdminStudyPage() {
     if (perPage !== DEFAULT_PER_PAGE) n++;
     return n;
   }, [qParam, typeParam, sessionParam, deptParam, levelParam, codeParam, status, sort, perPage]);
-
-
 
   
   // ----- Q&A moderation (Admin) -----
@@ -1212,8 +1209,6 @@ export default function AdminStudyPage() {
     fetchQuestions();
   }
 
-
-
   // ----- Q&A tab UI -----
   if (tab === "qa") {
     const qTotalPages = Math.max(1, Math.ceil(questionsTotal / Math.max(1, perPage)));
@@ -1230,6 +1225,24 @@ export default function AdminStudyPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/admin/study/academic-calendar"
+              className={cn(
+                "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold",
+                "bg-white hover:bg-zinc-50"
+              )}
+            >
+              <CalendarDays className="h-4 w-4" /> Academic Calendar
+            </Link>
+
+            <Link
+              href="/admin/study/semester-health"
+              className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm font-medium hover:bg-neutral-50"
+              title="Run semester auto-detect + filtering checks"
+            >
+              <Activity className="h-4 w-4" /> Semester Health
+            </Link>
+
             <button
               type="button"
               onClick={() => router.replace(buildHref(pathname, { tab: null, page: null }))}

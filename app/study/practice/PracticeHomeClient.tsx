@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -24,11 +25,12 @@ import {
   Info,
   Flame,
   Layers,
+  Plus,
+  Loader2,
+  ShieldCheck,
+  Lock,
+  PenLine,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalizeQuery(v: string) {
   return v.trim().replace(/\s+/g, " ");
@@ -301,9 +303,9 @@ function safeSemesterLabel(v?: string | null) {
 
 function pill(text: string, icon?: React.ReactNode) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
       {icon ? icon : null}
-      {text}
+      <span className="min-w-0 truncate">{text}</span>
     </span>
   );
 }
@@ -355,13 +357,7 @@ function SecondaryButton({
   );
 }
 
-function MiniTabs({
-  value,
-  onChange,
-}: {
-  value: ViewKey;
-  onChange: (v: ViewKey) => void;
-}) {
+function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) => void }) {
   const items: Array<{ k: ViewKey; label: string; icon: React.ReactNode }> = [
     { k: "for_you", label: "For you", icon: <Sparkles className="h-4 w-4" /> },
     { k: "recent", label: "Recent", icon: <History className="h-4 w-4" /> },
@@ -369,7 +365,7 @@ function MiniTabs({
   ];
 
   return (
-    <div className="flex w-full items-center gap-2 overflow-auto rounded-3xl border border-border bg-background p-2">
+    <div className="flex w-full items-center gap-2 overflow-x-auto rounded-3xl border border-border bg-background p-2">
       {items.map((it) => {
         const active = value === it.k;
         return (
@@ -380,7 +376,9 @@ function MiniTabs({
             className={cn(
               "inline-flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+              active
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
             )}
           >
             {it.icon}
@@ -392,15 +390,7 @@ function MiniTabs({
   );
 }
 
-function QuizSetCard({
-  s,
-  onStart,
-  onPreview,
-}: {
-  s: QuizSetRow;
-  onStart: () => void;
-  onPreview: () => void;
-}) {
+function QuizSetCard({ s, onStart, onPreview }: { s: QuizSetRow; onStart: () => void; onPreview: () => void }) {
   const title = (s.title ?? "Untitled set").trim() || "Untitled set";
   const code = (s.course_code ?? "").toString().trim().toUpperCase();
   const sem = safeSemesterLabel(s.semester);
@@ -418,15 +408,15 @@ function QuizSetCard({
       : "";
 
   return (
-    <Card className="rounded-3xl p-4">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="w-full max-w-full overflow-hidden rounded-3xl p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-base font-semibold text-foreground">{title}</p>
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
             {s.description ? s.description : "Practice past questions and test yourself."}
           </p>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex max-w-full flex-wrap items-center gap-2">
             {code ? pill(code, <Hash className="h-3.5 w-3.5" />) : null}
             {level ? pill(level) : null}
             {sem ? pill(`${sem} sem`, <Clock className="h-3.5 w-3.5" />) : null}
@@ -441,7 +431,7 @@ function QuizSetCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
         <PrimaryButton onClick={onStart}>
           <Play className="h-4 w-4" />
           Start
@@ -454,6 +444,242 @@ function QuizSetCard({
         </SecondaryButton>
       </div>
     </Card>
+  );
+}
+
+// ─── Rep status ───────────────────────────────────────────────────────────────
+
+type RepStatus = "loading" | "not_applied" | "pending" | "rejected" | "approved";
+
+type RepScope = {
+  faculty_id: string | null;
+  department_id: string | null;
+  levels: number[] | null;
+  all_levels: boolean;
+} | null;
+
+// ─── Create Set Drawer ────────────────────────────────────────────────────────
+
+const SEMESTERS_OPT = ["1st", "2nd", "summer"] as const;
+const LEVELS_OPT    = [100, 200, 300, 400, 500, 600] as const;
+
+function CreateSetDrawer({
+  open,
+  onClose,
+  repScope,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  repScope: RepScope;
+  onCreated: (newId: string) => void;
+}) {
+  const router = useRouter();
+  const [title, setTitle]         = useState("");
+  const [description, setDesc]    = useState("");
+  const [courseCode, setCourse]   = useState("");
+  const [level, setLevel]         = useState("");
+  const [semester, setSemester]   = useState("");
+  const [timeLimit, setTimeLimit] = useState("");
+  const [saving, setSaving]       = useState(false);
+  const [err, setErr]             = useState<string | null>(null);
+
+  // Reset form whenever drawer opens
+  useEffect(() => {
+    if (!open) return;
+    setTitle(""); setDesc(""); setCourse("");
+    setLevel(""); setSemester(""); setTimeLimit("");
+    setErr(null); setSaving(false);
+  }, [open]);
+
+  // Limit level options to rep's approved scope if applicable
+  const allowedLevels = repScope?.all_levels
+    ? LEVELS_OPT
+    : repScope?.levels?.length
+      ? (LEVELS_OPT.filter((l) => repScope!.levels!.includes(l)) as unknown as typeof LEVELS_OPT)
+      : LEVELS_OPT;
+
+  async function handleSubmit() {
+    const t = title.trim();
+    if (!t) { setErr("Title is required."); return; }
+
+    const lvNum = level ? Number(level) : null;
+    const tlNum = timeLimit ? Number(timeLimit) : null;
+
+    if (tlNum !== null && (!Number.isFinite(tlNum) || tlNum <= 0)) {
+      setErr("Time limit must be a positive number of minutes."); return;
+    }
+
+    setSaving(true);
+    setErr(null);
+
+    try {
+      const payload: Record<string, unknown> = {
+        title: t,
+        description: description.trim() || null,
+        course_code:  courseCode.trim().toUpperCase() || null,
+        level:        lvNum,
+        semester:     semester || null,
+        time_limit_minutes: tlNum,
+        published: false,
+        questions_count: 0,
+      };
+
+      const { data, error } = await supabase
+        .from("study_quiz_sets")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      const newId = (data as { id: string }).id;
+      onCreated(newId);
+      onClose();
+      // Navigate to the admin editor to add questions
+      router.push(`/admin/study/practice/${newId}`);
+    } catch (e: any) {
+      setErr(e?.message || "Failed to create set. Check your permissions.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Create practice set"
+      footer={
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
+              "hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            )}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            className={cn(
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-foreground bg-foreground px-4 py-3 text-sm font-semibold text-background",
+              "hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            )}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+            {saving ? "Creating…" : "Create & add questions"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        {err && (
+          <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <X className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{err}</span>
+          </div>
+        )}
+
+        {/* Rep badge */}
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-secondary/50 px-3 py-2">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-xs font-semibold text-muted-foreground">
+            {repScope?.all_levels
+              ? "Rep access — all levels"
+              : `Rep access — level${(repScope?.levels?.length ?? 0) > 1 ? "s" : ""} ${(repScope?.levels ?? []).join(", ")}`}
+          </p>
+        </div>
+
+        {/* Title */}
+        <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+          <span className="text-xs font-semibold text-muted-foreground">Title *</span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. GST101 Past Questions 2024"
+            className="mt-1 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            autoFocus
+          />
+        </label>
+
+        {/* Description */}
+        <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+          <span className="text-xs font-semibold text-muted-foreground">Description (optional)</span>
+          <textarea
+            value={description}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="Short description of what's covered…"
+            rows={2}
+            className="mt-1 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </label>
+
+        {/* Course + Level */}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">Course code</span>
+            <input
+              value={courseCode}
+              onChange={(e) => setCourse(e.target.value)}
+              placeholder="e.g. GST101"
+              className="mt-1 w-full bg-transparent text-sm text-foreground uppercase outline-none placeholder:normal-case placeholder:text-muted-foreground"
+            />
+          </label>
+
+          <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">Level</span>
+            <select
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              className="mt-1 w-full bg-transparent text-sm text-foreground outline-none"
+            >
+              <option value="">Any level</option>
+              {allowedLevels.map((l) => (
+                <option key={l} value={l}>{l}L</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {/* Semester + Time limit */}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">Semester</span>
+            <select
+              value={semester}
+              onChange={(e) => setSemester(e.target.value)}
+              className="mt-1 w-full bg-transparent text-sm text-foreground outline-none"
+            >
+              <option value="">Any</option>
+              {SEMESTERS_OPT.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block rounded-2xl border border-border bg-background px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">Time limit (minutes)</span>
+            <input
+              value={timeLimit}
+              onChange={(e) => setTimeLimit(e.target.value)}
+              placeholder="e.g. 60 (leave blank = untimed)"
+              inputMode="numeric"
+              className="mt-1 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </label>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          After creating the set you'll be taken to the editor to add questions. The set starts unpublished — submit it
+          for review when ready.
+        </p>
+      </div>
+    </Drawer>
   );
 }
 
@@ -504,6 +730,34 @@ export default function PracticeHomeClient() {
   const [latestAttempt, setLatestAttempt] = useState<LatestAttempt | null>(null);
   const [recentAttempts, setRecentAttempts] = useState<LatestAttempt[]>([]);
 
+  // User prefs — used to personalize the "For you" tab without requiring URL params
+  const [userPrefs, setUserPrefs] = useState<{
+    course_code?: string | null;
+    level?: number | null;
+    semester?: string | null;
+    department_id?: string | null;
+    faculty_id?: string | null;
+  } | null>(null);
+
+  // Load user prefs once on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (!user) return;
+        const { data } = await supabase
+          .from("study_preferences")
+          .select("level, semester, department_id, faculty_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (data) setUserPrefs(data as any);
+      } catch {
+        // non-fatal — for_you falls back to URL params only
+      }
+    })();
+  }, []);
+
   // toast
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
@@ -511,6 +765,32 @@ export default function PracticeHomeClient() {
     const t = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  // ── Rep status (gates "Create set" button) ──────────────────────────────
+  const [repStatus, setRepStatus]   = useState<RepStatus>("loading");
+  const [repScope, setRepScope]     = useState<RepScope>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/study/rep-applications/me");
+        if (!res.ok) { if (mounted) setRepStatus("not_applied"); return; }
+        const json = await res.json();
+        if (!mounted) return;
+        if (json.status === "approved") {
+          setRepStatus("approved");
+          setRepScope(json.scope ?? null);
+        } else {
+          setRepStatus(json.status ?? "not_applied");
+        }
+      } catch {
+        if (mounted) setRepStatus("not_applied");
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   // Pagination
   const PAGE_SIZE = 12;
@@ -530,7 +810,7 @@ export default function PracticeHomeClient() {
 
   useEffect(() => setQ(qParam), [qParam]);
 
-  // debounce search to URL (keeps mobile typing smooth)
+  // debounce search to URL
   const debounceRef = useRef<number | null>(null);
   useEffect(() => {
     const qNorm = normalizeQuery(q);
@@ -554,18 +834,7 @@ export default function PracticeHomeClient() {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [
-    q,
-    qParam,
-    router,
-    pathname,
-    courseParam,
-    levelParam,
-    semesterParam,
-    sortParam,
-    publishedOnly,
-    viewParam,
-  ]);
+  }, [q, qParam, router, pathname, courseParam, levelParam, semesterParam, sortParam, publishedOnly, viewParam]);
 
   // Reset list when filters change
   useEffect(() => {
@@ -575,7 +844,7 @@ export default function PracticeHomeClient() {
     setTotal(0);
   }, [filtersKey]);
 
-  // Load latest + recent attempts (best-effort)
+  // Load latest + recent attempts
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -627,6 +896,31 @@ export default function PracticeHomeClient() {
     };
   }, []);
 
+  // Load user prefs for personalised For You scoring
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth?.user?.id;
+        if (!uid) return;
+        const { data, error } = await supabase
+          .from("study_preferences")
+          .select("department_id,faculty_id,level,semester")
+          .eq("user_id", uid)
+          .maybeSingle();
+        if (!mounted || error || !data) return;
+        setUserPrefs({
+          department_id: (data as any).department_id ?? null,
+          faculty_id: (data as any).faculty_id ?? null,
+          level: (data as any).level ?? null,
+          semester: (data as any).semester ?? null,
+        });
+      } catch { /* prefs are optional */ }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   async function fetchPage(nextPage: number) {
     const isFirst = nextPage === 1;
 
@@ -639,7 +933,6 @@ export default function PracticeHomeClient() {
     }
 
     try {
-      // request optional columns if they exist in your schema
       const selectFields =
         "id,title,description,course_code,level,semester,time_limit_minutes,published,questions_count,created_at";
 
@@ -649,9 +942,7 @@ export default function PracticeHomeClient() {
 
       const qNorm = normalizeQuery(qParam);
       if (qNorm) {
-        query = query.or(
-          `title.ilike.%${qNorm}%,description.ilike.%${qNorm}%,course_code.ilike.%${qNorm}%`
-        );
+        query = query.or(`title.ilike.%${qNorm}%,description.ilike.%${qNorm}%,course_code.ilike.%${qNorm}%`);
       }
 
       const course = courseParam.trim().toUpperCase();
@@ -663,7 +954,6 @@ export default function PracticeHomeClient() {
       }
 
       if (semesterParam) {
-        // flexible match (your DB might store "first/second/summer" or "1st/2nd/summer")
         const s = semesterParam.trim().toLowerCase();
         if (s) query = query.eq("semester", s);
       }
@@ -781,23 +1071,46 @@ export default function PracticeHomeClient() {
   const showingFrom = total === 0 ? 0 : 1;
   const showingTo = Math.min(total, sets.length);
 
-  // derived view data
   const forYouSets = useMemo(() => {
-    // lightweight "for you": prefer sets matching active level/semester/course filters if present
-    // (later you can replace with actual user profile dept/level logic)
     if (!sets.length) return [];
-    const wantCourse = courseParam.trim().toUpperCase();
-    const wantLevel = Number(levelParam || NaN);
-    const wantSem = semesterParam.trim().toLowerCase();
+
+    // URL params take priority; fall back to loaded user prefs
+    const wantCourse = (courseParam.trim() || "").toUpperCase();
+    const wantLevel =
+      levelParam
+        ? Number(levelParam)
+        : typeof userPrefs?.level === "number"
+        ? userPrefs.level
+        : NaN;
+    const wantSem =
+      semesterParam.trim().toLowerCase() ||
+      (userPrefs?.semester ?? "").toLowerCase();
 
     const scored = sets.map((s) => {
       let score = 0;
       const code = (s.course_code ?? "").toString().trim().toUpperCase();
+
+      // Strong match: exact course code
       if (wantCourse && code === wantCourse) score += 3;
-      if (Number.isFinite(wantLevel) && typeof s.level === "number" && s.level === wantLevel) score += 2;
-      if (wantSem && (s.semester ?? "").toString().trim().toLowerCase() === wantSem) score += 1;
-      // small bias to newer
+
+      // Level match: from prefs or URL param
+      if (
+        Number.isFinite(wantLevel) &&
+        typeof s.level === "number" &&
+        s.level === wantLevel
+      )
+        score += 2;
+
+      // Semester match
+      if (
+        wantSem &&
+        (s.semester ?? "").toString().trim().toLowerCase() === wantSem
+      )
+        score += 1;
+
+      // Slight recency boost
       if (s.created_at) score += 0.2;
+
       return { s, score };
     });
 
@@ -805,7 +1118,7 @@ export default function PracticeHomeClient() {
       .sort((a, b) => b.score - a.score)
       .slice(0, 6)
       .map((x) => x.s);
-  }, [sets, courseParam, levelParam, semesterParam]);
+  }, [sets, courseParam, levelParam, semesterParam, userPrefs]);
 
   const visibleSets = useMemo(() => {
     if (viewParam === "for_you") return forYouSets.length ? forYouSets : sets;
@@ -824,7 +1137,8 @@ export default function PracticeHomeClient() {
   }
 
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
+    // FIX: prevent any horizontal overflow across the whole page
+    <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-28 md:pb-6">
       <StudyTabs />
 
       {/* Top bar */}
@@ -841,17 +1155,36 @@ export default function PracticeHomeClient() {
           Back
         </Link>
 
-        <Link
-          href="/study/practice/history"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
-            "hover:opacity-90",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        <div className="flex items-center gap-2">
+          {/* Rep-gated Create button */}
+          {repStatus === "approved" && (
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
+                "hover:bg-secondary/50",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
+              title="Create a new practice set (rep access)"
+            >
+              <Plus className="h-4 w-4" />
+              Create set
+            </button>
           )}
-        >
-          <History className="h-4 w-4" />
-          History
-        </Link>
+
+          <Link
+            href="/study/practice/history"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
+              "hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
+          >
+            <History className="h-4 w-4" />
+            History
+          </Link>
+        </div>
       </div>
 
       {/* Header */}
@@ -870,16 +1203,16 @@ export default function PracticeHomeClient() {
 
       {/* Continue card */}
       {latestAttempt?.set_id ? (
-        <Card className="rounded-3xl p-4">
-          <div className="flex items-start justify-between gap-3">
+        <Card className="w-full max-w-full overflow-hidden rounded-3xl p-4">
+          <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-muted-foreground">Continue</p>
               <p className="mt-1 truncate text-base font-semibold text-foreground">
                 {(latestAttempt.study_quiz_sets?.title ?? "Practice set").trim() || "Practice set"}
               </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
                 {latestAttempt.study_quiz_sets?.course_code ? (
-                  <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                  <span className="max-w-full truncate rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
                     {String(latestAttempt.study_quiz_sets.course_code).toUpperCase()}
                   </span>
                 ) : null}
@@ -894,7 +1227,7 @@ export default function PracticeHomeClient() {
               type="button"
               onClick={() => startSet(String(latestAttempt.set_id))}
               className={cn(
-                "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
+                "inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
                 "hover:opacity-90",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
@@ -910,149 +1243,142 @@ export default function PracticeHomeClient() {
       {/* Tabs: For you / Recent / All */}
       <MiniTabs value={viewParam} onChange={setView} />
 
-      {/* Sticky search + filters */}
-      <div className="sticky top-16 z-30">
-        <Card className="rounded-3xl border bg-background/85 backdrop-blur">
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search course code, title, topic…"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
+      {/* NOT STICKY: Search + filters (regular block) */}
+      <Card className="w-full max-w-full overflow-hidden rounded-3xl border bg-background/85 backdrop-blur p-3">
+        <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search course code, title, topic…"
+            className="min-w-0 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
 
-            {q ? (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className={cn(
-                  "grid h-9 w-9 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                )}
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
-
+          {q ? (
             <button
               type="button"
-              onClick={openFilters}
+              onClick={() => setQ("")}
               className={cn(
-                "inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
-                "hover:bg-secondary/50",
+                "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={openFilters}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
+              "hover:bg-secondary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+          </button>
+        </div>
+
+        {hasAnyFilters ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-muted-foreground">
+              Showing <span className="text-foreground">{total === 0 ? 0 : 1}</span>–
+              <span className="text-foreground">{Math.min(total, sets.length)}</span> of{" "}
+              <span className="text-foreground">{total}</span>
+            </p>
+            <button
+              type="button"
+              onClick={clearAll}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold",
+                "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
             >
-              <SlidersHorizontal className="h-4 w-4" />
-              Filters
+              <X className="h-3.5 w-3.5" />
+              Clear all
             </button>
           </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Tip: try <span className="font-semibold">GST101</span> or “Anatomy”.
+          </p>
+        )}
 
-          {hasAnyFilters ? (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-muted-foreground">
-                Showing <span className="text-foreground">{showingFrom}</span>–
-                <span className="text-foreground">{showingTo}</span> of{" "}
-                <span className="text-foreground">{total}</span>
-              </p>
-              <button
-                type="button"
-                onClick={clearAll}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold",
-                  "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                )}
-              >
-                <X className="h-3.5 w-3.5" />
-                Clear all
-              </button>
-            </div>
-          ) : (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Tip: try <span className="font-semibold">GST101</span> or “Anatomy”.
-            </p>
-          )}
+        <div className="mt-3 flex max-w-full flex-wrap items-center gap-2">
+          {courseParam ? (
+            <Chip
+              active
+              onClick={() =>
+                router.replace(
+                  buildHref(pathname, {
+                    q: qParam || null,
+                    course: null,
+                    level: levelParam || null,
+                    semester: semesterParam || null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    published: publishedOnly ? "1" : null,
+                    view: viewParam !== "for_you" ? viewParam : null,
+                  })
+                )
+              }
+              title="Clear course"
+            >
+              <Hash className="h-4 w-4" />
+              {courseParam.toUpperCase()}
+              <X className="h-4 w-4" />
+            </Chip>
+          ) : null}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {courseParam ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      course: null,
-                      level: levelParam || null,
-                      semester: semesterParam || null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      published: publishedOnly ? "1" : null,
-                      view: viewParam !== "for_you" ? viewParam : null,
-                    })
-                  )
-                }
-                title="Clear course"
-              >
-                <Hash className="h-4 w-4" />
-                {courseParam.toUpperCase()}
-                <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
+          {levelParam ? (
+            <Chip
+              active
+              onClick={() =>
+                router.replace(
+                  buildHref(pathname, {
+                    q: qParam || null,
+                    course: courseParam || null,
+                    level: null,
+                    semester: semesterParam || null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    published: publishedOnly ? "1" : null,
+                    view: viewParam !== "for_you" ? viewParam : null,
+                  })
+                )
+              }
+              title="Clear level"
+            >
+              {levelParam}L <X className="h-4 w-4" />
+            </Chip>
+          ) : null}
 
-            {levelParam ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      course: courseParam || null,
-                      level: null,
-                      semester: semesterParam || null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      published: publishedOnly ? "1" : null,
-                      view: viewParam !== "for_you" ? viewParam : null,
-                    })
-                  )
-                }
-                title="Clear level"
-              >
-                {levelParam}L <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
-
-            {semesterParam ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      course: courseParam || null,
-                      level: levelParam || null,
-                      semester: null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      published: publishedOnly ? "1" : null,
-                      view: viewParam !== "for_you" ? viewParam : null,
-                    })
-                  )
-                }
-                title="Clear semester"
-              >
-                <Clock className="h-4 w-4" />
-                {semesterParam} <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
-
-            <span className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
-              <Sparkles className="h-4 w-4" />
-              {activeSortLabel}
-            </span>
-          </div>
-        </Card>
-      </div>
+          {semesterParam ? (
+            <Chip
+              active
+              onClick={() =>
+                router.replace(
+                  buildHref(pathname, {
+                    q: qParam || null,
+                    course: courseParam || null,
+                    level: levelParam || null,
+                    semester: null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    published: publishedOnly ? "1" : null,
+                    view: viewParam !== "for_you" ? viewParam : null,
+                  })
+                )
+              }
+              title="Clear semester"
+            >
+              <Clock className="h-4 w-4" />
+              {semesterParam} <X className="h-4 w-4" />
+            </Chip>
+          ) : null}
+        </div>
+      </Card>
 
       {/* Errors */}
       {loadError ? (
@@ -1069,7 +1395,7 @@ export default function PracticeHomeClient() {
 
       {/* RECENT VIEW */}
       {viewParam === "recent" ? (
-        showRecentEmpty ? (
+        recentAttempts.length === 0 ? (
           <EmptyState
             icon={<History className="h-5 w-5" />}
             title="No recent attempts yet"
@@ -1091,15 +1417,15 @@ export default function PracticeHomeClient() {
         ) : (
           <div className="space-y-3">
             {recentAttempts.map((a) => (
-              <Card key={a.id} className="rounded-3xl p-4">
-                <div className="flex items-start justify-between gap-3">
+              <Card key={a.id} className="w-full max-w-full overflow-hidden rounded-3xl p-4">
+                <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-base font-semibold text-foreground">
                       {(a.study_quiz_sets?.title ?? "Practice set").trim() || "Practice set"}
                     </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
                       {a.study_quiz_sets?.course_code ? (
-                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                        <span className="max-w-full truncate rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
                           {String(a.study_quiz_sets.course_code).toUpperCase()}
                         </span>
                       ) : null}
@@ -1115,7 +1441,7 @@ export default function PracticeHomeClient() {
                       type="button"
                       onClick={() => startSet(String(a.set_id))}
                       className={cn(
-                        "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
+                        "inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
                         "hover:opacity-90",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       )}
@@ -1132,7 +1458,7 @@ export default function PracticeHomeClient() {
       ) : (
         <>
           {/* RESULTS */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {loading ? (
               <>
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -1166,12 +1492,7 @@ export default function PracticeHomeClient() {
               </div>
             ) : (
               visibleSets.map((s) => (
-                <QuizSetCard
-                  key={s.id}
-                  s={s}
-                  onStart={() => startSet(s.id)}
-                  onPreview={() => openPreview(s)}
-                />
+                <QuizSetCard key={s.id} s={s} onStart={() => startSet(s.id)} onPreview={() => openPreview(s)} />
               ))
             )}
           </div>
@@ -1204,6 +1525,17 @@ export default function PracticeHomeClient() {
             </div>
           ) : null}
         </>
+      )}
+
+      {/* Rep status info banners */}
+      {repStatus === "pending" && (
+        <div className="flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">Rep application pending</p>
+            <p className="mt-0.5 text-xs opacity-80">Your rep application is under review. You'll be able to create sets once approved.</p>
+          </div>
+        </div>
       )}
 
       {/* Filters drawer */}
@@ -1270,7 +1602,6 @@ export default function PracticeHomeClient() {
           </div>
         </div>
 
-        {/* Course: mobile-first typed input (better than empty select) */}
         <div className="mt-3 rounded-3xl border border-border bg-background p-3">
           <p className="text-sm font-semibold text-foreground">Course</p>
           <div className="mt-2 flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
@@ -1295,9 +1626,7 @@ export default function PracticeHomeClient() {
               </button>
             ) : null}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            You can also search course codes in the main search bar.
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">You can also search course codes in the main search bar.</p>
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1380,29 +1709,20 @@ export default function PracticeHomeClient() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {previewSet.description ? previewSet.description : "Practice past questions and test yourself."}
               </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {previewSet.course_code ? pill(String(previewSet.course_code).toUpperCase(), <Hash className="h-3.5 w-3.5" />) : null}
-                {typeof previewSet.level === "number" ? pill(`${previewSet.level}L`) : null}
-                {previewSet.semester ? pill(`${safeSemesterLabel(previewSet.semester)} sem`, <Clock className="h-3.5 w-3.5" />) : null}
-                {typeof previewSet.questions_count === "number" ? pill(`${previewSet.questions_count} questions`) : null}
-                {typeof previewSet.time_limit_minutes === "number" ? pill(`${previewSet.time_limit_minutes} min`) : pill("Untimed")}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-border bg-muted/40 p-4">
-              <p className="text-sm font-semibold text-foreground">Before you start</p>
-              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                <li>• Answer carefully and review after.</li>
-                <li>• Use “History” to track your improvement.</li>
-                <li>• If a set is missing, check Materials or try later.</li>
-              </ul>
             </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Nothing to preview.</p>
         )}
       </Drawer>
+
+      {/* Create set drawer (rep-gated) */}
+      <CreateSetDrawer
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        repScope={repScope}
+        onCreated={(id) => setToast(`Set created — redirecting to editor…`)}
+      />
 
       {/* Toast */}
       {toast ? (

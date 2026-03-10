@@ -1,70 +1,9 @@
 "use client";
-
+import { cn, normalize, msToClock, safePushRecent } from "@/lib/utils";
+import type { QuizSet, QuizQuestion, QuizOption, ReviewTab } from "@/lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
-export type QuizSet = {
-  id: string;
-  title: string;
-  description: string | null;
-  course_code: string | null;
-  level: string | null;
-  time_limit_minutes: number | null;
-};
-
-export type QuizQuestion = {
-  id: string;
-  prompt: string;
-  explanation: string | null;
-  position: number | null;
-};
-
-export type QuizOption = {
-  id: string;
-  question_id: string;
-  text: string;
-  is_correct: boolean;
-  position: number | null;
-};
-
-export type ReviewTab = "all" | "wrong" | "flagged" | "unanswered";
-
-export function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-export function normalize(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
-
-export function msToClock(ms: number) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const mm = Math.floor(s / 60);
-  const ss = s % 60;
-  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-}
-
-export function safePushRecent(item: {
-  id: string;
-  title: string;
-  course_code?: string;
-  when?: string;
-  href?: string;
-}) {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = window.localStorage.getItem("jabuStudyRecent");
-    const prev = raw ? (JSON.parse(raw) as any[]) : [];
-    const next = [item, ...(Array.isArray(prev) ? prev : [])]
-      .filter(Boolean)
-      .filter((x, i, arr) => arr.findIndex((y) => y?.id === x?.id) === i)
-      .slice(0, 12);
-    window.localStorage.setItem("jabuStudyRecent", JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-}
 
 type LatestRestore = {
   answers?: Record<string, string>;
@@ -107,6 +46,14 @@ export function usePracticeEngine({
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
 
   const [attemptId, setAttemptId] = useState<string | null>(attemptFromUrl || null);
+
+  // IMPORTANT UX: when we add ?attempt= to the URL (router.replace), we should NOT re-run the whole loader.
+  // Capture the initial attempt (if any) only once for this page load.
+  const initialAttemptRef = useRef<string | null>(attemptFromUrl || null);
+
+  // Cache userId from the initial auth call so choose() and finalizeAttempt()
+  // never need to call supabase.auth.getUser() again during a session.
+  const userIdRef = useRef<string | null>(null);
 
   // Timer
   const [timeLeftMs, setTimeLeftMs] = useState<number | null>(null);
@@ -165,73 +112,98 @@ export function usePracticeEngine({
       try {
         if (!setId) throw new Error("Missing set id");
 
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth?.user ?? null;
+        // ─── PHASE 1: fire everything we can in parallel ──────────────────
+        // auth, quiz set, questions+options (nested join), and attempt
+        // validation (if a URL attempt id exists) all start at the same time.
+        // On a slow campus network this cuts initial load from ~4 sequential
+        // round trips down to 1.
 
-        // Fetch set + questions (+ options)
         const setReq = supabase
           .from("study_quiz_sets")
           .select("id,title,description,course_code,level,time_limit_minutes")
           .eq("id", setId)
           .maybeSingle();
 
+        // Fetch questions AND their options in one query via PostgREST nested
+        // select — eliminates the previous options waterfall step entirely.
         const qReq = supabase
           .from("study_quiz_questions")
-          .select("id,prompt,explanation,position")
+          .select(
+            "id,prompt,explanation,position," +
+            "study_quiz_options(id,question_id,text,is_correct,position)"
+          )
           .eq("set_id", setId)
           .order("position", { ascending: true });
 
-        const [setRes, qRes] = await Promise.all([setReq, qReq]);
+        // Validate the attempt from the URL (if present) in the same wave.
+        const attValidateReq = initialAttemptRef.current
+          ? supabase
+              .from("study_practice_attempts")
+              .select("id,set_id,status,started_at")
+              .eq("id", initialAttemptRef.current)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null });
+
+        const [authRes, setRes, qRes, attValidateRes] = await Promise.all([
+          supabase.auth.getUser(),
+          setReq,
+          qReq,
+          attValidateReq,
+        ]);
+
+        const user = authRes.data?.user ?? null;
+        userIdRef.current = user?.id ?? null;
+
         if (setRes.error) throw setRes.error;
         if (!setRes.data) throw new Error("Practice set not found");
         if (qRes.error) throw qRes.error;
 
+        // Unpack the nested options from each question row
         const qData = (qRes.data ?? []) as any[];
-        const qIds = qData.map((q) => String(q.id));
-        let optData: any[] = [];
-
-        if (qIds.length) {
-          const oRes = await supabase
-            .from("study_quiz_options")
-            .select("id,question_id,text,is_correct,position")
-            .in("question_id", qIds)
-            .order("position", { ascending: true });
-          if (oRes.error) throw oRes.error;
-          optData = (oRes.data ?? []) as any[];
-        }
-
         const grouped: Record<string, QuizOption[]> = {};
-        for (const o of optData) {
-          const qid = String(o.question_id);
-          if (!grouped[qid]) grouped[qid] = [];
-          grouped[qid].push({
-            id: String(o.id),
-            question_id: qid,
-            text: String(o.text ?? ""),
-            is_correct: Boolean(o.is_correct),
-            position: typeof o.position === "number" ? o.position : null,
-          });
+        for (const q of qData) {
+          const qid = String(q.id);
+          const rawOpts: any[] = Array.isArray(q.study_quiz_options)
+            ? q.study_quiz_options
+            : [];
+          grouped[qid] = rawOpts
+            .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+            .map((o) => ({
+              id: String(o.id),
+              question_id: qid,
+              text: String(o.text ?? ""),
+              is_correct: Boolean(o.is_correct),
+              position: typeof o.position === "number" ? o.position : null,
+            }));
         }
 
-        // Attempt: restore or create
-        let effectiveAttemptId: string | null = attemptFromUrl || null;
+        // Strip nested options key so qData shape matches QuizQuestion type
+        const cleanQData: QuizQuestion[] = qData.map(({ study_quiz_options: _opts, ...rest }) => ({
+          id: String(rest.id),
+          prompt: String(rest.prompt ?? ""),
+          explanation: rest.explanation ?? null,
+          position: typeof rest.position === "number" ? rest.position : null,
+        }));
+
+        // ─── PHASE 2: attempt restore / create ───────────────────────────
+        // Attempt creation needs userId (from Phase 1 auth).
+        // Answers fetch needs the validated attemptId (from Phase 1 attValidate).
+        // These are the only true sequential dependencies left.
+
+        let effectiveAttemptId: string | null = initialAttemptRef.current || null;
         let startedAtMs = Date.now();
 
-        // Restore from URL
-        if (user && attemptFromUrl) {
-          const attRes = await supabase
-            .from("study_practice_attempts")
-            .select("id,set_id,status,started_at")
-            .eq("id", attemptFromUrl)
-            .eq("user_id", user.id)
-            .maybeSingle();
+        if (user && initialAttemptRef.current) {
+          // Use the already-validated attempt data from Phase 1
+          const attData = !attValidateRes.error ? (attValidateRes as any).data : null;
 
-          if (!attRes.error && attRes.data?.id && String(attRes.data.set_id) === setId) {
-            effectiveAttemptId = String(attRes.data.id);
-            const st = new Date(String(attRes.data.started_at)).getTime();
+          if (attData?.id && String(attData.set_id) === setId) {
+            effectiveAttemptId = String(attData.id);
+            const st = new Date(String(attData.started_at)).getTime();
             startedAtMs = Number.isFinite(st) ? st : Date.now();
 
-            // Answers from DB
+            // Answers are the only remaining sequential fetch — they need
+            // the confirmed attemptId before we can request them.
             const ansRes = await supabase
               .from("study_attempt_answers")
               .select("question_id,selected_option_id")
@@ -243,7 +215,7 @@ export function usePracticeEngine({
                 amap[String(r.question_id)] = String(r.selected_option_id);
             });
 
-            // Merge local draft
+            // Merge local draft (localStorage wins for latest unsaved answers)
             const local = readLocalDraft(`jabu:practiceDraft:${setId}:${effectiveAttemptId}`);
             if (local.answers) Object.assign(amap, local.answers);
 
@@ -254,8 +226,8 @@ export function usePracticeEngine({
           }
         }
 
-        // Create new attempt if none provided
-        if (user && !attemptFromUrl) {
+        // Create new attempt if none was provided via URL
+        if (user && !initialAttemptRef.current) {
           const startedIso = new Date().toISOString();
           const created = await supabase
             .from("study_practice_attempts")
@@ -272,11 +244,6 @@ export function usePracticeEngine({
             effectiveAttemptId = String(created.data.id);
             const st = new Date(String(created.data.started_at ?? startedIso)).getTime();
             startedAtMs = Number.isFinite(st) ? st : Date.now();
-            router.replace(
-              `/study/practice/${encodeURIComponent(setId)}?attempt=${encodeURIComponent(
-                effectiveAttemptId
-              )}`
-            );
           }
         }
 
@@ -294,7 +261,7 @@ export function usePracticeEngine({
 
         if (cancelled) return;
         setMeta(setRes.data as any);
-        setQuestions((qData as any) ?? []);
+        setQuestions(cleanQData);
         setOptionsByQ(grouped);
         setAttemptId(effectiveAttemptId);
       } catch (e: any) {
@@ -308,7 +275,20 @@ export function usePracticeEngine({
     return () => {
       cancelled = true;
     };
-  }, [setId, attemptFromUrl, router]);
+  }, [setId, router]);
+
+  // Sync URL with attempt id (without re-loading data)
+  useEffect(() => {
+    if (!attemptId) return;
+    if (attemptFromUrl) return;
+
+    // Avoid a Next.js route transition (and a second loader flash) by updating the URL
+    // without triggering navigation.
+    if (typeof window !== "undefined") {
+      const next = `/study/practice/${encodeURIComponent(setId)}?attempt=${encodeURIComponent(attemptId)}`;
+      window.history.replaceState(null, "", next);
+    }
+  }, [attemptId, attemptFromUrl, setId]);
 
   // Timer tick + auto-submit
   useEffect(() => {
@@ -350,13 +330,12 @@ export function usePracticeEngine({
     // Persist answer (best-effort)
     (async () => {
       try {
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth?.user;
-        if (!user || !attemptId) return;
+        const userId = userIdRef.current;
+        if (!userId || !attemptId) return;
         await supabase.from("study_attempt_answers").upsert(
           {
             attempt_id: attemptId,
-            user_id: user.id,
+            user_id: userId,
             question_id: qid,
             selected_option_id: oid,
             updated_at: new Date().toISOString(),
@@ -388,9 +367,8 @@ export function usePracticeEngine({
     setFinalizing(true);
 
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth?.user;
-      if (!user || !attemptId) {
+      const userId = userIdRef.current;
+      if (!userId || !attemptId) {
         setFinalizing(false);
         return;
       }
@@ -426,7 +404,7 @@ export function usePracticeEngine({
         .from("study_practice_attempts")
         .update(attemptUpdate)
         .eq("id", attemptId)
-        .eq("user_id", user.id);
+        .eq("user_id", userId);
 
       // Update daily activity/streak (ignore if missing)
       const activityDate = submittedIso.slice(0, 10);
@@ -434,7 +412,7 @@ export function usePracticeEngine({
         .from("study_daily_activity")
         .upsert(
           {
-            user_id: user.id,
+            user_id: userId,
             activity_date: activityDate,
             did_practice: true,
             points: Math.max(1, correct),

@@ -19,6 +19,9 @@ import {
   Eye,
   EyeOff,
   X,
+  MessageCircle,
+  Heart,
+  BarChart2,
 } from "lucide-react";
 
 type Tab = "active" | "sold" | "inactive";
@@ -163,6 +166,7 @@ export default function MyListingsPage() {
 
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [listings, setListings] = useState<ListingRow[]>([]);
+  const [statsMap, setStatsMap] = useState<Record<string, { views: number; contact_clicks: number; saves: number }>>({});
   const [counts, setCounts] = useState({ active: 0, sold: 0, inactive: 0 });
 
   const [qInput, setQInput] = useState("");
@@ -312,6 +316,28 @@ export default function MyListingsPage() {
       const rows = (data ?? []) as ListingRow[];
       setListings(rows);
       setHasMore(rows.length === PAGE_SIZE);
+
+      // Fetch stats for this page's listings in one query
+      if (rows.length > 0) {
+        const ids = rows.map((r) => r.id);
+        supabase
+          .from("listing_stats")
+          .select("listing_id,views,contact_clicks,saves")
+          .in("listing_id", ids)
+          .then(({ data: sData }) => {
+            if (!sData) return;
+            const map: Record<string, { views: number; contact_clicks: number; saves: number }> = {};
+            for (const s of sData) {
+              map[s.listing_id] = {
+                views: s.views ?? 0,
+                contact_clicks: s.contact_clicks ?? 0,
+                saves: s.saves ?? 0,
+              };
+            }
+            setStatsMap(map);
+          })
+          .catch(() => {});
+      }
     } catch (err: any) {
       console.error(err);
       toast({ type: "error", text: err?.message ?? "Something went wrong." });
@@ -693,6 +719,32 @@ export default function MyListingsPage() {
                       </div>
                     </div>
 
+                    {/* Stats strip */}
+                    {(() => {
+                      const s = statsMap[l.id];
+                      const views = s?.views ?? 0;
+                      const contacts = s?.contact_clicks ?? 0;
+                      const saves = s?.saves ?? 0;
+                      return (
+                        <div className="mt-3 flex items-center gap-3 rounded-2xl bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                          <span className="flex items-center gap-1" title="Views">
+                            <Eye className="h-3.5 w-3.5 text-zinc-400" />
+                            {views.toLocaleString()}
+                          </span>
+                          <span className="text-zinc-200">|</span>
+                          <span className="flex items-center gap-1" title="Contact taps">
+                            <MessageCircle className="h-3.5 w-3.5 text-zinc-400" />
+                            {contacts.toLocaleString()}
+                          </span>
+                          <span className="text-zinc-200">|</span>
+                          <span className="flex items-center gap-1" title="Saves">
+                            <Heart className="h-3.5 w-3.5 text-zinc-400" />
+                            {saves.toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Link
                         href={`/listing/${l.id}`}
@@ -794,10 +846,11 @@ export default function MyListingsPage() {
         <>
           {/* Table view (mobile-first: stacked rows) */}
           <div className="rounded-3xl border bg-white overflow-hidden">
-            <div className="hidden sm:grid sm:grid-cols-[1fr_140px_120px_220px] gap-3 border-b bg-zinc-50 px-4 py-3 text-xs font-semibold text-zinc-700">
+            <div className="hidden sm:grid sm:grid-cols-[1fr_140px_120px_160px_220px] gap-3 border-b bg-zinc-50 px-4 py-3 text-xs font-semibold text-zinc-700">
               <div>Listing</div>
               <div>Price</div>
               <div>Status</div>
+              <div className="flex items-center gap-1"><BarChart2 className="h-3.5 w-3.5" /> Stats</div>
               <div className="text-right">Actions</div>
             </div>
 
@@ -808,7 +861,7 @@ export default function MyListingsPage() {
                 const busy = rowBusyId === l.id;
 
                 return (
-                  <div key={l.id} className="p-4 sm:grid sm:grid-cols-[1fr_140px_120px_220px] sm:items-center sm:gap-3">
+                  <div key={l.id} className="p-4 sm:grid sm:grid-cols-[1fr_140px_120px_160px_220px] sm:items-center sm:gap-3">
                     <div className="min-w-0">
                       <Link href={`/listing/${l.id}`} className="no-underline">
                         <p className="text-sm font-semibold text-zinc-900 line-clamp-2">{l.title}</p>
@@ -822,6 +875,29 @@ export default function MyListingsPage() {
 
                     <div className="mt-2 sm:mt-0">
                       <StatusPill status={l.status} />
+                    </div>
+
+                    {/* Stats cell */}
+                    <div className="mt-2 sm:mt-0">
+                      {(() => {
+                        const s = statsMap[l.id];
+                        return (
+                          <div className="flex flex-col gap-0.5 text-xs text-zinc-500">
+                            <span className="flex items-center gap-1">
+                              <Eye className="h-3 w-3" />
+                              {(s?.views ?? 0).toLocaleString()} views
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <MessageCircle className="h-3 w-3" />
+                              {(s?.contact_clicks ?? 0).toLocaleString()} contacts
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Heart className="h-3 w-3" />
+                              {(s?.saves ?? 0).toLocaleString()} saves
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2 sm:mt-0 sm:justify-end">

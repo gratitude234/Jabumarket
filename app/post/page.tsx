@@ -1,6 +1,7 @@
-// app/post/page.tsx
 "use client";
+// app/post/page.tsx
 
+import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -37,6 +38,7 @@ const DRAFT_KEY = "jm_post_draft_v1";
 const MAX_IMAGE_MB = 5;
 const MIN_TITLE = 8;
 const MIN_DESC_SERVICE = 20;
+const MAX_IMAGES = 4;
 
 const LOCATION_PRESETS = [
   "School gate",
@@ -48,10 +50,6 @@ const LOCATION_PRESETS = [
   "Chapel",
   "Sports complex",
 ] as const;
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -70,9 +68,10 @@ function formatDigitsAsNairaInput(digits: string) {
 }
 
 function safeUuid() {
-  // Best effort; no extra deps
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const g: any = globalThis as any;
+  const g = globalThis as typeof globalThis & {
+    crypto?: { randomUUID?: () => string };
+  };
+
   if (g?.crypto?.randomUUID) return g.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -86,7 +85,6 @@ async function compressImage(
 
   if (!file.type.startsWith("image/")) return file;
 
-  // If already small-ish, keep original
   const sizeMb = file.size / (1024 * 1024);
   if (sizeMb <= 1.2) return file;
 
@@ -116,25 +114,27 @@ async function compressImage(
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
-    // Better downscale quality on some browsers
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+
+    if (file.type === "image/png") {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, targetW, targetH);
+    }
+
     ctx.drawImage(img, 0, 0, targetW, targetH);
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      // Always output JPEG (smaller, consistent). If original is PNG with transparency,
-      // it will get flattened on white background — acceptable for marketplace listings.
       canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
     });
 
     if (!blob) return file;
 
-    const compressed = new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", {
+    const compressed = new File([blob], `${file.name.replace(/\.\w+$/, "")}.jpg`, {
       type: "image/jpeg",
       lastModified: Date.now(),
     });
 
-    // If compression somehow got bigger, keep original
     if (compressed.size >= file.size) return file;
 
     return compressed;
@@ -155,6 +155,7 @@ function Modal({
   children: React.ReactNode;
 }) {
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" />
@@ -177,44 +178,48 @@ export default function PostPage() {
   const [banner, setBanner] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // form
   const [listingType, setListingType] = useState<ListingType>("product");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Phones");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priceDigits, setPriceDigits] = useState<string>(""); // digits only
+  const [priceDigits, setPriceDigits] = useState<string>("");
   const [priceLabel, setPriceLabel] = useState<string>("");
   const [location, setLocation] = useState("");
   const [negotiable, setNegotiable] = useState(false);
 
-  // image
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // upload UX
   const [progress, setProgress] = useState(0);
   const progressTimerRef = useRef<number | null>(null);
 
-  // success
   const [postedId, setPostedId] = useState<string | null>(null);
 
-  // draft restore
   const [draftFound, setDraftFound] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
-  const draftRef = useRef<any>(null);
+  const draftRef = useRef<{
+    listingType?: ListingType;
+    category?: (typeof CATEGORIES)[number];
+    title?: string;
+    description?: string;
+    priceDigits?: string;
+    priceLabel?: string;
+    location?: string;
+    negotiable?: boolean;
+  } | null>(null);
 
-  const previewUrl = useMemo(() => {
-    if (!imageFile) return null;
-    return URL.createObjectURL(imageFile);
-  }, [imageFile]);
+  const previewUrls = useMemo(() => {
+    return imageFiles.map((f) => URL.createObjectURL(f));
+  }, [imageFiles]);
 
-  // Revoke preview URLs to prevent memory leaks
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [previewUrl]);
+  }, [previewUrls]);
+
+  const previewUrl = previewUrls[0] ?? null;
 
   const priceDisabled = priceLabel.trim().length > 0;
   const priceLabelDisabled = priceDigits.trim().length > 0;
@@ -224,15 +229,17 @@ export default function PostPage() {
 
   const canPublish = useMemo(() => {
     if (title.trim().length < MIN_TITLE) return false;
-    if (!imageFile) return false;
+    if (imageFiles.length === 0) return false;
 
-    if (listingType === "service" && description.trim().length < MIN_DESC_SERVICE) return false;
+    if (listingType === "service" && description.trim().length < MIN_DESC_SERVICE) {
+      return false;
+    }
 
     if (priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) return false;
     if (priceDigits.trim() && priceLabel.trim()) return false;
 
     return true;
-  }, [title, imageFile, priceDigits, priceLabel, listingType, description]);
+  }, [title, imageFiles, priceDigits, priceLabel, listingType, description]);
 
   function openFilePicker() {
     fileInputRef.current?.click();
@@ -250,7 +257,6 @@ export default function PostPage() {
     setProgress(5);
     progressTimerRef.current = window.setInterval(() => {
       setProgress((p) => {
-        // advance slowly up to 90%
         if (p >= 90) return p;
         return Math.min(90, p + (p < 30 ? 6 : 2));
       });
@@ -266,83 +272,136 @@ export default function PostPage() {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
-    onPickFile(f);
+    if (e.dataTransfer.files?.length) onPickFiles(e.dataTransfer.files);
   }
 
-  function onPickFile(f: File) {
+  function onPickFiles(files: FileList | File[]) {
     setBanner(null);
     setErrors((prev) => ({ ...prev, image: "" }));
 
-    if (!f.type.startsWith("image/")) {
-      setErrors((prev) => ({ ...prev, image: "Please upload an image file (JPG/PNG)." }));
+    const remaining = MAX_IMAGES - imageFiles.length;
+    if (remaining <= 0) {
+      setErrors((prev) => ({
+        ...prev,
+        image: `Max ${MAX_IMAGES} photos allowed.`,
+      }));
       return;
     }
-    const sizeMb = f.size / (1024 * 1024);
-    if (sizeMb > MAX_IMAGE_MB) {
-      setErrors((prev) => ({ ...prev, image: `Image too large. Max ${MAX_IMAGE_MB}MB.` }));
-      return;
+
+    const toAdd: File[] = [];
+    let latestImageError = "";
+
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith("image/")) {
+        latestImageError = "Only image files (JPG/PNG) are allowed.";
+        continue;
+      }
+
+      const sizeMb = f.size / (1024 * 1024);
+      if (sizeMb > MAX_IMAGE_MB) {
+        latestImageError = `"${f.name}" is too large. Max ${MAX_IMAGE_MB}MB per photo.`;
+        continue;
+      }
+
+      toAdd.push(f);
+      if (toAdd.length >= remaining) break;
     }
-    setImageFile(f);
+
+    if (latestImageError) {
+      setErrors((prev) => ({ ...prev, image: latestImageError }));
+    }
+
+    if (toAdd.length > 0) {
+      setImageFiles((prev) => [...prev, ...toAdd]);
+    }
+  }
+
+  function removeImage(index: number) {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function moveImage(from: number, to: number) {
+    setImageFiles((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
   }
 
   function validate() {
     const next: Record<string, string> = {};
     setBanner(null);
 
-    if (!imageFile) next.image = "Please add a photo.";
+    if (imageFiles.length === 0) next.image = "Please add at least one photo.";
 
     if (!title.trim()) next.title = "Title is required.";
-    else if (title.trim().length < MIN_TITLE) next.title = `Title should be at least ${MIN_TITLE} characters.`;
+    else if (title.trim().length < MIN_TITLE) {
+      next.title = `Title should be at least ${MIN_TITLE} characters.`;
+    }
 
-    if (listingType === "service" && description.trim().length > 0 && description.trim().length < MIN_DESC_SERVICE) {
+    if (
+      listingType === "service" &&
+      description.trim().length > 0 &&
+      description.trim().length < MIN_DESC_SERVICE
+    ) {
       next.description = `For services, add a bit more detail (min ${MIN_DESC_SERVICE} chars).`;
     }
 
-    if (priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) next.price = "Price must be digits only.";
+    if (priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) {
+      next.price = "Price must be digits only.";
+    }
+
     if (priceDigits.trim() && priceLabel.trim()) {
       next.price = "Use either Price OR Price label, not both.";
       next.priceLabel = "Use either Price OR Price label, not both.";
     }
 
-    if (imageFile) {
-      const sizeMb = imageFile.size / (1024 * 1024);
-      if (sizeMb > MAX_IMAGE_MB) next.image = `Image too large. Max ${MAX_IMAGE_MB}MB.`;
-      if (!imageFile.type.startsWith("image/")) next.image = "Invalid file type.";
+    for (const f of imageFiles) {
+      const sizeMb = f.size / (1024 * 1024);
+      if (sizeMb > MAX_IMAGE_MB) {
+        next.image = `Image too large. Max ${MAX_IMAGE_MB}MB.`;
+        break;
+      }
+      if (!f.type.startsWith("image/")) {
+        next.image = "Invalid file type.";
+        break;
+      }
     }
 
     setErrors(next);
     return Object.keys(next).filter((k) => next[k]).length === 0;
   }
 
-  async function uploadImageToStorage(file: File, userId: string) {
-    setUploading(true);
-    startFakeProgress();
+  // Returns both the storage path (needed for cleanup) and the public URL.
+  async function uploadOneImage(
+    file: File,
+    userId: string
+  ): Promise<{ path: string; url: string }> {
+    const compressed = await compressImage(file, { maxDim: 1600, quality: 0.82 });
+    const path = `listings/${userId}/${safeUuid()}.jpg`;
 
-    try {
-      // Stage 1: compress (UX + speed)
-      setProgress(10);
-      const compressed = await compressImage(file, { maxDim: 1600, quality: 0.82 });
-      setProgress((p) => Math.max(p, 25));
-
-      const path = `listings/${userId}/${safeUuid()}.jpg`;
-
-      // Stage 2: upload
-      const res = await supabase.storage.from("listing-images").upload(path, compressed, {
+    const { error } = await supabase.storage
+      .from("listing-images")
+      .upload(path, compressed, {
         cacheControl: "3600",
         upsert: false,
         contentType: compressed.type || "image/jpeg",
       });
 
-      if (res.error) throw res.error;
+    if (error) throw error;
 
-      setProgress((p) => Math.max(p, 92));
-      const pub = supabase.storage.from("listing-images").getPublicUrl(path);
-      return pub.data.publicUrl as string;
-    } finally {
-      setUploading(false);
-      finishProgress();
+    const { data: pub } = supabase.storage.from("listing-images").getPublicUrl(path);
+    return { path, url: pub.publicUrl };
+  }
+
+  // Best-effort cleanup — remove uploaded files that will never be referenced.
+  async function deleteStoragePaths(paths: string[]) {
+    if (paths.length === 0) return;
+    try {
+      await supabase.storage.from("listing-images").remove(paths);
+    } catch {
+      // Non-fatal: storage GC can handle leftovers if this fails.
     }
   }
 
@@ -355,8 +414,13 @@ export default function PostPage() {
     if (!validate()) return;
 
     setPublishing(true);
+
+    // Track uploaded paths so we can roll back on any failure.
+    const uploadedPaths: string[] = [];
+
     try {
       const { data: userData, error: userErr } = await supabase.auth.getUser();
+
       if (userErr) {
         const m = String(userErr.message ?? "").toLowerCase();
         if (m.includes("auth session missing") || m.includes("session missing")) {
@@ -372,7 +436,6 @@ export default function PostPage() {
         return;
       }
 
-      // get vendor
       const { data: vendor, error: vErr } = await supabase
         .from("vendors")
         .select("id, verified")
@@ -380,41 +443,75 @@ export default function PostPage() {
         .single();
 
       if (vErr || !vendor?.id) {
-        // Friendly CTA instead of raw crash
-        setBanner("You need a vendor profile before posting. Please complete your profile first.");
+        setBanner(
+          "You need a vendor profile before posting. Please complete your profile first."
+        );
         return;
       }
 
-      // upload image (compressed)
-      const imgUrl = imageFile ? await uploadImageToStorage(imageFile, user.id) : null;
+      // Upload images sequentially so we can track and clean up on partial failure.
+      const imgUrls: string[] = [];
+      if (imageFiles.length > 0) {
+        setUploading(true);
+        startFakeProgress();
+        try {
+          for (let i = 0; i < imageFiles.length; i++) {
+            // Nudge the fake progress bar toward completion as each file finishes.
+            setProgress(Math.round(10 + (i / imageFiles.length) * 80));
+            const { path, url } = await uploadOneImage(imageFiles[i], user.id);
+            uploadedPaths.push(path);
+            imgUrls.push(url);
+          }
+        } catch (uploadErr) {
+          // At least one upload failed — delete anything already in storage.
+          await deleteStoragePaths(uploadedPaths);
+          throw uploadErr;
+        } finally {
+          setUploading(false);
+          finishProgress();
+        }
+      }
 
-      const priceInt = priceDigits.trim() ? parseInt(priceDigits.trim(), 10) : null;
+      const priceInt = priceDigits.trim()
+        ? parseInt(priceDigits.trim(), 10)
+        : null;
 
-      const payload: any = {
+      const payload = {
         vendor_id: vendor.id,
         title: title.trim(),
         description: description.trim() || null,
         listing_type: listingType,
         category,
-        price: Number.isFinite(priceInt as any) ? priceInt : null,
+        price: Number.isFinite(priceInt) ? priceInt : null,
         price_label: priceLabel.trim() || null,
         location: location.trim() || null,
-        image_url: imgUrl,
+        image_url: imgUrls[0] ?? null,
+        image_urls: imgUrls.length > 0 ? imgUrls : null,
         negotiable,
         status: "active",
       };
 
-      const { data: created, error: cErr } = await supabase.from("listings").insert(payload).select("id").single();
-      if (cErr) throw cErr;
+      const { data: created, error: cErr } = await supabase
+        .from("listings")
+        .insert(payload)
+        .select("id")
+        .single();
 
-      // Clear draft on success
+      if (cErr) {
+        // Listing insert failed — clean up every file we just uploaded.
+        await deleteStoragePaths(uploadedPaths);
+        throw cErr;
+      }
+
       try {
         window.localStorage.removeItem(DRAFT_KEY);
       } catch {}
 
       setPostedId(created?.id ?? null);
-    } catch (err: any) {
-      setBanner(err?.message ?? "Failed to post listing.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to post listing.";
+      setBanner(message);
     } finally {
       setPublishing(false);
     }
@@ -433,10 +530,9 @@ export default function PostPage() {
     setPriceLabel("");
     setLocation("");
     setNegotiable(false);
-    setImageFile(null);
+    setImageFiles([]);
   }
 
-  // ---------- Draft autosave + restore ----------
   const draftPayload = useMemo(() => {
     return {
       v: 1,
@@ -448,43 +544,60 @@ export default function PostPage() {
       priceLabel,
       location,
       negotiable,
-      // image intentionally excluded (can’t restore file reliably)
       ts: Date.now(),
     };
-  }, [listingType, category, title, description, priceDigits, priceLabel, location, negotiable]);
+  }, [
+    listingType,
+    category,
+    title,
+    description,
+    priceDigits,
+    priceLabel,
+    location,
+    negotiable,
+  ]);
 
   useEffect(() => {
-    // On mount, detect draft
     try {
       const raw = window.localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
-      const parsed = JSON.parse(raw);
-      // only show restore prompt if draft has meaningful content
+
+      const parsed = JSON.parse(raw) as {
+        title?: string;
+        description?: string;
+        priceDigits?: string;
+        priceLabel?: string;
+        location?: string;
+        listingType?: ListingType;
+        category?: (typeof CATEGORIES)[number];
+        negotiable?: boolean;
+      };
+
       const hasContent =
         !!parsed?.title?.trim() ||
         !!parsed?.description?.trim() ||
         !!parsed?.priceDigits?.trim() ||
         !!parsed?.priceLabel?.trim() ||
         !!parsed?.location?.trim();
+
       if (!hasContent) return;
 
       draftRef.current = parsed;
       setDraftFound(true);
       setShowDraftModal(true);
     } catch {
-      // ignore
+      //
     }
   }, []);
 
   useEffect(() => {
-    // Debounced autosave (don’t autosave while success screen or publishing)
     if (postedId || publishing) return;
 
     const t = window.setTimeout(() => {
       try {
         window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draftPayload));
       } catch {
-        // ignore
+        //
       }
     }, 650);
 
@@ -497,14 +610,20 @@ export default function PostPage() {
       setShowDraftModal(false);
       return;
     }
+
     setListingType(d.listingType === "service" ? "service" : "product");
-    setCategory((CATEGORIES as readonly string[]).includes(d.category) ? d.category : "Phones");
+    setCategory(
+      (CATEGORIES as readonly string[]).includes(d.category ?? "")
+        ? (d.category as (typeof CATEGORIES)[number])
+        : "Phones"
+    );
     setTitle(d.title ?? "");
     setDescription(d.description ?? "");
     setPriceDigits(d.priceDigits ?? "");
     setPriceLabel(d.priceLabel ?? "");
     setLocation(d.location ?? "");
     setNegotiable(!!d.negotiable);
+    setDraftFound(true);
     setShowDraftModal(false);
   }
 
@@ -512,11 +631,12 @@ export default function PostPage() {
     try {
       window.localStorage.removeItem(DRAFT_KEY);
     } catch {}
+
+    draftRef.current = null;
     setDraftFound(false);
     setShowDraftModal(false);
   }
 
-  // Success screen
   if (postedId) {
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
@@ -558,7 +678,9 @@ export default function PostPage() {
             <button
               onClick={() => {
                 const url =
-                  typeof window !== "undefined" ? `${window.location.origin}/listing/${postedId}` : `/listing/${postedId}`;
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/listing/${postedId}`
+                    : `/listing/${postedId}`;
                 navigator.clipboard?.writeText(url).catch(() => {});
                 setBanner("Link copied ✅");
               }}
@@ -570,7 +692,9 @@ export default function PostPage() {
         </div>
 
         {banner ? (
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">{banner}</div>
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
+            {banner}
+          </div>
         ) : null}
       </div>
     );
@@ -583,10 +707,10 @@ export default function PostPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
-      {/* Draft restore modal */}
       <Modal open={showDraftModal} title="Restore your draft?">
         <p className="text-sm text-zinc-700">
-          We found an unfinished post. Do you want to restore it? (Photo can’t be restored.)
+          We found an unfinished post. Do you want to restore it? (Photo can’t be
+          restored.)
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
@@ -606,7 +730,6 @@ export default function PostPage() {
         </div>
       </Modal>
 
-      {/* Top bar */}
       <div className="sticky top-0 z-10 -mx-4 border-b bg-white/90 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <button
@@ -619,14 +742,19 @@ export default function PostPage() {
           </button>
 
           <div className="min-w-0 text-right">
-            <p className="truncate text-sm font-semibold text-zinc-900">Post a listing</p>
+            <p className="truncate text-sm font-semibold text-zinc-900">
+              Post a listing
+            </p>
             <p className="text-xs text-zinc-500">
-              {publishing ? "Publishing…" : uploading ? "Uploading image…" : "Step-by-step"}
+              {publishing
+                ? "Publishing…"
+                : uploading
+                  ? `Uploading photo${imageFiles.length > 1 ? "s" : ""}…`
+                  : "Step-by-step"}
             </p>
           </div>
         </div>
 
-        {/* Progress bar (shows during upload/compress) */}
         {(uploading || publishing) && progress > 0 ? (
           <div className="mt-3">
             <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
@@ -636,7 +764,9 @@ export default function PostPage() {
               />
             </div>
             <p className="mt-1 text-[11px] text-zinc-500">
-              {uploading ? "Optimizing & uploading image…" : "Publishing…"}
+              {uploading
+                ? `Optimizing & uploading photo${imageFiles.length > 1 ? "s" : ""}…`
+                : "Publishing…"}
             </p>
           </div>
         ) : null}
@@ -660,90 +790,139 @@ export default function PostPage() {
         ) : null}
       </div>
 
-      {/* Step 1: Photo */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">1) Add a photo</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">Clear photos get more messages.</p>
+            <h2 className="text-sm font-semibold text-zinc-900">1) Add photos</h2>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              Up to {MAX_IMAGES} photos — first photo is the cover. Clear photos get
+              more messages.
+            </p>
           </div>
-
-          {imageFile ? (
-            <button
-              type="button"
-              onClick={() => setImageFile(null)}
-              className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-            >
-              <X className="h-4 w-4" />
-              Remove
-            </button>
+          {imageFiles.length > 0 ? (
+            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
+              {imageFiles.length} / {MAX_IMAGES}
+            </span>
           ) : null}
         </div>
 
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          className={cn(
-            "mt-3 overflow-hidden rounded-3xl border bg-zinc-50 transition",
-            dragOver && "ring-2 ring-black/10 border-zinc-300"
-          )}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onPickFile(f);
-            }}
-            className="hidden"
-          />
+        {imageFiles.length > 0 ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {imageFiles.map((_, i) => (
+              <div
+                key={i}
+                className="group relative aspect-square overflow-hidden rounded-2xl border bg-zinc-100"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewUrls[i]}
+                  alt={`Photo ${i + 1}`}
+                  className="h-full w-full object-cover"
+                />
 
-          <button type="button" onClick={openFilePicker} className="group relative w-full">
-            <div className="relative aspect-[4/3] w-full bg-zinc-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewUrl ?? "https://placehold.co/1200x900?text=Add+photo"}
-                alt="Preview"
-                className="h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
-
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-white">
-                  <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/15 backdrop-blur">
-                    <Camera className="h-5 w-5" />
+                {i === 0 ? (
+                  <div className="absolute bottom-1.5 left-1.5">
+                    <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+                      Cover
+                    </span>
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold">Tap to upload</p>
-                    <p className="text-xs text-white/80">or drag & drop</p>
-                  </div>
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => moveImage(i, 0)}
+                    className="absolute bottom-1.5 left-1.5 hidden rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur group-hover:block"
+                    title="Make cover"
+                  >
+                    Set cover
+                  </button>
+                )}
 
-                <span className="rounded-2xl bg-white/15 px-3 py-2 text-xs font-semibold text-white backdrop-blur">
-                  {imageFile ? "Replace" : "Upload"}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white backdrop-blur hover:bg-black/80"
+                  aria-label="Remove photo"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-            </div>
-          </button>
-        </div>
+            ))}
 
-        {errors.image ? <p className="mt-2 text-xs text-red-600">{errors.image}</p> : null}
+            {imageFiles.length < MAX_IMAGES ? (
+              <button
+                type="button"
+                onClick={openFilePicker}
+                className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-zinc-300 bg-zinc-50 text-zinc-500 transition hover:border-zinc-400 hover:bg-zinc-100"
+              >
+                <Camera className="h-5 w-5" />
+                <span className="text-[11px] font-medium">Add photo</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {imageFiles.length === 0 ? (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            className={cn(
+              "mt-3 overflow-hidden rounded-3xl border bg-zinc-50 transition",
+              dragOver && "border-zinc-300 ring-2 ring-black/10"
+            )}
+          >
+            <button
+              type="button"
+              onClick={openFilePicker}
+              className="group relative w-full"
+            >
+              <div className="relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 bg-zinc-100 text-zinc-400">
+                <div className="grid h-14 w-14 place-items-center rounded-2xl bg-zinc-200 transition group-hover:bg-zinc-300">
+                  <Camera className="h-7 w-7" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-zinc-700">
+                    Tap to upload photos
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    or drag & drop — up to {MAX_IMAGES} photos
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+        ) : null}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => {
+            if (e.target.files?.length) onPickFiles(e.target.files);
+            e.target.value = "";
+          }}
+          className="hidden"
+        />
+
+        {errors.image ? (
+          <p className="mt-2 text-xs text-red-600">{errors.image}</p>
+        ) : null}
+
         <p className="mt-2 text-xs text-zinc-500">
-          PNG/JPG recommended • max {MAX_IMAGE_MB}MB • we auto-optimize your photo for faster posting.
+          PNG/JPG • max {MAX_IMAGE_MB}MB each • photos are auto-optimized on upload.
         </p>
       </section>
 
-      {/* Step 2: Details */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <h2 className="text-sm font-semibold text-zinc-900">2) Details</h2>
-        <p className="mt-0.5 text-xs text-zinc-600">Help buyers understand what you’re offering.</p>
+        <p className="mt-0.5 text-xs text-zinc-600">
+          Help buyers understand what you’re offering.
+        </p>
 
-        {/* Type segmented */}
         <div className="mt-4">
           <p className="text-xs font-medium text-zinc-700">Type</p>
           <div className="mt-2 grid grid-cols-2 rounded-2xl border bg-white p-1">
@@ -752,7 +931,9 @@ export default function PostPage() {
               onClick={() => setListingType("product")}
               className={cn(
                 "rounded-xl px-3 py-2 text-sm font-semibold",
-                listingType === "product" ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+                listingType === "product"
+                  ? "bg-black text-white"
+                  : "text-zinc-800 hover:bg-zinc-50"
               )}
             >
               Product
@@ -762,7 +943,9 @@ export default function PostPage() {
               onClick={() => setListingType("service")}
               className={cn(
                 "rounded-xl px-3 py-2 text-sm font-semibold",
-                listingType === "service" ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+                listingType === "service"
+                  ? "bg-black text-white"
+                  : "text-zinc-800 hover:bg-zinc-50"
               )}
             >
               Service
@@ -770,7 +953,6 @@ export default function PostPage() {
           </div>
         </div>
 
-        {/* Category chips (mobile-first horizontal scroll) */}
         <div className="mt-4">
           <p className="text-xs font-medium text-zinc-700">Category</p>
           <div className="mt-2 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
@@ -783,7 +965,9 @@ export default function PostPage() {
                   onClick={() => setCategory(c)}
                   className={cn(
                     "whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold",
-                    category === c ? "bg-black text-white border-black" : "bg-white text-zinc-800 hover:bg-zinc-50"
+                    category === c
+                      ? "border-black bg-black text-white"
+                      : "bg-white text-zinc-800 hover:bg-zinc-50"
                   )}
                 >
                   {c}
@@ -791,10 +975,11 @@ export default function PostPage() {
               ))}
             </div>
           </div>
-          <p className="mt-1 text-xs text-zinc-500">Pick the best match so buyers find you.</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Pick the best match so buyers find you.
+          </p>
         </div>
 
-        {/* Title */}
         <div className="mt-4">
           <label className="text-xs font-medium text-zinc-700">
             Title <span className="text-red-600">*</span>
@@ -803,18 +988,27 @@ export default function PostPage() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. iPhone 11 64GB — clean, no issues"
-            className={cn("mt-1 w-full rounded-2xl border px-3 py-3 text-sm", errors.title && "border-red-300")}
+            className={cn(
+              "mt-1 w-full rounded-2xl border px-3 py-3 text-sm",
+              errors.title && "border-red-300"
+            )}
           />
           <div className="mt-1 flex items-center justify-between">
             {errors.title ? <p className="text-xs text-red-600">{errors.title}</p> : <span />}
-            <p className={cn("text-[11px]", titleCount < MIN_TITLE ? "text-amber-700" : "text-zinc-500")}>
+            <p
+              className={cn(
+                "text-[11px]",
+                titleCount < MIN_TITLE ? "text-amber-700" : "text-zinc-500"
+              )}
+            >
               {titleCount}/{MIN_TITLE}+ recommended
             </p>
           </div>
-          <p className="mt-1 text-xs text-zinc-500">Short + specific titles get more clicks.</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Short + specific titles get more clicks.
+          </p>
         </div>
 
-        {/* Description */}
         <div className="mt-3">
           <label className="text-xs font-medium text-zinc-700">Description</label>
           <textarea
@@ -827,9 +1021,18 @@ export default function PostPage() {
             )}
           />
           <div className="mt-1 flex items-center justify-between">
-            {errors.description ? <p className="text-xs text-red-600">{errors.description}</p> : <span />}
+            {errors.description ? (
+              <p className="text-xs text-red-600">{errors.description}</p>
+            ) : (
+              <span />
+            )}
             {listingType === "service" ? (
-              <p className={cn("text-[11px]", descCount < MIN_DESC_SERVICE ? "text-amber-700" : "text-zinc-500")}>
+              <p
+                className={cn(
+                  "text-[11px]",
+                  descCount < MIN_DESC_SERVICE ? "text-amber-700" : "text-zinc-500"
+                )}
+              >
                 {descCount}/{MIN_DESC_SERVICE}+ recommended
               </p>
             ) : (
@@ -840,7 +1043,6 @@ export default function PostPage() {
         </div>
       </section>
 
-      {/* Step 3: Price & location */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <h2 className="text-sm font-semibold text-zinc-900">3) Price & location</h2>
         <p className="mt-0.5 text-xs text-zinc-600">Use a numeric price or a label.</p>
@@ -859,10 +1061,15 @@ export default function PostPage() {
                 errors.price && "border-red-300"
               )}
             />
-            {errors.price ? <p className="mt-1 text-xs text-red-600">{errors.price}</p> : null}
+            {errors.price ? (
+              <p className="mt-1 text-xs text-red-600">{errors.price}</p>
+            ) : null}
             {priceDigits ? (
               <p className="mt-1 text-[11px] text-zinc-500">
-                Preview: <span className="font-semibold text-zinc-900">{formatNaira(parseInt(priceDigits, 10))}</span>
+                Preview:{" "}
+                <span className="font-semibold text-zinc-900">
+                  {formatNaira(parseInt(priceDigits, 10))}
+                </span>
               </p>
             ) : null}
           </div>
@@ -879,7 +1086,9 @@ export default function PostPage() {
                 errors.priceLabel && "border-red-300"
               )}
             />
-            {errors.priceLabel ? <p className="mt-1 text-xs text-red-600">{errors.priceLabel}</p> : null}
+            {errors.priceLabel ? (
+              <p className="mt-1 text-xs text-red-600">{errors.priceLabel}</p>
+            ) : null}
 
             {!priceLabelDisabled ? (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -934,7 +1143,10 @@ export default function PostPage() {
           <button
             type="button"
             onClick={() => setNegotiable((v) => !v)}
-            className={cn("relative h-7 w-12 rounded-full transition-colors", negotiable ? "bg-black" : "bg-zinc-300")}
+            className={cn(
+              "relative h-7 w-12 rounded-full transition-colors",
+              negotiable ? "bg-black" : "bg-zinc-300"
+            )}
             aria-pressed={negotiable}
             aria-label="Toggle negotiable"
           >
@@ -948,12 +1160,13 @@ export default function PostPage() {
         </div>
       </section>
 
-      {/* Live preview */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">Preview</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">This is how buyers will see it.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              This is how buyers will see it.
+            </p>
           </div>
           <span className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs font-semibold text-zinc-800">
             <Sparkles className="h-4 w-4" />
@@ -1003,8 +1216,7 @@ export default function PostPage() {
         </div>
       </section>
 
-      {/* Desktop publish button */}
-      <div className="hidden sm:flex items-center justify-end gap-2">
+      <div className="hidden items-center justify-end gap-2 sm:flex">
         <button
           type="button"
           onClick={() => router.back()}
@@ -1018,13 +1230,16 @@ export default function PostPage() {
           disabled={!canPublish || publishing || uploading}
           className="inline-flex items-center gap-2 rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {publishing || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {publishing || uploading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
           {publishing ? "Publishing…" : uploading ? "Uploading…" : "Publish"}
         </button>
       </div>
 
-      {/* Mobile sticky bottom bar */}
-      <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
+      <div className="fixed bottom-16 left-0 right-0 z-40 px-4 sm:hidden">
         <div className="mx-auto max-w-2xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
           <div className="grid grid-cols-3 gap-2">
             <button
@@ -1051,7 +1266,11 @@ export default function PostPage() {
               disabled={!canPublish || publishing || uploading}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-3 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {publishing || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {publishing || uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
               Post
             </button>
           </div>
@@ -1072,7 +1291,6 @@ export default function PostPage() {
         </div>
       </div>
 
-      {/* Tips */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <details className="group">
           <summary className="cursor-pointer list-none">

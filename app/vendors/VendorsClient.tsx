@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,10 +52,6 @@ const SORTS = [
 type SortKey = (typeof SORTS)[number]["key"];
 
 const PER_PAGE = 18;
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalizePhone(input?: string | null) {
   if (!input) return "";

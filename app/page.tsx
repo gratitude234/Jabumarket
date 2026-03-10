@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 // app/page.tsx
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -14,7 +15,6 @@ import {
   UtensilsCrossed,
   Wrench,
   PlusSquare,
-  Store,
   Flame,
   BadgeCheck,
   MapPin,
@@ -95,10 +95,6 @@ const quickLinks = [
 function NoScrollbarStyle() {
   // Keep it local to this page, but only inject once.
   return <style>{`*::-webkit-scrollbar{display:none}`}</style>;
-}
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
 }
 
 function SectionHeader({
@@ -294,12 +290,31 @@ export default async function HomePage() {
                   </button>
 
                   <datalist id="home-suggestions">
+                    {/* Categories */}
+                    <option value="Phones" />
+                    <option value="Laptops" />
+                    <option value="Fashion" />
+                    <option value="Provisions" />
+                    <option value="Food" />
+                    <option value="Beauty" />
+                    <option value="Services" />
+                    <option value="Repairs" />
+                    <option value="Tutoring" />
+                    {/* Popular campus terms */}
                     <option value="iPhone" />
-                    <option value="laptop" />
-                    <option value="rice" />
-                    <option value="laundry" />
-                    <option value="hair" />
-                    <option value="repairs" />
+                    <option value="Android" />
+                    <option value="Charger" />
+                    <option value="Laptop bag" />
+                    <option value="Rice" />
+                    <option value="Indomie" />
+                    <option value="Laundry" />
+                    <option value="Hair" />
+                    <option value="Sneakers" />
+                    <option value="Jeans" />
+                    <option value="Perfume" />
+                    <option value="Mattress" />
+                    <option value="Fan" />
+                    <option value="Power bank" />
                   </datalist>
                 </div>
               </div>
@@ -705,34 +720,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Mobile sticky bottom bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/90 backdrop-blur sm:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3">
-          <Link
-            href="/explore"
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-black px-3 py-3 text-sm font-semibold text-white"
-          >
-            <Search className="h-4 w-4" />
-            Explore
-          </Link>
-
-          <Link
-            href="/post"
-            className="flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900"
-          >
-            <PlusSquare className="h-4 w-4" />
-            Post
-          </Link>
-
-          <Link
-            href="/vendors"
-            className="flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900"
-          >
-            <Store className="h-4 w-4" />
-            Vendors
-          </Link>
-        </div>
-      </nav>
+      {/* Bottom nav is handled globally by BottomNav.tsx — no custom nav needed here */}
     </main>
   );
 }

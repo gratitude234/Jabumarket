@@ -1,5 +1,6 @@
-// app/study/tutors/page.tsx
 "use client";
+// app/study/tutors/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -29,10 +30,6 @@ type ModeKey = "all" | "online" | "physical" | "hybrid";
 type SortKey = "recommended" | "price_asc" | "price_desc" | "rating_desc" | "newest";
 
 const LEVELS = ["100", "200", "300", "400", "500"] as const;
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");

@@ -1,0 +1,145 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { ArrowRight, Bookmark, BookOpen } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Card } from "./StudyUI";
+import { getLatestAttempt, type PracticeAttemptRow } from "@/lib/studyPractice";
+
+/**
+ * "Continue" card on the Study home page.
+ *
+ * Self-contained: fetches the latest practice attempt on mount.
+ * Three states (audit §1.3):
+ *   - loading  → animated skeleton
+ *   - attempt  → resume / review link
+ *   - no attempt → strong first-time CTA linking to /study/practice
+ */
+export function ContinueCard() {
+  const [attempt, setAttempt] = useState<PracticeAttemptRow | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLatestAttempt()
+      .then((a) => { if (!cancelled) setAttempt(a); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <Card className="rounded-3xl">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold text-foreground">Continue</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick up where you left off, or start a new practice session.
+          </p>
+        </div>
+        <Link
+          href="/study/practice"
+          className={cn(
+            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
+            "text-sm font-semibold text-foreground hover:bg-secondary/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}
+        >
+          Practice <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+
+      {/* Attempt slot + Browse materials */}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {loading ? (
+          // Skeleton while the attempt fetch is in flight
+          <div className="rounded-2xl border border-border bg-background p-3 animate-pulse">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 h-5 w-5 shrink-0 rounded bg-muted" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-3.5 w-32 rounded bg-muted" />
+                <div className="h-3 w-48 rounded bg-muted" />
+                <div className="h-3 w-40 rounded bg-muted" />
+              </div>
+            </div>
+          </div>
+        ) : attempt ? (
+          // Resume or review an existing attempt
+          <Link
+            href={`/study/practice/${encodeURIComponent(attempt.set_id)}?attempt=${encodeURIComponent(attempt.id)}`}
+            className={cn(
+              "rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <Bookmark className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  {attempt.status === "in_progress"
+                    ? "Resume attempt"
+                    : "Review last attempt"}
+                </p>
+                <p className="mt-0.5 truncate text-xs font-medium text-foreground">
+                  {attempt.study_quiz_sets?.title ?? "Practice set"}
+                  {attempt.study_quiz_sets?.course_code
+                    ? ` · ${attempt.study_quiz_sets.course_code}`
+                    : ""}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {attempt.status === "in_progress"
+                    ? "You have an unfinished session — tap to continue."
+                    : attempt.score != null && attempt.total_questions
+                    ? `Score: ${attempt.score}/${attempt.total_questions}`
+                    : "Tap to review your answers."}
+                </p>
+              </div>
+            </div>
+          </Link>
+        ) : (
+          // No attempt yet — first-time CTA (audit §1.3)
+          <Link
+            href="/study/practice"
+            className={cn(
+              "rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <Bookmark className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  Start your first practice session
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Pick a set from Practice and track your scores here.
+                </p>
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {/* Browse materials — always visible */}
+        <Link
+          href="/study/materials"
+          className={cn(
+            "rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Browse materials</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Find notes, slides, and past questions.
+              </p>
+            </div>
+          </div>
+        </Link>
+      </div>
+    </Card>
+  );
+}

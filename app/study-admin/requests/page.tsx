@@ -1,5 +1,6 @@
-// app/study-admin/requests/page.tsx
 "use client";
+// app/study-admin/requests/page.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,10 +35,6 @@ type CourseRequest = {
 };
 
 type ApiResponse = { ok: boolean; items: CourseRequest[]; error?: string };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatDate(iso: string) {
   const d = new Date(iso);

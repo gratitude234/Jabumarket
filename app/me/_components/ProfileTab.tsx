@@ -184,9 +184,11 @@ export default function ProfileTab({
           .select("id,name,sort_order")
           .order("sort_order", { ascending: true });
 
-        const prefRes = await supabase
-          .from("study_user_preferences")
-          .select("faculty_id,department_id,faculty,department,level,semester")
+        // Single source of truth: study_preferences only.
+        // Join faculty/department names so the form can pre-fill text fields.
+        const normRes = await supabase
+          .from("study_preferences")
+          .select("faculty_id,department_id,level,semester,faculty:study_faculties(name),department:study_departments(name)")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -194,17 +196,17 @@ export default function ProfileTab({
 
         setFaculties((facRes.data ?? []) as any);
 
-        const d: any = prefRes.data ?? null;
-        if (d) {
+        const d: any = !normRes.error ? normRes.data : null;
+        if (d && (d.faculty_id || d.department_id || d.level || d.semester)) {
           const hasIds = typeof d.faculty_id === "string" && typeof d.department_id === "string";
-          setManualMode(!hasIds && (!!d.faculty || !!d.department));
+          setManualMode(!hasIds);
 
           setStudyForm((s) => ({
             ...s,
             faculty_id: d.faculty_id ?? "",
             department_id: d.department_id ?? "",
-            faculty: d.faculty ?? "",
-            department: d.department ?? "",
+            faculty: (d.faculty as any)?.name ?? "",
+            department: (d.department as any)?.name ?? "",
             level: typeof d.level === "number" ? d.level : 100,
             semester: (d.semester as Semester) || "first",
           }));
@@ -288,12 +290,11 @@ export default function ProfileTab({
         department_id: manualMode ? null : studyForm.department_id,
       };
 
-      const prefRes = await supabase.from("study_user_preferences").upsert(payload);
-      if (prefRes.error) throw prefRes.error;
-
+      // Single source of truth: write only to study_preferences.
       const normalized: any = {
         user_id: user.id,
         level,
+        semester,
         updated_at: new Date().toISOString(),
         faculty_id: manualMode ? null : studyForm.faculty_id,
         department_id: manualMode ? null : studyForm.department_id,
@@ -312,16 +313,43 @@ export default function ProfileTab({
 
   const vendErr = vendorValidation.errors;
 
+  /* ─── Label helper ─────────────────────────────────────── */
+  function SectionLabel({ children }: { children: React.ReactNode }) {
+    return (
+      <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-3">
+        {children}
+      </p>
+    );
+  }
+
+  function SelectField({
+    label,
+    children,
+    disabled,
+  }: {
+    label: string;
+    children: React.ReactNode;
+    disabled?: boolean;
+  }) {
+    return (
+      <label className="block">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-1.5">{label}</p>
+        <div className={cn("relative", disabled && "opacity-50")}>
+          {children}
+        </div>
+      </label>
+    );
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
+      {/* ── Banner ─────────────────────────────────────────── */}
       {banner ? (
         <div
           className={cn(
-            "rounded-2xl border p-3 text-sm",
-            banner.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : banner.type === "error"
-              ? "border-rose-200 bg-rose-50 text-rose-800"
+            "rounded-xl border px-4 py-3 text-sm font-medium",
+            banner.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : banner.type === "error" ? "border-rose-200 bg-rose-50 text-rose-800"
               : "border-zinc-200 bg-zinc-50 text-zinc-800"
           )}
           role="status"
@@ -330,20 +358,34 @@ export default function ProfileTab({
         </div>
       ) : null}
 
-      {/* Account identity */}
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Account identity</div>
-        <p className="mt-1 text-sm text-zinc-600">This name shows across the app.</p>
+      {/* ── SECTION 1: Account ─────────────────────────────── */}
+      <section>
+        <SectionLabel>Account</SectionLabel>
+        <div className="grid gap-3">
+          <Field
+            label="Full name"
+            value={fullName}
+            onChange={setFullName}
+            placeholder="e.g. Gratitude Olawale"
+          />
 
-        <div className="mt-3 grid gap-2">
-          <Field label="Full name" value={fullName} onChange={setFullName} placeholder="e.g. Gratitude Developers" />
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-1.5">Email</p>
+            <input
+              value={me?.email ?? ""}
+              disabled
+              readOnly
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-400 outline-none cursor-not-allowed"
+            />
+            <p className="mt-1 text-[11px] text-zinc-400">Your JABU email cannot be changed.</p>
+          </div>
 
-          {nameDirty ? (
-            <div className="flex gap-2">
+          {nameDirty && (
+            <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => setFullName(me?.full_name ?? "")}
-                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+                className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
                 disabled={savingName}
               >
                 Cancel
@@ -351,27 +393,31 @@ export default function ProfileTab({
               <button
                 type="button"
                 onClick={saveName}
-                className={cn("rounded-xl px-3 py-2 text-sm font-semibold", savingName ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800")}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
+                  savingName ? "bg-zinc-200 text-zinc-500" : "bg-zinc-900 text-white hover:bg-zinc-800"
+                )}
                 disabled={savingName || !fullName.trim()}
               >
                 {savingName ? "Saving…" : "Save name"}
               </button>
             </div>
-          ) : null}
+          )}
+        </div>
+      </section>
+
+      {/* ── SECTION 2: Vendor Profile ──────────────────────── */}
+      <section>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-px flex-1 bg-zinc-100" />
+          <SectionLabel>
+            {roles.isVendor && vendor ? "Vendor Profile" : "Sell on JABU"}
+          </SectionLabel>
+          <div className="h-px flex-1 bg-zinc-100" />
         </div>
 
-        <div className="mt-3 text-xs text-zinc-500">
-          Email: <span className="font-medium text-zinc-700">{me?.email ?? "—"}</span>
-        </div>
-      </div>
-
-      {/* Vendor profile */}
-      {roles.isVendor && vendor ? (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
-          <p className="mt-1 text-sm text-zinc-600">What customers see when viewing your store.</p>
-
-          <div className="mt-4 grid gap-3">
+        {roles.isVendor && vendor ? (
+          <div className="grid gap-3">
             <Field
               label="Store / Display name"
               value={vendorForm.name}
@@ -381,7 +427,7 @@ export default function ProfileTab({
               error={vendorTouched.name ? vendErr.name : undefined}
             />
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3">
               <Field
                 label="WhatsApp"
                 value={vendorForm.whatsapp}
@@ -410,8 +456,8 @@ export default function ProfileTab({
             />
 
             <div>
-              <div className="text-xs font-semibold text-zinc-700">Vendor type</div>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-2">Vendor type</p>
+              <div className="grid grid-cols-2 gap-2">
                 {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
                   const active = vendorForm.vendor_type === t;
                   return (
@@ -420,8 +466,10 @@ export default function ProfileTab({
                       type="button"
                       onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
                       className={cn(
-                        "rounded-xl border px-3 py-2 text-sm font-semibold capitalize",
-                        active ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-800 hover:bg-zinc-50"
+                        "rounded-xl border py-2.5 text-sm font-semibold capitalize transition-colors",
+                        active
+                          ? "bg-zinc-900 text-white border-zinc-900"
+                          : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
                       )}
                     >
                       {t}
@@ -430,115 +478,136 @@ export default function ProfileTab({
                 })}
               </div>
             </div>
-          </div>
 
-          {vendorDirty ? (
-            <div className="sticky bottom-0 -mx-3 mt-4 border-t bg-white/90 px-3 py-3 backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-zinc-600">
-                  Unsaved vendor changes
-                  {!vendorValidation.canSave ? <span className="ml-2 font-semibold text-rose-700">• Fix errors to save</span> : null}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={cancelVendor}
-                    className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                    disabled={vendorSaving}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveVendor}
-                    disabled={vendorSaving || !vendorValidation.canSave}
-                    className={cn(
-                      "rounded-xl px-3 py-2 text-sm font-semibold",
-                      vendorSaving || !vendorValidation.canSave ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+            {vendorDirty && (
+              <div className="sticky bottom-0 -mx-4 border-t bg-white/95 px-4 py-3 backdrop-blur mt-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-zinc-500">
+                    Unsaved changes
+                    {!vendorValidation.canSave && (
+                      <span className="ml-1.5 font-semibold text-rose-600">— fix errors first</span>
                     )}
-                  >
-                    {vendorSaving ? "Saving…" : "Save vendor"}
-                  </button>
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelVendor}
+                      className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                      disabled={vendorSaving}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveVendor}
+                      disabled={vendorSaving || !vendorValidation.canSave}
+                      className={cn(
+                        "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                        vendorSaving || !vendorValidation.canSave
+                          ? "bg-zinc-200 text-zinc-500"
+                          : "bg-zinc-900 text-white hover:bg-zinc-800"
+                      )}
+                    >
+                      {vendorSaving ? "Saving…" : "Save vendor"}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">Vendor profile</div>
-          <p className="mt-1 text-sm text-zinc-700">Not a vendor yet? Create a vendor profile to sell on JabuMarket.</p>
-          <Link href="/post" className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800">
-            Become a vendor
-          </Link>
-        </div>
-      )}
-
-      {/* Study profile */}
-      <div className="rounded-2xl border p-3">
-        <div className="text-sm font-semibold text-zinc-900">Study profile</div>
-        <p className="mt-1 text-sm text-zinc-600">Used to personalize courses/materials and improve “For you”.</p>
-
-        {studyLoading ? (
-          <div className="mt-3 space-y-2">
-            <div className="h-10 rounded-xl bg-zinc-100" />
-            <div className="h-10 rounded-xl bg-zinc-100" />
-            <div className="h-10 rounded-xl bg-zinc-100" />
+            )}
           </div>
         ) : (
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-zinc-700">Mode</div>
+          <div className="rounded-xl bg-zinc-50 border border-dashed border-zinc-200 p-5 text-center">
+            <p className="text-2xl mb-2">🏪</p>
+            <p className="text-sm font-semibold text-zinc-900">Start selling on JABU Market</p>
+            <p className="mt-1 text-xs text-zinc-500">Create a vendor profile to post listings and reach buyers on campus.</p>
+            <Link
+              href="/post"
+              className="mt-4 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              Become a vendor →
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {/* ── SECTION 3: Study Profile ───────────────────────── */}
+      <section>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-px flex-1 bg-zinc-100" />
+          <SectionLabel>Study Preferences</SectionLabel>
+          <div className="h-px flex-1 bg-zinc-100" />
+        </div>
+
+        {studyLoading ? (
+          <div className="space-y-2">
+            <div className="h-10 rounded-xl bg-zinc-100 animate-pulse" />
+            <div className="h-10 rounded-xl bg-zinc-100 animate-pulse" />
+            <div className="h-10 rounded-xl bg-zinc-100 animate-pulse" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Mode toggle */}
+            <div className="flex items-center justify-between rounded-xl bg-zinc-50 border px-3 py-2.5">
+              <p className="text-xs font-medium text-zinc-600">
+                {manualMode ? "Manual entry mode" : "Official list mode"}
+              </p>
               <button
                 type="button"
                 onClick={() => setManualMode((v) => !v)}
-                className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
+                className="rounded-lg border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm"
               >
-                {manualMode ? "Use official list" : "Can’t find mine? Type manually"}
+                {manualMode ? "← Use official list" : "Can't find mine →"}
               </button>
             </div>
 
             {!manualMode ? (
               <>
-                <label className="block">
-                  <div className="text-xs font-semibold text-zinc-700">Faculty</div>
+                <SelectField label="Faculty">
                   <select
                     value={studyForm.faculty_id}
                     onChange={(e) => setStudyForm((s) => ({ ...s, faculty_id: e.target.value, department_id: "" }))}
-                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-400 appearance-none"
                   >
-                    <option value="">Select faculty</option>
+                    <option value="">Select faculty…</option>
                     {faculties.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
+                      <option key={f.id} value={f.id}>{f.name}</option>
                     ))}
                   </select>
-                </label>
+                </SelectField>
 
-                <label className="block">
-                  <div className="text-xs font-semibold text-zinc-700">Department</div>
+                <SelectField label="Department" disabled={!studyForm.faculty_id}>
                   <select
                     value={studyForm.department_id}
                     onChange={(e) => setStudyForm((s) => ({ ...s, department_id: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    className={cn(
+                      "w-full rounded-xl border px-3 py-2.5 text-sm outline-none appearance-none",
+                      !studyForm.faculty_id
+                        ? "border-zinc-200 bg-zinc-50 text-zinc-400 cursor-not-allowed"
+                        : "border-zinc-200 bg-white focus:border-zinc-400"
+                    )}
                     disabled={!studyForm.faculty_id}
                   >
-                    <option value="">{studyForm.faculty_id ? "Select department" : "Pick faculty first"}</option>
+                    <option value="">
+                      {studyForm.faculty_id ? "Select department…" : "Pick a faculty first"}
+                    </option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
                         {String(d.display_name || d.official_name || "").trim()}
                       </option>
                     ))}
                   </select>
-                </label>
+                </SelectField>
               </>
             ) : (
               <>
-                <Field label="Faculty (manual)" value={studyForm.faculty} onChange={(v) => setStudyForm((s) => ({ ...s, faculty: v }))} placeholder="e.g. Science" />
                 <Field
-                  label="Department (manual)"
+                  label="Faculty"
+                  value={studyForm.faculty}
+                  onChange={(v) => setStudyForm((s) => ({ ...s, faculty: v }))}
+                  placeholder="e.g. College of Science"
+                />
+                <Field
+                  label="Department"
                   value={studyForm.department}
                   onChange={(v) => setStudyForm((s) => ({ ...s, department: v }))}
                   placeholder="e.g. Computer Science"
@@ -547,33 +616,29 @@ export default function ProfileTab({
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <div className="text-xs font-semibold text-zinc-700">Level</div>
+              <SelectField label="Level">
                 <select
                   value={String(studyForm.level)}
                   onChange={(e) => setStudyForm((s) => ({ ...s, level: Number(e.target.value) }))}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-400 appearance-none"
                 >
                   {[100, 200, 300, 400, 500, 600, 700].map((lv) => (
-                    <option key={lv} value={lv}>
-                      {lv} Level
-                    </option>
+                    <option key={lv} value={lv}>{lv} Level</option>
                   ))}
                 </select>
-              </label>
+              </SelectField>
 
-              <label className="block">
-                <div className="text-xs font-semibold text-zinc-700">Semester</div>
+              <SelectField label="Semester">
                 <select
                   value={studyForm.semester}
                   onChange={(e) => setStudyForm((s) => ({ ...s, semester: e.target.value as any }))}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-400 appearance-none"
                 >
                   <option value="first">1st Semester</option>
                   <option value="second">2nd Semester</option>
                   <option value="summer">Summer</option>
                 </select>
-              </label>
+              </SelectField>
             </div>
 
             <button
@@ -581,19 +646,23 @@ export default function ProfileTab({
               onClick={saveStudy}
               disabled={!studyValid || studySaving}
               className={cn(
-                "inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold",
-                !studyValid || studySaving ? "bg-zinc-200 text-zinc-600" : "bg-zinc-900 text-white hover:bg-zinc-800"
+                "w-full rounded-xl py-2.5 text-sm font-semibold transition-colors",
+                !studyValid || studySaving
+                  ? "bg-zinc-200 text-zinc-500 cursor-not-allowed"
+                  : "bg-zinc-900 text-white hover:bg-zinc-800"
               )}
             >
               {studySaving ? "Saving…" : "Save study profile"}
             </button>
 
-            {!studyValid ? (
-              <p className="text-xs text-zinc-500">Please complete faculty + department and ensure level/semester are selected.</p>
-            ) : null}
+            {!studyValid && (
+              <p className="text-center text-xs text-zinc-400">
+                Complete faculty + department to save.
+              </p>
+            )}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

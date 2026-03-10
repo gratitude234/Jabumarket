@@ -1,5 +1,6 @@
-// app/listing/[id]/edit/page.tsx
 "use client";
+// app/listing/[id]/edit/page.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -41,10 +42,6 @@ type StatusType = "active" | "sold" | "inactive";
 const MAX_IMAGE_MB = 5;
 const MIN_TITLE = 8;
 const MIN_DESC_SERVICE = 20;
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function onlyDigits(s: string) {
   return (s || "").replace(/[^\d]/g, "");
@@ -565,6 +562,36 @@ export default function EditListingPage() {
         .eq("vendor_id", vendorId);
 
       if (error) throw error;
+
+      // If price dropped, notify everyone who saved this listing
+      const oldPrice = original.price;
+      if (
+        priceInt !== null &&
+        oldPrice !== null &&
+        priceInt < oldPrice
+      ) {
+        try {
+          // Get all users who saved this listing
+          const { data: saveRows } = await supabase
+            .from("listing_saves")
+            .select("user_id")
+            .eq("listing_id", id);
+
+          if (saveRows && saveRows.length > 0) {
+            const listingTitle = title.trim() || "A saved listing";
+            const notifications = saveRows.map((row: any) => ({
+              user_id: row.user_id,
+              type: "price_drop",
+              title: "Price dropped!",
+              body: `${listingTitle}: ${formatNaira(oldPrice)} → ${formatNaira(priceInt)}`,
+              href: `/listing/${id}`,
+            }));
+            await supabase.from("notifications").insert(notifications);
+          }
+        } catch {
+          // Notification failure is non-fatal — don't block the save
+        }
+      }
 
       setToast("success", "Saved ✅ Redirecting…");
       router.replace(`/listing/${id}`);

@@ -39,35 +39,41 @@ function mapSemesterParamToDb(v: string) {
 type SortKey = "newest" | "oldest" | "downloads_desc" | "downloads_asc";
 
 async function getUserScope(supabase: any) {
-  // Best-effort scope lookup. We prefer study_user_preferences because it contains `semester`.
-  // If a user hasn't onboarded yet, we return null and the API behaves like "All materials".
+  // Single source of truth: study_preferences.
+  // If a user hasn't onboarded yet we return null and the API behaves like "All materials".
   const { data: auth } = await supabase.auth.getUser();
   const user = auth?.user ?? null;
   if (!user) return null;
 
-  // Try legacy prefs first (contains faculty/department names + semester)
-  const legacy = await supabase
-    .from("study_user_preferences")
-    .select("faculty,department,level,semester")
+  const { data, error } = await supabase
+    .from("study_preferences")
+    .select("faculty_id,department_id,level,semester,session")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!legacy.error && legacy.data) {
-    const department = (legacy.data as any)?.department ? String((legacy.data as any).department).trim() : "";
-    const faculty = (legacy.data as any)?.faculty ? String((legacy.data as any).faculty).trim() : "";
-    const level = (legacy.data as any)?.level ?? null;
-    const semester = (legacy.data as any)?.semester ? String((legacy.data as any).semester).trim() : "";
-    return { faculty, department, level, semester };
+  if (error || !data) return null;
+
+  const faculty_id = (data as any)?.faculty_id ?? null;
+  const department_id = (data as any)?.department_id ?? null;
+  const level = (data as any)?.level ?? null;
+  const session = (data as any)?.session ? String((data as any).session).trim() : "2025/2026";
+  let semester = (data as any)?.semester ? String((data as any).semester).trim() : "";
+
+  // If semester is missing, auto-detect from the academic calendar for this session.
+  if (!semester) {
+    try {
+      const { data: rows } = await supabase.rpc("get_current_semester", { p_session: session });
+      semester = Array.isArray(rows) && rows.length ? String((rows[0] as any)?.semester ?? "") : "";
+      if (!semester) {
+        const { data: rows2 } = await supabase.rpc("get_current_semester_fallback", { p_session: session });
+        semester = Array.isArray(rows2) && rows2.length ? String((rows2[0] as any)?.semester ?? "") : "";
+      }
+    } catch {
+      // ignore — semester stays empty, caller handles gracefully
+    }
   }
 
-  // Fallback to normalized table (IDs only). If we don't have readable names, we still can scope by level.
-  const norm = await supabase.from("study_preferences").select("level").eq("user_id", user.id).maybeSingle();
-  if (!norm.error && norm.data) {
-    const level = (norm.data as any)?.level ?? null;
-    return { faculty: "", department: "", level, semester: "" };
-  }
-
-  return null;
+  return { faculty_id, department_id, level, semester, session };
 }
 
 export async function GET(req: Request) {
@@ -103,21 +109,34 @@ export async function GET(req: Request) {
         `
           id,title,description,file_url,file_path,session,approved,created_at,downloads,course_id,
           material_type,featured,verified,
-          study_courses:course_id!inner(id,faculty,department,level,semester,course_code,course_title)
+          study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)
         `,
         { count: "exact" }
       )
       .eq("approved", true);
 
     if (scope) {
+      // IMPORTANT: filter on study_materials' own columns, NOT on the embedded
+      // study_courses join. Filtering on joined columns in PostgREST only scopes
+      // what's returned inside that embed — it does NOT exclude the parent row.
       const lv = Number((scope as any)?.level);
-      if (Number.isFinite(lv)) query = query.eq("study_courses.level", lv);
+      if (Number.isFinite(lv)) query = query.eq("level", String(lv));
 
-      const deptName = String((scope as any)?.department ?? "").trim();
-      if (deptName) query = query.eq("study_courses.department", deptName);
+      const deptId = (scope as any)?.department_id ?? null;
+      if (deptId) {
+        query = query.eq("department_id", deptId);
+      } else {
+        const deptName = String((scope as any)?.department ?? "").trim();
+        if (deptName) query = query.ilike("department", `%${deptName}%`);
+      }
+
+      const facId = (scope as any)?.faculty_id ?? null;
+      if (facId && !deptId) {
+        query = query.eq("faculty_id", facId);
+      }
 
       const sem = mapSemesterParamToDb(String((scope as any)?.semester ?? ""));
-      if (sem) query = query.eq("study_courses.semester", sem);
+      if (sem) query = query.eq("semester", sem);
     }
 
     if (q) {

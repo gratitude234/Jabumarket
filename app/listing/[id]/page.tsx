@@ -5,13 +5,17 @@ import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
+import AskSellerButton from "@/components/listing/AskSellerButton";
+import BackButton from "@/components/listing/BackButton";
 import {
   ListingContactActions,
   ListingViewTracker,
+  ShareButton,
 } from "@/components/listing/ListingStatsClient";
+import ListingGallery from "@/components/listing/ListingGallery";
 import { getWhatsAppLink } from "@/lib/whatsapp";
 import ListingImage from "@/components/ListingImage";
-import { ArrowLeft, BadgeCheck, Clock, MapPin, Truck } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Clock, Eye, MapPin, Truck } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -67,7 +71,7 @@ async function getSiteOrigin() {
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string } | Promise<{ id: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const { id } = await params;
@@ -125,7 +129,7 @@ export async function generateMetadata({
 export default async function ListingPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string } | Promise<{ id: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const { id } = await params;
@@ -134,7 +138,7 @@ export default async function ListingPage({
     .from("listings")
     .select(
       `
-      id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at,vendor_id,
+      id,title,description,listing_type,category,price,price_label,location,image_url,image_urls,negotiable,status,created_at,vendor_id,
       vendor:vendors(id,name,whatsapp,phone,verified,vendor_type,location)
     `
     )
@@ -213,6 +217,15 @@ export default async function ListingPage({
 
   const similar = (similarData ?? []) as ListingRow[];
 
+  // Fetch view count (non-blocking — don't fail page if missing)
+  const { data: statsData } = await supabase
+    .from("listing_stats")
+    .select("views")
+    .eq("listing_id", listing.id)
+    .maybeSingle();
+
+  const viewCount: number = (statsData as any)?.views ?? 0;
+
   // ✅ Improved share link & message (absolute URL + helpful details)
   const origin = await getSiteOrigin();
   const listingUrl = origin
@@ -239,17 +252,11 @@ export default async function ListingPage({
 
   return (
     <div className="space-y-4 pb-28 lg:pb-0 overflow-x-hidden">
-      <ListingViewTracker listingId={listing.id} />
+      <ListingViewTracker listingId={listing.id} title={listing.title ?? undefined} />
 
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
-        <Link
-          href="/explore"
-          className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm text-zinc-800 no-underline hover:bg-zinc-50"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link>
+        <BackButton />
 
         <div className="flex items-center gap-2">
           {categorySafe ? (
@@ -260,6 +267,12 @@ export default async function ListingPage({
           <span className="rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700">
             {typeLabel}
           </span>
+          <ShareButton
+            title={shareTitle}
+            text={shareText}
+            url={listingUrl}
+            variant="icon"
+          />
         </div>
       </div>
 
@@ -267,41 +280,61 @@ export default async function ListingPage({
       <div className="grid gap-4 lg:grid-cols-5">
         {/* Media + similar */}
         <div className="lg:col-span-3 min-w-0">
-          <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-            <div className="relative w-full bg-zinc-100 overflow-hidden h-[40svh] max-h-[260px] min-h-[200px] sm:h-[340px] sm:max-h-none lg:h-[420px]">
-              <ListingImage
-                src={heroSrc}
-                alt={listing.title ?? "Listing image"}
-                className="h-full w-full max-w-full object-cover"
-              />
+          {/* Build the resolved image list: prefer image_urls array, fall back to image_url */}
+          {(() => {
+            const rawUrls = (listing as any).image_urls as string[] | null | undefined;
+            const galleryImages: string[] =
+              Array.isArray(rawUrls) && rawUrls.length > 0
+                ? rawUrls.filter(Boolean)
+                : listing.image_url?.trim()
+                ? [listing.image_url.trim()]
+                : [];
 
-              {isSold ? (
-                <div className="absolute left-3 top-3">
-                  <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
-                    SOLD
-                  </span>
-                </div>
-              ) : isInactive ? (
-                <div className="absolute left-3 top-3">
-                  <span className="rounded-full bg-zinc-700 px-3 py-1 text-xs font-semibold text-white">
-                    INACTIVE
-                  </span>
-                </div>
-              ) : null}
+            const statusBadge = isSold ? (
+              <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
+                SOLD
+              </span>
+            ) : isInactive ? (
+              <span className="rounded-full bg-zinc-700 px-3 py-1 text-xs font-semibold text-white">
+                INACTIVE
+              </span>
+            ) : undefined;
 
-              <div className="absolute right-3 top-3 flex items-center gap-2">
+            const cornerBadges = (
+              <>
                 <span className="rounded-full bg-white/90 px-2 py-1 text-[11px] font-medium text-zinc-800 backdrop-blur">
                   {typeLabel}
                 </span>
-
                 {listing.negotiable ? (
                   <span className="rounded-full bg-black/80 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
                     Negotiable
                   </span>
                 ) : null}
-              </div>
-            </div>
-          </div>
+              </>
+            );
+
+            if (galleryImages.length === 0) {
+              // No images at all — render placeholder
+              return (
+                <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                  <div className="relative w-full bg-zinc-100 overflow-hidden h-[40svh] max-h-[260px] min-h-[200px] sm:h-[340px] lg:h-[420px] flex items-center justify-center text-zinc-300">
+                    {statusBadge ? <div className="absolute left-3 top-3">{statusBadge}</div> : null}
+                    <div className="absolute right-3 top-3 flex items-center gap-2">{cornerBadges}</div>
+                    <svg className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <ListingGallery
+                images={galleryImages}
+                alt={listing.title ?? "Listing"}
+                statusBadge={statusBadge}
+                cornerBadges={cornerBadges}
+              />
+            );
+          })()}
 
           {/* Similar listings */}
           <div className="mt-4 space-y-2">
@@ -476,6 +509,13 @@ export default async function ListingPage({
                     <span>{postedAt}</span>
                   </div>
                 ) : null}
+
+                {viewCount > 0 ? (
+                  <div className="mt-1 inline-flex items-center justify-end gap-1">
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>{viewCount.toLocaleString()} {viewCount === 1 ? "view" : "views"}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -536,12 +576,25 @@ export default async function ListingPage({
               hasPhone={hasPhone}
               waLink={waLink}
               contactPhone={contactPhone}
+              shareTitle={shareTitle}
+              shareText={shareText}
+              shareUrl={listingUrl}
               variant="desktop"
             />
 
-            {/* Delivery CTA (FIXED: removed stray </div>) */}
-            <div className="mt-2">
-              {!isSold && isActive && isFoodListing ? (
+            {/* In-app message */}
+            {listing.vendor_id ? (
+              <AskSellerButton
+                listingId={listing.id}
+                vendorId={listing.vendor_id}
+                isSold={isSold}
+                className="mt-2"
+              />
+            ) : null}
+
+            {/* Delivery CTA — available on all active listings */}
+            {!isSold && isActive ? (
+              <div className="mt-2">
                 <Link
                   href={`/delivery?listing=${listing.id}`}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
@@ -549,19 +602,11 @@ export default async function ListingPage({
                   <Truck className="h-4 w-4" />
                   Request Delivery
                 </Link>
-              ) : (
-                <div className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-400">
-                  <Truck className="h-4 w-4" />
-                  Delivery not available
-                </div>
-              )}
-
-              {isFoodListing && !isSold && isActive ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Tip: tell the driver your drop-off and budget before sending.
+                <p className="mt-1.5 text-xs text-zinc-400 text-center">
+                  We&apos;ll connect you with a campus delivery rider
                 </p>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
 
           <OwnerActions
@@ -593,8 +638,28 @@ export default async function ListingPage({
             hasPhone={hasPhone}
             waLink={waLink}
             contactPhone={contactPhone}
+            shareTitle={shareTitle}
+            shareText={shareText}
+            shareUrl={listingUrl}
             variant="mobile"
           />
+          {listing.vendor_id ? (
+            <AskSellerButton
+              listingId={listing.id}
+              vendorId={listing.vendor_id}
+              isSold={isSold}
+              className="mt-2"
+            />
+          ) : null}
+          {!isSold && isActive ? (
+            <Link
+              href={`/delivery?listing=${listing.id}`}
+              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+            >
+              <Truck className="h-4 w-4" />
+              Request Delivery
+            </Link>
+          ) : null}
         </div>
       </div>
     </div>

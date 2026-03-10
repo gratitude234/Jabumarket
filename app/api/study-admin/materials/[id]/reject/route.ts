@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "../../../../../../lib/supabase/admin";
 import { requireStudyModeratorFromRequest } from "../../../../../../lib/studyAdmin/requireStudyModeratorFromRequest";
 import { isWithinScope } from "../../../../../../lib/studyAdmin/scope";
+import { notifyMaterialRejected } from "../../../../../../lib/studyAdmin/notifyUploader";
 
 function idFromUrl(req: Request) {
   try {
@@ -13,9 +14,8 @@ function idFromUrl(req: Request) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
-    const resolvedParams = await params;
     const { scope } = await requireStudyModeratorFromRequest(req);
 
     // Prefer dynamic route param, but fall back to body.id for resilience
@@ -62,11 +62,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .from("study_materials")
       .update(patch)
       .eq("id", id)
-      .select("id")
+      .select("id, uploader_id, title")
       .maybeSingle();
 
     if (error) throw error;
     if (!data?.id) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+
+    // Fire notification — best-effort, must not block the response
+    const row = data as any;
+    if (row?.uploader_id && row?.title) {
+      await notifyMaterialRejected(id, String(row.title), String(row.uploader_id), note || undefined);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

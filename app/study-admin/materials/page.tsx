@@ -1,5 +1,6 @@
-// app/study-admin/materials/page.tsx
 "use client";
+// app/study-admin/materials/page.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -51,10 +52,6 @@ const TYPE_LABEL: Record<MaterialType, string> = {
   timetable: "Timetable",
   other: "Other",
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -117,7 +114,6 @@ export default function StudyAdminMaterialsPage() {
       return allSelected ? [] : allIds;
     });
   }
-
 
   async function getTokenOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -209,7 +205,6 @@ export default function StudyAdminMaterialsPage() {
       setBusyId(null);
     }
   }
-
 
   async function recheckStorage(id: string) {
     setBusyId(id);

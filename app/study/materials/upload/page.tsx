@@ -1,5 +1,6 @@
-// app/study/materials/upload/page.tsx
 "use client";
+// app/study/materials/upload/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -79,10 +80,6 @@ type UploadInitResponse =
 type CreateCourseResponse =
   | { ok: true; course: CourseRow }
   | { ok: false; code?: string; error?: string };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 const MATERIAL_TYPES: Array<{
   key: MaterialType;

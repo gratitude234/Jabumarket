@@ -1,5 +1,6 @@
-// app/study-admin/page.tsx
 "use client";
+// app/study-admin/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -21,10 +22,6 @@ type Summary = {
   // (optional) if your summary route later adds this
   pendingRepApplications?: number;
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function normalizeRole(role: ScopeRole): "super" | "course_rep" | "dept_librarian" {
   if (role === "super") return "super";

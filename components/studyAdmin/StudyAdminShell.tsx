@@ -1,14 +1,11 @@
-// components/studyAdmin/StudyAdminShell.tsx
 "use client";
+// components/studyAdmin/StudyAdminShell.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck, FileText, Inbox, LayoutDashboard, UserCheck2 } from "lucide-react";
 import type React from "react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function NavItem({
   href,

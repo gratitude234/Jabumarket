@@ -5,8 +5,7 @@ import { ArrowLeft, History, Search, Sparkles } from "lucide-react";
 
 function PracticeFallback() {
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
-      {/* Top bar skeleton (Back + History) */}
+    <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-28 md:pb-6">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
           <ArrowLeft className="h-4 w-4 text-muted-foreground" />
@@ -19,7 +18,6 @@ function PracticeFallback() {
         </div>
       </div>
 
-      {/* Header skeleton */}
       <Card className="rounded-3xl p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -34,14 +32,12 @@ function PracticeFallback() {
         </div>
       </Card>
 
-      {/* Mini tabs skeleton */}
-      <div className="flex w-full items-center gap-2 overflow-auto rounded-3xl border border-border bg-background p-2">
+      <div className="flex w-full items-center gap-2 overflow-x-auto rounded-3xl border border-border bg-background p-2">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="h-10 w-28 shrink-0 rounded-2xl bg-muted" />
         ))}
       </div>
 
-      {/* Sticky search + filters skeleton */}
       <Card className="rounded-3xl border bg-background/85 backdrop-blur p-3">
         <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
           <Search className="h-4 w-4 text-muted-foreground" />
@@ -53,11 +49,9 @@ function PracticeFallback() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-9 w-24 rounded-full bg-muted" />
           ))}
-          <div className="ml-auto h-10 w-28 rounded-2xl bg-muted" />
         </div>
       </Card>
 
-      {/* Cards skeleton */}
       <section className="grid gap-3 sm:grid-cols-2">
         {Array.from({ length: 6 }).map((_, i) => (
           <SkeletonCard key={i} lines={3} className="rounded-3xl" />

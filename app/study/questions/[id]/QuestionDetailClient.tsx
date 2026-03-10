@@ -1,5 +1,6 @@
-// app/study/questions/[id]/QuestionDetailClient.tsx
 "use client";
+// app/study/questions/[id]/QuestionDetailClient.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,10 +15,6 @@ import {
   Flag,
   Send,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatDateTime(iso?: string | null) {
   if (!iso) return "";
@@ -236,7 +233,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6">
+    <div className="space-y-4 pb-28 md:pb-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link

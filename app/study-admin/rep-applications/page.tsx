@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -35,10 +36,6 @@ type RepApplication = {
 };
 
 type ApiResponse = { ok: boolean; items?: RepApplication[]; data?: RepApplication[]; error?: string };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatDate(iso: string) {
   const d = new Date(iso);

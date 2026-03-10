@@ -1,5 +1,6 @@
-// components/admin/AdminShell.tsx
 "use client";
+// components/admin/AdminShell.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -15,10 +16,6 @@ import {
   Menu,
   X,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "../../../../../lib/supabase/admin";
 import { requireStudyModeratorFromRequest } from "../../../../../lib/studyAdmin/requireStudyModeratorFromRequest";
 import { isWithinScope } from "../../../../../lib/studyAdmin/scope";
+import { notifyBulkMaterialsApproved } from "../../../../../lib/studyAdmin/notifyUploader";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,23 @@ export async function POST(req: Request) {
       .in("id", ids);
 
     if (updErr) throw updErr;
+
+    // Fetch uploader_id + title for all approved materials so we can
+    // send each person a single grouped notification (fire-and-forget).
+    const { data: notifyRows } = await admin
+      .from("study_materials")
+      .select("id, title, uploader_id")
+      .in("id", ids);
+
+    if (notifyRows?.length) {
+      await notifyBulkMaterialsApproved(
+        (notifyRows as any[]).map((r) => ({
+          id: String(r.id),
+          title: String(r.title ?? "Untitled"),
+          uploader_id: r.uploader_id ? String(r.uploader_id) : null,
+        }))
+      );
+    }
 
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (e: any) {

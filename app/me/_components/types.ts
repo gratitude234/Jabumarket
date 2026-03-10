@@ -1,6 +1,6 @@
 // app/me/_components/types.ts
 
-export type TabKey = "overview" | "profile" | "verification" | "account";
+export type TabKey = "profile" | "listings" | "verification" | "account";
 
 export type VendorType = "food" | "mall" | "student" | "other";
 

@@ -1,5 +1,6 @@
-// app/study/materials/my/page.tsx
 "use client";
+// app/study/materials/my/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -32,10 +33,6 @@ type Item = {
 };
 
 type ApiResponse = { ok: boolean; items?: Item[]; error?: string; code?: string };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -120,7 +117,7 @@ export default function MyUploadsPage() {
   }, [items]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6">
+    <div className="space-y-4 pb-28 md:pb-6">
       <PageHeader
         title="My uploads"
         subtitle="Track what you’ve uploaded, and see when it’s approved."

@@ -1,4 +1,5 @@
 "use client";
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -16,12 +17,9 @@ import {
   X,
   Filter,
   BookOpen,
-  CheckCircle2,
 } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
+import { Drawer } from "@/components/ui/Drawer";
+import { FilterChip, SelectRow, ToggleRow } from "@/components/ui/study-filters";
 
 function normalizeQuery(v: string) {
   return v.trim().replace(/\s+/g, " ");
@@ -77,189 +75,6 @@ function buildHref(path: string, params: Record<string, string | number | null |
   });
   const qs = sp.toString();
   return qs ? `${path}?${qs}` : path;
-}
-
-function Chip({
-  active,
-  children,
-  onClick,
-  title,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-  onClick?: () => void;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        active
-          ? "border-border bg-secondary text-foreground"
-          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Drawer({
-  open,
-  onClose,
-  title,
-  children,
-  footer,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-}) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-
-    window.setTimeout(() => {
-      const root = panelRef.current;
-      if (!root) return;
-      const first = root.querySelector<HTMLElement>(
-        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
-      );
-      first?.focus?.();
-    }, 50);
-
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, onClose]);
-
-  return (
-    <div
-      className={cn(
-        "fixed inset-0 z-50 transition-opacity",
-        open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-      )}
-      aria-hidden={!open}
-    >
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      <div
-        ref={panelRef}
-        className={cn(
-          "absolute inset-x-0 bottom-0 rounded-t-3xl border border-border bg-card shadow-xl transition-transform",
-          open ? "translate-y-0" : "translate-y-full"
-        )}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-border p-4">
-          <p className="text-base font-semibold text-foreground">{title}</p>
-          <button
-            type="button"
-            onClick={onClose}
-            className={cn(
-              "grid h-10 w-10 place-items-center rounded-2xl border border-border bg-background",
-              "hover:bg-secondary/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            )}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="max-h-[70vh] overflow-auto p-4">{children}</div>
-
-        {footer ? <div className="border-t border-border p-4">{footer}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function SelectRow({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block rounded-2xl border border-border bg-background p-3">
-      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full bg-transparent text-sm text-foreground outline-none"
-      >
-        <option value="">{placeholder ?? "All"}</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ToggleRow({
-  label,
-  desc,
-  checked,
-  onChange,
-}: {
-  label: string;
-  desc?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex w-full items-start justify-between gap-3 rounded-2xl border p-3 text-left transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        checked ? "border-border bg-secondary text-foreground" : "border-border/60 bg-background hover:bg-secondary/50"
-      )}
-    >
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">{label}</p>
-        {desc ? <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p> : null}
-      </div>
-      <div
-        className={cn(
-          "mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border",
-          checked ? "border-border bg-background" : "border-border/60 bg-background"
-        )}
-      >
-        {checked ? <CheckCircle2 className="h-4 w-4 text-foreground" /> : null}
-      </div>
-    </button>
-  );
 }
 
 function AttemptCard({ a }: { a: AttemptRow }) {

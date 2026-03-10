@@ -1,5 +1,6 @@
-// components/admin/AdminGate.tsx
 "use client";
+// components/admin/AdminGate.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,10 +10,6 @@ import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react";
 type Props = {
   children: React.ReactNode;
 };
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function safeNext(path: string) {
   const p = (path || "").trim();

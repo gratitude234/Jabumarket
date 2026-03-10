@@ -7,7 +7,7 @@ function jsonError(message: string, status: number, code: string, extra?: Record
   return NextResponse.json({ ok: false, code, message, ...(extra ?? {}) }, { status });
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   // Super admin only
   let auth;
   let resolvedParams: { id: string } | null = null;

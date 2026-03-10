@@ -42,7 +42,7 @@ function normalizeLevels(appRow: any, role: "course_rep" | "dept_librarian") {
   return cleaned.length ? cleaned : null;
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   // Super admin only
   let auth;
   let resolvedParams: { id: string } | null = null;

@@ -1,15 +1,12 @@
-// app/study/questions/ask/AskQuestionClient.tsx
 "use client";
+// app/study/questions/ask/AskQuestionClient.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ArrowLeft, Loader2, Plus, ShieldAlert } from "lucide-react";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 const LEVELS = ["100", "200", "300", "400", "500"] as const;
 
@@ -87,7 +84,7 @@ export default function AskQuestionClient() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6">
+    <div className="space-y-4 pb-28 md:pb-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link

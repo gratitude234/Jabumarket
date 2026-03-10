@@ -1,5 +1,6 @@
-// app/study/apply-rep/page.tsx
 "use client";
+// app/study/apply-rep/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -23,10 +24,6 @@ type DeptRow = { id: string; name: string; faculty_id: string; sort_order?: numb
 
 type Role = "course_rep" | "dept_librarian";
 type MeStatus = "not_applied" | "pending" | "approved" | "rejected";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 const LEVELS = [100, 200, 300, 400, 500, 600];
 
@@ -382,7 +379,7 @@ export default function ApplyRepPage() {
   })();
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 pb-24">
+    <div className="space-y-4 pb-28 md:pb-6">
       <PageHeader
         title="Apply to contribute"
         subtitle="Course Reps and Departmental Librarians can upload materials for their department. All uploads are reviewed."

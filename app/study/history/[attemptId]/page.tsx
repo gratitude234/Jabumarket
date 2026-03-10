@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 function AttemptReviewFallback() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-4">
+    <div className="pb-28 md:pb-6">
       <Card className="rounded-3xl">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

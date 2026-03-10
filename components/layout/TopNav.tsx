@@ -6,6 +6,9 @@ import { Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import NotificationBell from "@/components/notifications/NotificationBell";
+import InboxNavIcon from "@/components/layout/InboxNavIcon";
+
 const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
@@ -104,12 +107,12 @@ export default function TopNav() {
 
   return (
     <header className="hidden md:block border-b border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-4">
-        <Link href="/" className="font-bold text-lg no-underline">
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl lg:px-8 h-14 lg:h-16 flex items-center justify-between gap-4">
+        <Link href="/" className="font-bold text-lg lg:text-xl no-underline">
           Jabumarket
         </Link>
 
-        <nav className="flex items-center gap-6 text-sm">
+        <nav className="flex items-center gap-5 lg:gap-7 text-sm">
           {links.map((l) => {
             const active = pathname === l.href;
             return (
@@ -164,6 +167,9 @@ export default function TopNav() {
           <Link href="/post" className="btn-primary">
             Post Listing
           </Link>
+
+          <InboxNavIcon />
+          <NotificationBell />
         </div>
       </div>
     </header>

@@ -1,5 +1,6 @@
-// app/admin/couriers/page.tsx
 "use client";
+// app/admin/couriers/page.tsx
+import { cn } from "@/lib/utils";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -12,10 +13,6 @@ type AdminCourier = CourierRow;
 type Banner = { type: "success" | "error" | "info"; text: string } | null;
 
 const PAGE_SIZE = 25;
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 function BannerView({ banner, onClose }: { banner: Banner; onClose: () => void }) {
   if (!banner) return null;

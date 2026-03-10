@@ -28,47 +28,9 @@ import {
 } from "lucide-react";
 
 import { getAuthedUserId, toggleSaved } from "@/lib/studySaved";
-
+import { cn, formatWhen, normalizeQuery, safeSearchTerm, buildHref, asInt, clamp } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
 import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-function formatWhen(iso?: string | null) {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diff = Date.now() - t;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function asInt(v: string | null, fallback: number) {
-  const n = Number(v ?? "");
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
-}
-
-function normalizeQuery(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
-
-function safeSearchTerm(v: string) {
-  return normalizeQuery(v)
-    .replace(/[,%*()\[\]{}]/g, " ")
-    .replace(/["'`]/g, " ")
-    .trim();
-}
 
 type SortKey = "newest" | "oldest" | "downloads_desc" | "downloads_asc";
 
@@ -150,18 +112,6 @@ const SORTS: Array<{ key: SortKey; label: string; icon: React.ReactNode }> = [
   { key: "downloads_desc", label: "Most downloaded", icon: <SortDesc className="h-4 w-4" /> },
   { key: "downloads_asc", label: "Least downloaded", icon: <SortAsc className="h-4 w-4" /> },
 ];
-
-function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
-  const sp = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v === null || v === undefined) return;
-    const s = String(v).trim();
-    if (!s) return;
-    sp.set(k, s);
-  });
-  const qs = sp.toString();
-  return qs ? `${path}?${qs}` : path;
-}
 
 function Chip({
   active,
@@ -700,7 +650,8 @@ export default function MaterialsClient() {
 
   // Scope toggle: mine vs all
   const mineParam = sp.get("mine") ?? "";
-  const mineOnly = mineParam === "1";
+  const mineExplicitOn = mineParam === "1";
+  const mineExplicitOff = mineParam === "0";
 
   const verifiedOnly = verifiedParam === "1";
   const featuredOnly = featuredParam === "1";
@@ -745,6 +696,11 @@ export default function MaterialsClient() {
   const [scopeLevel, setScopeLevel] = useState<number | null>(null);
   const [scopeSemesterDb, setScopeSemesterDb] = useState<string>("");
 
+  // Rep / contributor status — determines Upload vs Contribute UI
+  const [repStatus, setRepStatus] = useState<
+    "not_applied" | "pending" | "approved" | "rejected" | null
+  >(null);
+
   // Saved
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -763,6 +719,16 @@ export default function MaterialsClient() {
   const [previewTitle, setPreviewTitle] = useState<string>("");
   const [previewKind, setPreviewKind] = useState<"pdf" | "image" | "other">("other");
 
+  // Effective scope:
+  // - mine=1 => always mine
+  // - mine=0 => always all
+  // - no mine param => wait for prefs; if we have a badge, default to mine
+  const mineOnly = useMemo(() => {
+    if (mineExplicitOn) return true;
+    if (mineExplicitOff) return false;
+    return prefsLoaded && !!myBadge;
+  }, [mineExplicitOn, mineExplicitOff, prefsLoaded, myBadge]);
+
   const filtersKey = useMemo(() => {
     return [
       safeSearchTerm(qParam),
@@ -776,7 +742,7 @@ export default function MaterialsClient() {
       sortParam,
       verifiedOnly ? "v1" : "v0",
       featuredOnly ? "f1" : "f0",
-      mineOnly ? "m1" : "m0",
+      mineOnly ? "m1" : mineExplicitOff ? "m0x" : "m0",
     ].join("|");
   }, [
     qParam,
@@ -791,6 +757,7 @@ export default function MaterialsClient() {
     verifiedOnly,
     featuredOnly,
     mineOnly,
+    mineExplicitOff,
   ]);
 
   // Reset list when filters change
@@ -869,7 +836,7 @@ export default function MaterialsClient() {
 
   useEffect(() => setQ(qParam), [qParam]);
 
-  // Load user scope badge (department/level/semester) for "My materials".
+  // Load user scope badge + rep status — parallel, single auth check.
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -884,27 +851,28 @@ export default function MaterialsClient() {
           return;
         }
 
-        const legacy = await supabase
-          .from("study_user_preferences")
-          .select("department,level,semester")
-          .eq("user_id", user.id)
-          .maybeSingle();
+        // Run prefs + rep status in parallel
+        const [prefsRes, repRes] = await Promise.all([
+          supabase
+            .from("study_preferences")
+            .select("level, semester, department_id, department:study_departments(name)")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          fetch("/api/study/rep-applications/me", { cache: "no-store" })
+            .then((r) => r.json())
+            .catch(() => null),
+        ]);
+
+        const prefsData = !prefsRes.error ? prefsRes.data : null;
 
         let deptName = "";
         let level: number | null = null;
         let semester = "";
 
-        if (!legacy.error && legacy.data) {
-          deptName = String((legacy.data as any)?.department ?? "").trim();
-          level = (legacy.data as any)?.level ?? null;
-          semester = String((legacy.data as any)?.semester ?? "").trim();
-        } else {
-          const norm = await supabase
-            .from("study_preferences")
-            .select("level")
-            .eq("user_id", user.id)
-            .maybeSingle();
-          if (!norm.error && norm.data) level = (norm.data as any)?.level ?? null;
+        if (prefsData) {
+          level = (prefsData as any)?.level ?? null;
+          semester = String((prefsData as any)?.semester ?? "").trim();
+          deptName = String((prefsData as any)?.department?.name ?? "").trim();
         }
 
         const badgeParts: string[] = [];
@@ -918,11 +886,19 @@ export default function MaterialsClient() {
           setScopeLevel(typeof level === "number" && Number.isFinite(level) ? level : null);
           setScopeSemesterDb(mapSemesterParamToDb(semester));
           setPrefsLoaded(true);
+
+          // Set rep status from API response
+          if (repRes?.ok) {
+            setRepStatus(repRes.status ?? "not_applied");
+          } else {
+            setRepStatus("not_applied");
+          }
         }
       } catch {
         if (mounted) {
           setPrefsLoaded(true);
           setMyBadge(null);
+          setRepStatus("not_applied");
         }
       }
     })();
@@ -938,22 +914,29 @@ export default function MaterialsClient() {
     if (mineParam) return;
     if (!myBadge) return;
 
-    router.replace(
-      buildHref(pathname, {
-        q: normalizeQuery(q) || null,
-        level: levelParam || null,
-        semester: semesterParam || null,
-        faculty: facultyParam || null,
-        dept: deptParam || null,
-        course: courseParam || null,
-        session: sessionParam || null,
-        type: typeParam !== "all" ? typeParam : null,
-        sort: sortParam !== "newest" ? sortParam : null,
-        verified: verifiedOnly ? "1" : null,
-        featured: featuredOnly ? "1" : null,
-        mine: "1",
-      })
-    );
+    // Avoid a route transition (which can look like a "reload") by updating the URL
+    // without triggering Next.js navigation.
+    const href = buildHref(pathname, {
+      q: normalizeQuery(q) || null,
+      level: levelParam || null,
+      semester: semesterParam || null,
+      faculty: facultyParam || null,
+      dept: deptParam || null,
+      course: courseParam || null,
+      session: sessionParam || null,
+      type: typeParam !== "all" ? typeParam : null,
+      sort: sortParam !== "newest" ? sortParam : null,
+      verified: verifiedOnly ? "1" : null,
+      featured: featuredOnly ? "1" : null,
+      mine: "1",
+    });
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", href);
+    } else {
+      // Fallback (should be rare in client component)
+      router.replace(href);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefsLoaded]);
 
@@ -1102,6 +1085,9 @@ export default function MaterialsClient() {
 
   // Initial fetch for current filters
   useEffect(() => {
+    // If the user didn't explicitly set mine=0/1 yet, wait for prefs to load so we don't
+    // briefly show "All materials" and then snap to "My materials".
+    if (!mineParam && !prefsLoaded) return;
     fetchPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey]);
@@ -1127,7 +1113,7 @@ export default function MaterialsClient() {
           sort: sortParam !== "newest" ? sortParam : null,
           verified: verifiedOnly ? "1" : null,
           featured: featuredOnly ? "1" : null,
-          mine: mineOnly ? "1" : null,
+          mine: mineParam ? mineParam : null,
         })
       );
     }, 350);
@@ -1151,6 +1137,7 @@ export default function MaterialsClient() {
     verifiedOnly,
     featuredOnly,
     mineOnly,
+    mineParam,
   ]);
 
   function openFilters() {
@@ -1181,7 +1168,7 @@ export default function MaterialsClient() {
         sort: draftSort !== "newest" ? draftSort : null,
         verified: draftVerified ? "1" : null,
         featured: draftFeatured ? "1" : null,
-        mine: mineOnly ? "1" : null,
+        mine: mineParam ? mineParam : null,
       })
     );
     setDrawerOpen(false);
@@ -1191,20 +1178,24 @@ export default function MaterialsClient() {
     setQ("");
     router.replace(
       buildHref(pathname, {
-        mine: mineOnly ? "1" : null,
+        mine: mineParam ? mineParam : null,
       })
     );
   }
 
   async function bumpDownloads(materialId: string) {
+    // Optimistic update — immediately reflects in the UI
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === materialId ? { ...m, downloads: (m.downloads ?? 0) + 1 } : m))
+    );
     try {
-      const current = materials.find((m) => m.id === materialId)?.downloads ?? 0;
-      setMaterials((prev) =>
-        prev.map((m) => (m.id === materialId ? { ...m, downloads: (m.downloads ?? 0) + 1 } : m))
-      );
-      await supabase.from("study_materials").update({ downloads: current + 1 }).eq("id", materialId);
+      // Atomic increment via DB function — no race condition, bypasses RLS
+      await supabase.rpc("increment_material_downloads", { material_id: materialId });
     } catch {
-      // ignore (RLS may block)
+      // Roll back the optimistic update if the RPC fails
+      setMaterials((prev) =>
+        prev.map((m) => (m.id === materialId ? { ...m, downloads: Math.max(0, (m.downloads ?? 1) - 1) } : m))
+      );
     }
   }
 
@@ -1251,9 +1242,9 @@ export default function MaterialsClient() {
 
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <StudyTabs />
+      <StudyTabs contributorStatus={repStatus ?? undefined} />
 
-      {/* Top bar: match StudyHome spacing (no max-w) */}
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
           href="/study"
@@ -1267,17 +1258,32 @@ export default function MaterialsClient() {
           Back
         </Link>
 
-        <Link
-          href="/study/materials/upload"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
-            "hover:opacity-90",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <UploadCloud className="h-4 w-4" />
-          Upload
-        </Link>
+        {/* Context-aware: approved reps get Upload, others get Contribute */}
+        {repStatus === "approved" ? (
+          <Link
+            href="/study/materials/upload"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
+              "hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
+          >
+            <UploadCloud className="h-4 w-4" />
+            Upload
+          </Link>
+        ) : repStatus !== null ? (
+          <Link
+            href="/study/apply-rep"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
+              "hover:bg-secondary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
+          >
+            <UploadCloud className="h-4 w-4" />
+            {repStatus === "pending" ? "Pending" : repStatus === "rejected" ? "Reapply" : "Contribute"}
+          </Link>
+        ) : null}
       </div>
 
       <Card className="rounded-3xl">
@@ -1303,31 +1309,18 @@ export default function MaterialsClient() {
 
       {/* Scope toggle */}
       <div className="flex flex-wrap items-center gap-2">
-        <Chip
-          active={mineOnly}
-          onClick={() =>
-            router.replace(
-              buildHref(pathname, {
-                q: qParam || null,
-                level: levelParam || null,
-                semester: semesterParam || null,
-                faculty: facultyParam || null,
-                dept: deptParam || null,
-                course: courseParam || null,
-                session: sessionParam || null,
-                type: typeParam !== "all" ? typeParam : null,
-                sort: sortParam !== "newest" ? sortParam : null,
-                verified: verifiedOnly ? "1" : null,
-                featured: featuredOnly ? "1" : null,
-                mine: "1",
-              })
-            )
-          }
-          title="Show materials tailored to your department/level/semester (when available)"
-        >
-          <Star className="h-4 w-4" />
-          My materials
-        </Chip>
+        <Link
+        href="/study/materials/my"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "border-border bg-background hover:bg-secondary/50 text-foreground"
+        )}
+        title="Manage your uploads (My uploads)"
+      >
+        <Star className="h-4 w-4" />
+        My uploads
+      </Link>
         <Chip
           active={!mineOnly}
           onClick={() =>
@@ -1344,7 +1337,8 @@ export default function MaterialsClient() {
                 sort: sortParam !== "newest" ? sortParam : null,
                 verified: verifiedOnly ? "1" : null,
                 featured: featuredOnly ? "1" : null,
-                mine: null,
+                // Mark explicit "All" so we don't auto-scope back to mine after prefs load.
+                mine: "0",
               })
             )
           }
@@ -1506,7 +1500,7 @@ export default function MaterialsClient() {
             <EmptyState
               icon={<FileText className="h-5 w-5" />}
               title="No materials found"
-              description="Try clearing filters or upload the first material for your course."
+              description={mineOnly ? "You’re viewing a filtered feed (mine=1). Switch to All materials or clear filters, or upload your first material." : "Try clearing filters or upload the first material for your course."}
               action={
                 <Link
                   href="/study/materials/upload"

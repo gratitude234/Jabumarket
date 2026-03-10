@@ -19,9 +19,39 @@ import {
   Search,
 } from "lucide-react";
 import { Card } from "../_components/StudyUI";
+import { cn, normalizeStr as normalize, currentAcademicSessionFallback } from "@/lib/utils";
 
-function cn(...c: Array<string | false | null | undefined>) {
-  return c.filter(Boolean).join(" ");
+// Fetches the active academic session from the calendar table,
+// falling back to a computed value so we never hardcode a year.
+async function fetchCurrentSession(supabaseClient: typeof supabase): Promise<string> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 1. Active session (today falls within its date range)
+    const { data: active } = await supabaseClient
+      .from("study_academic_calendar")
+      .select("session")
+      .lte("starts_on", today)
+      .gte("ends_on", today)
+      .order("starts_on", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (active?.session) return String(active.session);
+
+    // 2. Most recently ended session (we're in a holiday gap)
+    const { data: recent } = await supabaseClient
+      .from("study_academic_calendar")
+      .select("session")
+      .order("ends_on", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recent?.session) return String(recent.session);
+  } catch {
+    // Fall through to computed default
+  }
+
+  // 3. Compute from current date — no hardcoded year needed
+  return currentAcademicSessionFallback();
 }
 
 const SEMESTERS = [
@@ -41,9 +71,7 @@ type DeptRow = {
 
 type Step = 1 | 2 | 3;
 
-function normalize(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
+
 
 function Banner({
   tone = "info",
@@ -288,9 +316,10 @@ export default function OnboardingClient() {
   const [faculty, setFaculty] = useState("");
   const [department, setDepartment] = useState("");
 
-  // Level + semester
+  // Level + semester + session (session loaded dynamically from academic calendar)
   const [level, setLevel] = useState<number | "">("");
   const [semester, setSemester] = useState<string>("");
+  const [session, setSession] = useState<string>("");
 
   // Inline messages (no alert)
   const [banner, setBanner] = useState<{ tone: "info" | "error" | "success"; title: string; description?: string } | null>(
@@ -361,51 +390,74 @@ export default function OnboardingClient() {
         setFaculties((facRes.data ?? []) as FacultyRow[]);
       }
 
-      // Load existing prefs (if exists)
-      const { data, error } = await supabase
-        .from("study_user_preferences")
-        .select("faculty_id,department_id,faculty,department,level,semester")
+      // Load the active academic session from the calendar table (no hardcoded year)
+      const activeSession = await fetchCurrentSession(supabase);
+
+      // Load existing prefs — canonical table only (legacy migrated via SQL migration)
+      const normRes = await supabase
+        .from("study_preferences")
+        .select("faculty_id,department_id,level,semester,session")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (!mounted) return;
 
-      const d: any = data;
-      const alreadyDone = !!(
-        d?.level &&
-        d?.semester &&
-        ((d?.faculty_id && d?.department_id) || (d?.faculty && d?.department))
-      );
+      const norm: any = !normRes.error ? normRes.data : null;
+      const d: any = {
+        ...(norm ?? {}),
+        session: norm?.session ?? activeSession,
+        semester: norm?.semester ?? "",
+      };
 
-      if (!error && alreadyDone) {
+      // Auto-detect semester from academic calendar.
+      // If user has no semester yet, we fetch it from RPC using the current session.
+      if (!d?.semester) {
+        const sess = d.session as string;
+        try {
+          const { data: semRows } = await supabase.rpc("get_current_semester", { p_session: sess });
+          const sem = Array.isArray(semRows) && semRows.length ? (semRows[0] as any)?.semester : null;
+          if (sem) {
+            d.semester = String(sem);
+          } else {
+            const { data: semRows2 } = await supabase.rpc("get_current_semester_fallback", { p_session: sess });
+            const sem2 = Array.isArray(semRows2) && semRows2.length ? (semRows2[0] as any)?.semester : null;
+            if (sem2) d.semester = String(sem2);
+          }
+          if (d.semester) {
+            await supabase
+              .from("study_preferences")
+              .upsert(
+                { user_id: user.id, semester: d.semester, session: sess, updated_at: new Date().toISOString() },
+                { onConflict: "user_id" }
+              );
+          }
+        } catch {
+          // Ignore RPC errors; user can still pick manually.
+        }
+      }
+
+      // Only consider onboarding done if the user picked from the official list (has IDs)
+      const alreadyDone = !!(d?.level && d?.semester && d?.faculty_id && d?.department_id);
+      if (alreadyDone) {
         router.replace(next);
         return;
       }
 
-      // Prefill if present
-      if (!error && d) {
+      // Prefill state from saved prefs
+      if (d) {
         if (typeof d.faculty_id === "string") setFacultyId(d.faculty_id);
         if (typeof d.department_id === "string") setDepartmentId(d.department_id);
-        if (typeof d.faculty === "string") setFaculty(d.faculty);
-        if (typeof d.department === "string") setDepartment(d.department);
         if (typeof d.level === "number") setLevel(d.level);
         if (typeof d.semester === "string") setSemester(d.semester);
-
-        // Decide default mode based on what we have
-        const hasOfficial = typeof d.faculty_id === "string" && typeof d.department_id === "string";
-        const hasManual = typeof d.faculty === "string" && typeof d.department === "string";
-        if (hasManual && !hasOfficial) setManualMode(true);
+        if (typeof d.session === "string") setSession(d.session);
       }
 
-      // Smart default step:
-      // - if step1 already filled, jump to step2; if step2 also filled, jump to review
-      const step1Ready =
-        (typeof d?.faculty_id === "string" && typeof d?.department_id === "string") ||
-        (typeof d?.faculty === "string" && typeof d?.department === "string");
+      // Smart default step
+      const step1Ready = typeof d?.faculty_id === "string" && typeof d?.department_id === "string";
       const step2Ready = typeof d?.level === "number" && typeof d?.semester === "string" && !!d?.semester;
-
       setStep(step2Ready ? 3 : step1Ready ? 2 : 1);
 
+      setLoading(false);
       setLoading(false);
     })();
 
@@ -495,7 +547,7 @@ export default function OnboardingClient() {
 
   async function skip() {
     // Skip is allowed: just navigate.
-    // Best-effort "touch" the prefs row so user can change later (but don't fail if table/RLS blocks).
+    // Touch study_preferences so Study Home doesn't keep prompting.
     setBanner(null);
     try {
       const { data: auth } = await supabase.auth.getUser();
@@ -504,12 +556,6 @@ export default function OnboardingClient() {
         router.replace(`/login?next=${encodeURIComponent("/study/onboarding")}`);
         return;
       }
-      await supabase.from("study_user_preferences").upsert({
-        user_id: user.id,
-        updated_at: new Date().toISOString(),
-      } as any);
-
-      // Also touch normalized prefs so Study Home doesn't keep prompting.
       await supabase.from("study_preferences").upsert({
         user_id: user.id,
         updated_at: new Date().toISOString(),
@@ -549,36 +595,22 @@ export default function OnboardingClient() {
         ? normalize(department)
         : normalize(String(selectedDeptRow?.display_name || selectedDeptRow?.official_name || ""));
 
-      const payload: any = {
+      // Build payload for study_preferences (the single canonical table)
+      const prefsPayload: any = {
         user_id: user.id,
-        faculty: selectedFaculty,
-        department: selectedDepartment,
         level,
         semester,
+        session,
         updated_at: new Date().toISOString(),
       };
 
       if (!manualMode) {
-        payload.faculty_id = facultyId;
-        payload.department_id = departmentId;
+        prefsPayload.faculty_id = facultyId;
+        prefsPayload.department_id = departmentId;
       }
 
-      const { error } = await supabase.from("study_user_preferences").upsert(payload);
+      const { error } = await supabase.from("study_preferences").upsert(prefsPayload);
       if (error) throw error;
-
-      // Keep the normalized table in sync (used by Study Home personalization).
-      // Even in manual mode (no IDs), we still store `level` so the banner disappears.
-      const normalized: any = {
-        user_id: user.id,
-        level,
-        updated_at: new Date().toISOString(),
-      };
-      if (!manualMode) {
-        normalized.faculty_id = facultyId;
-        normalized.department_id = departmentId;
-      }
-      const normRes = await supabase.from("study_preferences").upsert(normalized);
-      if (normRes.error) throw normRes.error;
 
       setBanner({ tone: "success", title: "Saved", description: "Taking you to Study…" });
 
@@ -597,7 +629,7 @@ export default function OnboardingClient() {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
+      <div className="space-y-4 pb-28 md:pb-6">
         <Card className="rounded-3xl">
           <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading setup…
@@ -614,7 +646,7 @@ export default function OnboardingClient() {
     : normalize(String(departments.find((d) => d.id === departmentId)?.display_name || departments.find((d) => d.id === departmentId)?.official_name || ""));
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
+    <div className="space-y-4 pb-28 md:pb-6">
       {/* Header */}
       <Card className="rounded-3xl">
         <div className="flex items-start justify-between gap-3">

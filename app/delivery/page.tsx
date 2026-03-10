@@ -1,53 +1,32 @@
+// app/delivery/page.tsx
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow, RiderRow } from "@/lib/types";
 import DeliveryClient from "./DeliveryClient";
 
-function formatNaira(amount: number) {
-  return `₦${amount.toLocaleString("en-NG")}`;
-}
-
 export default async function DeliveryPage({
   searchParams,
 }: {
-  searchParams?: Promise<{
-    q?: string;
-    zone?: string;
-    availability?: string; // "available" | "busy" | "all"
-    verified?: string; // "1" | "0"
-    listing?: string;
-    dropoff?: string;
-    phone?: string;
-    note?: string;
-  }>;
+  searchParams?: Promise<{ listing?: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const sp = (await searchParams) ?? {};
-  const q = (sp.q ?? "").trim();
-  const zone = (sp.zone ?? "all").trim();
-  const availability = (sp.availability ?? "all").trim();
-  const verifiedOnly = (sp.verified ?? "0").trim() === "1";
-
   const listingId = (sp.listing ?? "").trim();
-  const dropoff = (sp.dropoff ?? "").trim();
-  const buyerPhone = (sp.phone ?? "").trim();
-  const note = (sp.note ?? "").trim();
 
-  // Optional: fetch listing + vendor to build message
+  // Fetch listing + vendor when coming from a listing CTA
   let listing: (ListingRow & { vendor?: VendorRow | null }) | null = null;
   if (listingId) {
     const { data } = await supabase
       .from("listings")
       .select(
-        "id,title,location,price,price_label,vendor:vendors(id,name,whatsapp,phone,location,verified,vendor_type)"
+        "id,title,location,price,price_label,vendor_id,vendor:vendors(id,name,whatsapp,phone,location,verified,vendor_type)"
       )
       .eq("id", listingId)
       .maybeSingle();
-
     listing = (data as any) ?? null;
   }
 
-  // Riders
+  // Riders — verified first, available first
   const { data: ridersData } = await supabase
     .from("riders")
     .select("id,name,phone,whatsapp,zone,fee_note,is_available,verified,created_at")
@@ -57,76 +36,27 @@ export default async function DeliveryPage({
 
   const riders = (ridersData ?? []) as RiderRow[];
 
+  const vendor = Array.isArray((listing as any)?.vendor)
+    ? (listing as any).vendor[0]
+    : (listing as any)?.vendor ?? null;
+
   const pickupLocation =
-    listing?.vendor?.location ?? listing?.location ?? "Pickup location to be confirmed";
-
-  const priceText =
-    listing?.price != null ? formatNaira(listing.price) : listing?.price_label ?? "Contact for price";
-
-  const baseMessage = listing
-    ? [
-        "Hi, I need delivery for an order on JABU MARKET.",
-        `Item: ${listing.title}`,
-        `Price: ${priceText}`,
-        `Pickup: ${pickupLocation}`,
-        dropoff ? `Drop-off: ${dropoff}` : "Drop-off: (please ask me)",
-        buyerPhone ? `Buyer Phone: ${buyerPhone}` : "",
-        note ? `Note: ${note}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n")
-    : [
-        "Hi, I need a delivery agent.",
-        dropoff ? `Drop-off: ${dropoff}` : "Drop-off: (my location)",
-        buyerPhone ? `My Phone: ${buyerPhone}` : "",
-        note ? `Note: ${note}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+    vendor?.location ?? listing?.location ?? null;
 
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
-      {/* Slim header */}
-      <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl">Delivery</h1>
-            <p className="mt-1 text-sm text-zinc-600">
-              Pick an agent and contact them on WhatsApp.
-            </p>
-          </div>
-
-          <Link
-            href={listing ? `/listing/${listing.id}` : "/explore"}
-            className="rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
-          >
-            ← Back
-          </Link>
-        </div>
-
-        {listing ? (
-          <div className="mt-3 rounded-2xl border bg-zinc-50 p-3">
-            <p className="text-xs font-semibold text-zinc-700">From listing</p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900">{listing.title}</p>
-            <p className="mt-1 text-xs text-zinc-600">Pickup: {pickupLocation}</p>
-          </div>
-        ) : null}
-      </div>
-
+    <div className="mx-auto max-w-2xl space-y-4 pb-28 md:pb-6">
       <DeliveryClient
-        initial={{
-          q,
-          zone,
-          availability,
-          verifiedOnly,
-          listingId,
-          dropoff,
-          buyerPhone,
-          note,
-          baseMessage,
-          pickupLocation,
-          listingTitle: listing?.title ?? null,
-        }}
+        listing={
+          listing
+            ? {
+                id: listing.id,
+                title: listing.title,
+                vendor_id: listing.vendor_id ?? null,
+                vendor_name: vendor?.name ?? null,
+                pickup: pickupLocation,
+              }
+            : null
+        }
         riders={riders}
       />
     </div>

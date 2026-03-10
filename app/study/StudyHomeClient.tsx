@@ -3,43 +3,27 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "./_components/StudyTabs";
 import { Card, EmptyState, PageHeader, ContributorStatusHub } from "./_components/StudyUI";
-import { getLatestAttempt, getPracticeStreak } from "@/lib/studyPractice";
+import UnifiedSearch from "./_components/UnifiedSearch";
+import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
+import { ForYouSection, MaterialCard, Section, Skeleton, type MaterialMini, type Chips } from "./_components/ForYouSection";
+import { ContinueCard } from "./_components/ContinueCard";
+import { StreakSection } from "./_components/StreakSection";
+import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
   BookOpen,
-  GraduationCap,
-  Search,
   Clock,
   Filter,
-  X,
+  GraduationCap,
   TrendingUp,
-  Bookmark,
+  X,
 } from "lucide-react";
+import type { StudyCounts, MaterialMiniStatic } from "./page";
 
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-type StudyCounts = {
-  courses: number;
-  approvedMaterials: number;
-  tutors: number;
-};
-
-type MaterialMini = {
-  id: string;
-  title: string | null;
-  course_code: string | null;
-  level: string | null;
-  semester: string | null;
-  material_type: string;
-  downloads: number | null;
-  created_at: string;
-};
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type CourseMini = {
   id: string;
@@ -51,267 +35,235 @@ type CourseMini = {
   department: string;
 };
 
-type Prefs = {
-  faculty?: string | null;
-  department?: string | null;
-  level?: number | null;
-  faculty_id?: string | null;
-  department_id?: string | null;
-};
+// ── Root export — wraps inner client in the prefs provider ────────────────────
 
-type RepRole = "course_rep" | "dept_librarian" | null;
-type RepStatus = "not_applied" | "pending" | "approved" | "rejected";
+export default function StudyHomeClient({
+  initialCounts,
+  initialTrending,
+}: {
+  initialCounts: StudyCounts;
+  initialTrending: MaterialMiniStatic[];
+}) {
+  return (
+    <StudyPrefsProvider>
+      <StudyHomeInner
+        initialCounts={initialCounts}
+        initialTrending={initialTrending}
+      />
+    </StudyPrefsProvider>
+  );
+}
 
-type RepMeResponse =
-  | {
-      ok: true;
-      status: RepStatus;
-      role: RepRole;
-      scope:
-        | {
-            faculty_id: string | null;
-            department_id: string | null;
-            levels: number[] | null;
-            all_levels: boolean;
-          }
-        | null;
-    }
-  | { ok: false; code?: string; message?: string };
+// ── Inner component — consumes context ────────────────────────────────────────
 
-export default function StudyHomeClient() {
-  const router = useRouter();
+function StudyHomeInner({
+  initialCounts,
+  initialTrending,
+}: {
+  initialCounts: StudyCounts;
+  initialTrending: MaterialMiniStatic[];
+}) {
+  const { loading, displayName, prefs, hasPrefs, rep, userId, updateSemester } =
+    useStudyPrefs();
 
-  const [loading, setLoading] = useState(true);
-  const [authed, setAuthed] = useState<{ id: string; email?: string | null } | null>(null);
-
-  const [prefs, setPrefs] = useState<Prefs | null>(null);
-  const [counts, setCounts] = useState<StudyCounts>({ courses: 0, approvedMaterials: 0, tutors: 0 });
-
-  const [query, setQuery] = useState("");
-  const [chips, setChips] = useState<{ level?: number; semester?: string; type?: string }>({});
-
-  const [continueAttempt, setContinueAttempt] = useState<any | null>(null);
-  const [streak, setStreak] = useState<{ streak: number; didPracticeToday: boolean } | null>(null);
-
-  const [forYou, setForYou] = useState<MaterialMini[]>([]);
-  const [trending, setTrending] = useState<MaterialMini[]>([]);
+  const counts = initialCounts;
+  const [trending] = useState<MaterialMini[]>(initialTrending as MaterialMini[]);
   const [recentCourses, setRecentCourses] = useState<CourseMini[]>([]);
+  const [chips, setChips] = useState<Chips>({});
 
-  const [rep, setRep] = useState<{
-    loading: boolean;
-    status: RepStatus;
-    role: RepRole;
-    scope: any;
-  }>({ loading: true, status: "not_applied", role: null, scope: null });
+  const [semesterPrompt, setSemesterPrompt] = useState<{
+    show: boolean;
+    suggested: string | null;
+    current: string | null;
+    session: string | null;
+  }>({ show: false, suggested: null, current: null, session: null });
+  const [switchingSemester, setSwitchingSemester] = useState(false);
 
-  const hasPrefs = useMemo(() => {
-    return !!(prefs?.faculty_id || prefs?.department_id || prefs?.faculty || prefs?.department || prefs?.level);
-  }, [prefs]);
-
+  // ── Derived ────────────────────────────────────────────────────────────────
   const quickLevel = prefs?.level ?? 100;
-  const canUpload = rep.status === "approved";
 
-  function toMaterialsSearch() {
-    const sp = new URLSearchParams();
-    if (query.trim()) sp.set("q", query.trim());
-    if (chips.level) sp.set("level", String(chips.level));
-    if (chips.semester) sp.set("semester", chips.semester);
-    if (chips.type) sp.set("type", chips.type);
+  const filteredTrending = useMemo(() => {
+    if (!chips.level && !chips.semester && !chips.type) return trending;
+    return trending.filter((m) => {
+      if (chips.level && String(m.level) !== String(chips.level)) return false;
+      if (chips.semester && m.semester !== chips.semester) return false;
+      if (chips.type && m.material_type !== chips.type) return false;
+      return true;
+    });
+  }, [trending, chips]);
 
-    const url = `/study/materials${sp.toString() ? `?${sp.toString()}` : ""}`;
-    router.push(url);
-  }
-
-  function clearFilters() {
-    setChips({});
-    setQuery("");
-  }
-
+  // ── Courses + semester prompt — re-run whenever prefs resolve ─────────────
   useEffect(() => {
-    let mounted = true;
+    if (loading || !prefs) return;
+    let cancelled = false;
 
-    async function run() {
-      setLoading(true);
-
-      const { data: authData } = await supabase.auth.getUser();
-      const user = authData?.user ?? null;
-
-      if (!mounted) return;
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
-
-      setAuthed({ id: user.id, email: user.email });
-
-      // Rep/Librarian status
-      setRep((p) => ({ ...p, loading: true }));
-      try {
-        const r = await fetch("/api/study/rep-applications/me", { cache: "no-store" });
-        const j = (await r.json()) as RepMeResponse;
-        if (mounted && j && (j as any).ok) {
-          const ok = j as Extract<RepMeResponse, { ok: true }>;
-          setRep({
-            loading: false,
-            status: ok.status,
-            role: ok.role,
-            scope: ok.scope,
-          });
-        } else {
-          setRep((p) => ({ ...p, loading: false }));
-        }
-      } catch {
-        setRep((p) => ({ ...p, loading: false }));
-      }
-
-      // Preferences
-      const prefsPromise = supabase
-        .from("study_preferences")
-        .select(
-          "level, faculty_id, department_id, faculty:study_faculties(name), department:study_departments(name)"
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      // Counts
-      const countsPromise = Promise.all([
-        supabase.from("study_courses").select("id", { count: "exact", head: true }),
-        supabase.from("study_materials").select("id", { count: "exact", head: true }).eq("approved", true),
-        supabase.from("study_tutors").select("id", { count: "exact", head: true }),
-      ]);
-
-      // Lists
-      const trendingPromise = supabase
-        .from("study_materials")
-        .select("id,title,course_code,level,semester,material_type,downloads,created_at")
-        .eq("approved", true)
-        .order("downloads", { ascending: false })
-        .limit(6);
-
-      const coursesPromise = supabase
+    async function fetchCourses() {
+      let q = supabase
         .from("study_courses")
         .select("id,course_code,course_title,level,semester,faculty,department")
+        .eq("status", "approved")
         .order("created_at", { ascending: false })
-        .limit(6);
+        .limit(8);
 
-      const attemptPromise = getLatestAttempt().catch(() => null);
-      const streakPromise = getPracticeStreak().catch(() => null);
+      if (prefs!.department_id) q = q.eq("department_id", prefs!.department_id);
+      else if (prefs!.department) q = q.ilike("department", `%${prefs!.department}%`);
+      if (prefs!.level) q = q.eq("level", prefs!.level);
 
-      const [prefsRes, countsRes, trendingRes, coursesRes, latestAttemptRes, streakRes] =
-        await Promise.all([prefsPromise, countsPromise, trendingPromise, coursesPromise, attemptPromise, streakPromise]);
-
-      if (!mounted) return;
-
-      // Resolve prefs (new + legacy)
-      let effectivePrefs: Prefs | null = null;
-
-      if (!prefsRes.error && prefsRes.data) {
-        effectivePrefs = {
-          faculty: (prefsRes.data as any).faculty?.name ?? null,
-          department: (prefsRes.data as any).department?.name ?? null,
-          level: (prefsRes.data as any).level ?? null,
-          faculty_id: (prefsRes.data as any).faculty_id ?? null,
-          department_id: (prefsRes.data as any).department_id ?? null,
-        };
-      } else {
-        const legacyRes = await supabase
-          .from("study_user_preferences")
-          .select("faculty,department,level")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (!legacyRes.error && legacyRes.data) {
-          effectivePrefs = {
-            faculty: (legacyRes.data as any).faculty ?? null,
-            department: (legacyRes.data as any).department ?? null,
-            level: (legacyRes.data as any).level ?? null,
-            faculty_id: null,
-            department_id: null,
-          };
-        }
-      }
-
-      setPrefs(effectivePrefs);
-
-      const [coursesCountRes, materialsCountRes, tutorsCountRes] = countsRes;
-      setCounts({
-        courses: coursesCountRes.count ?? 0,
-        approvedMaterials: materialsCountRes.count ?? 0,
-        tutors: tutorsCountRes.count ?? 0,
-      });
-
-      setTrending((trendingRes.data as MaterialMini[]) ?? []);
-      setRecentCourses((coursesRes.data as CourseMini[]) ?? []);
-      setContinueAttempt(latestAttemptRes ?? null);
-      setStreak(streakRes ?? null);
-
-      // For you (prefer IDs, fallback to name matching)
-      if (effectivePrefs) {
-        const p = effectivePrefs;
-
-        let q = supabase
-          .from("study_materials")
-          .select("id,title,course_code,level,semester,material_type,downloads,created_at")
-          .eq("approved", true)
-          .order("created_at", { ascending: false })
-          .limit(6);
-
-        if (p.department_id) q = q.eq("department_id", p.department_id);
-        else if (p.department) q = q.ilike("department", `%${p.department}%`);
-
-        if (!p.department_id) {
-          if (p.faculty_id) q = q.eq("faculty_id", p.faculty_id);
-          else if (p.faculty) q = q.ilike("faculty", `%${p.faculty}%`);
-        }
-
-        if (p.level) q = q.eq("level", String(p.level));
-
-        const fy = await q;
-        if (!fy.error) setForYou((fy.data as MaterialMini[]) ?? []);
-        else setForYou([]);
-      } else {
-        setForYou([]);
-      }
-
-      setLoading(false);
+      const { data, error } = await q;
+      if (!cancelled && !error) setRecentCourses((data as CourseMini[]) ?? []);
     }
 
-    run();
-    return () => {
-      mounted = false;
-    };
-  }, [router]);
+    async function checkSemesterPrompt() {
+      try {
+        const session = (prefs!.session ?? currentAcademicSessionFallback()) as string;
+        const saved = prefs!.semester ?? null;
 
+        const cur = await supabase
+          .rpc("get_current_semester", { p_session: session })
+          .then((r: any) => (r?.data?.[0]?.semester as string | undefined) ?? null)
+          .catch(() => null);
+        const suggested =
+          cur ??
+          (await supabase
+            .rpc("get_current_semester_fallback", { p_session: session })
+            .then((r: any) => (r?.data?.[0]?.semester as string | undefined) ?? null)
+            .catch(() => null));
+
+        if (!suggested || saved === suggested) return;
+
+        let dismissed = false;
+        try {
+          dismissed =
+            localStorage.getItem(
+              `jabu_semester_prompt_dismissed:${session}:${suggested}`
+            ) === "1";
+        } catch {}
+
+        if (!cancelled && !dismissed) {
+          setSemesterPrompt({ show: true, suggested, current: saved, session });
+        }
+      } catch {}
+    }
+
+    fetchCourses();
+    checkSemesterPrompt();
+    return () => { cancelled = true; };
+  }, [loading, prefs]);
+
+  // Auto-dismiss semester banner after 8 s
+  useEffect(() => {
+    if (!semesterPrompt.show) return;
+    const t = setTimeout(
+      () => setSemesterPrompt((p) => ({ ...p, show: false })),
+      8000
+    );
+    return () => clearTimeout(t);
+  }, [semesterPrompt.show]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  function clearFilters() { setChips({}); }
+
+  function dismissSemesterPrompt(session: string, suggested: string) {
+    try {
+      localStorage.setItem(`jabu_semester_prompt_dismissed:${session}:${suggested}`, "1");
+    } catch {}
+    setSemesterPrompt({ show: false, suggested: null, current: null, session: null });
+  }
+
+  async function applySuggestedSemester() {
+    if (!userId || !semesterPrompt.session || !semesterPrompt.suggested) return;
+    setSwitchingSemester(true);
+    const { session, suggested } = semesterPrompt;
+
+    await supabase
+      .from("study_preferences")
+      .upsert(
+        { user_id: userId, semester: suggested, session, updated_at: new Date().toISOString() } as any,
+        { onConflict: "user_id" }
+      );
+
+    updateSemester(suggested, session);
+    dismissSemesterPrompt(session, suggested);
+    setSwitchingSemester(false);
+  }
+
+  // ── JSX ───────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <StudyTabs showUploadTab={canUpload} contributorStatus={rep.status} />
+      <StudyTabs contributorStatus={rep.status} />
+
+      {/* Semester mismatch banner */}
+      {semesterPrompt.show && (
+        <div className="sticky top-[49px] z-20 -mx-4 flex items-center justify-between gap-3 border-b border-amber-200/60 bg-amber-50 px-4 py-2.5 dark:border-amber-800/40 dark:bg-amber-950/40">
+          <p className="text-xs font-semibold leading-snug text-amber-900 dark:text-amber-200">
+            {semesterPrompt.suggested === "first"
+              ? "It looks like it's First Semester."
+              : semesterPrompt.suggested === "second"
+              ? "It looks like it's Second Semester."
+              : "It looks like it's Summer."}
+            <span className="ml-1 font-normal opacity-80">
+              {semesterPrompt.current
+                ? `Switch from "${semesterPrompt.current}" to "${semesterPrompt.suggested}" for better results?`
+                : `Set semester to "${semesterPrompt.suggested}" for better results?`}
+            </span>
+          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={applySuggestedSemester}
+              disabled={switchingSemester}
+              className="text-xs font-bold text-amber-900 underline underline-offset-2 disabled:opacity-50 dark:text-amber-200"
+            >
+              {switchingSemester ? "Switching…" : "Switch"}
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() =>
+                semesterPrompt.session && semesterPrompt.suggested
+                  ? dismissSemesterPrompt(semesterPrompt.session, semesterPrompt.suggested)
+                  : setSemesterPrompt({ show: false, suggested: null, current: null, session: null })
+              }
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/50"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <PageHeader
         title="Study"
         subtitle="Browse materials, practice past questions, and track your progress."
         right={
-          <div className="flex items-center gap-2">
-            <Link
-              href="/study/practice"
-              className={cn(
-                "inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
-                "text-sm font-semibold text-foreground hover:opacity-90",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              )}
-            >
-              Practice <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+          <Link
+            href="/study/practice"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
+              "text-sm font-semibold text-foreground hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            Practice <ArrowRight className="h-4 w-4" />
+          </Link>
         }
       />
 
-      <ContributorStatusHub loading={rep.loading} status={rep.status} role={rep.role} scope={rep.scope} />
+      <ContributorStatusHub
+        loading={rep.loading}
+        status={rep.status}
+        role={rep.role}
+        scope={rep.scope}
+      />
 
+      <StreakSection />
+
+      {/* Welcome + chips */}
       <Card className="rounded-3xl">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-muted-foreground">
-              Welcome{authed?.email ? `, ${authed.email.split("@")[0]}` : ""} 👋
+              Welcome{displayName ? `, ${displayName}` : ""} 👋
             </p>
             <h2 className="mt-1 text-xl font-extrabold tracking-tight text-foreground">
               What do you want to study today?
@@ -319,12 +271,11 @@ export default function StudyHomeClient() {
 
             {loading ? (
               <div className="mt-2 flex flex-wrap gap-2">
-                <span className="h-6 w-20 rounded-full bg-muted animate-pulse" />
-                <span className="h-6 w-24 rounded-full bg-muted animate-pulse" />
-                <span className="h-6 w-20 rounded-full bg-muted animate-pulse" />
-                <span className="h-6 w-20 rounded-full bg-muted animate-pulse" />
+                <span className="h-6 w-20 animate-pulse rounded-full bg-muted" />
+                <span className="h-6 w-24 animate-pulse rounded-full bg-muted" />
+                <span className="h-6 w-20 animate-pulse rounded-full bg-muted" />
               </div>
-            ) : (
+            ) : hasPrefs ? (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span className="rounded-full border border-border bg-background px-2 py-1">
                   {counts.courses} courses
@@ -335,147 +286,83 @@ export default function StudyHomeClient() {
                 <span className="rounded-full border border-border bg-background px-2 py-1">
                   {counts.tutors} tutors
                 </span>
-                <span className="rounded-full border border-border bg-background px-2 py-1">
-                  🔥 streak: {streak?.streak ?? 0}
-                </span>
               </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Set preferences to get personalized recommendations.
+              </p>
             )}
           </div>
 
-          <div className="shrink-0">
-            {hasPrefs ? (
-              <Link
-                href="/study/onboarding"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-                  "text-sm font-semibold text-foreground hover:bg-secondary/50"
-                )}
-              >
-                Preferences <ArrowRight className="h-4 w-4" />
-              </Link>
-            ) : (
-              <Link
-                href="/study/onboarding"
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
-                  "text-sm font-semibold text-foreground hover:opacity-90"
-                )}
-              >
-                Set up <ArrowRight className="h-4 w-4" />
-              </Link>
+          <Link
+            href="/study/onboarding"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
+              "text-sm font-semibold text-foreground hover:bg-secondary/50",
+              !hasPrefs && "border-transparent bg-secondary hover:opacity-90"
             )}
-          </div>
+          >
+            {hasPrefs ? "Preferences" : "Set up"} <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
 
         <div className="mt-4">
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search materials (e.g. BCH 201, Anatomy, Past Questions)…"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") toMaterialsSearch();
-              }}
-            />
-            {query || chips.level || chips.semester || chips.type ? (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2 py-1",
-                  "text-xs font-semibold text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                )}
-                aria-label="Clear search and filters"
-              >
-                <X className="h-3.5 w-3.5" />
-                Clear
-              </button>
-            ) : null}
-          </div>
+          <UnifiedSearch placeholder="Search materials, courses, Q&A, practice…" />
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                setChips((p) => ({
-                  ...p,
-                  type: p.type === "past_question" ? undefined : "past_question",
-                }))
-              }
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                chips.type === "past_question"
-                  ? "border-border bg-secondary text-foreground"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-muted text-[10px] font-bold text-muted-foreground">
-                PQ
-              </span>
-              Past Questions
-            </button>
+            {([
+              {
+                label: "Past Questions",
+                icon: (
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-muted text-[10px] font-bold text-muted-foreground">
+                    PQ
+                  </span>
+                ),
+                active: chips.type === "past_question",
+                onToggle: () =>
+                  setChips((p) => ({ ...p, type: p.type === "past_question" ? undefined : "past_question" })),
+              },
+              {
+                label: "1st Sem",
+                icon: <Clock className="h-4 w-4" />,
+                active: chips.semester === "first",
+                onToggle: () =>
+                  setChips((p) => ({ ...p, semester: p.semester === "first" ? undefined : "first" })),
+              },
+              {
+                label: "2nd Sem",
+                icon: <Clock className="h-4 w-4" />,
+                active: chips.semester === "second",
+                onToggle: () =>
+                  setChips((p) => ({ ...p, semester: p.semester === "second" ? undefined : "second" })),
+              },
+              {
+                label: `${quickLevel}L`,
+                icon: <GraduationCap className="h-4 w-4" />,
+                active: chips.level === quickLevel,
+                onToggle: () =>
+                  setChips((p) => ({ ...p, level: p.level === quickLevel ? undefined : quickLevel })),
+              },
+            ] as const).map(({ label, icon, active, onToggle }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onToggle}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  active
+                    ? "border-border bg-secondary text-foreground"
+                    : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                )}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
 
-            <button
-              type="button"
-              onClick={() =>
-                setChips((p) => ({ ...p, semester: p.semester === "first" ? undefined : "first" }))
-              }
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                chips.semester === "first"
-                  ? "border-border bg-secondary text-foreground"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <Clock className="h-4 w-4" />
-              1st Sem
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setChips((p) => ({ ...p, semester: p.semester === "second" ? undefined : "second" }))
-              }
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                chips.semester === "second"
-                  ? "border-border bg-secondary text-foreground"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <Clock className="h-4 w-4" />
-              2nd Sem
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setChips((p) => ({
-                  ...p,
-                  level: p.level === quickLevel ? undefined : quickLevel,
-                }))
-              }
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                chips.level === quickLevel
-                  ? "border-border bg-secondary text-foreground"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <GraduationCap className="h-4 w-4" />
-              {quickLevel}L
-            </button>
-
-            <button
-              type="button"
-              onClick={toMaterialsSearch}
+            <Link
+              href="/study/search"
               className={cn(
                 "ml-auto inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-2 text-xs font-semibold text-foreground",
                 "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -483,85 +370,14 @@ export default function StudyHomeClient() {
             >
               <Filter className="h-4 w-4" />
               Search
-            </button>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="rounded-3xl">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-extrabold text-foreground">Continue</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Pick up where you left off, or start a new practice session.
-            </p>
-          </div>
-          <Link
-            href="/study/practice"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-              "text-sm font-semibold text-foreground hover:bg-secondary/50"
-            )}
-          >
-            Practice <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {continueAttempt ? (
-            <Link
-              href="/study/practice"
-              className={cn(
-                "rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <Bookmark className="mt-0.5 h-5 w-5 text-muted-foreground" />
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">
-                    Resume last attempt
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                    Continue your previous practice session.
-                  </p>
-                </div>
-              </div>
             </Link>
-          ) : (
-            <div className="rounded-2xl border border-border bg-background p-3">
-              <p className="text-sm font-semibold text-foreground">
-                No active attempt
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Start a practice session to track progress.
-              </p>
-            </div>
-          )}
-
-          <Link
-            href="/study/materials"
-            className={cn(
-              "rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            )}
-          >
-            <div className="flex items-start gap-3">
-              <BookOpen className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">
-                  Browse materials
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Find notes, slides, and past questions.
-                </p>
-              </div>
-            </div>
-          </Link>
+          </div>
         </div>
       </Card>
 
-      {!loading && !hasPrefs ? (
+      <ContinueCard />
+
+      {!loading && !hasPrefs && (
         <EmptyState
           title="Personalize your Study Home"
           description="Set your faculty, department, and level so we can recommend the best materials for you."
@@ -578,71 +394,13 @@ export default function StudyHomeClient() {
           }
           icon={GraduationCap}
         />
-      ) : null}
+      )}
 
-      <Section
-        title="For you"
-        subtitle={
-          hasPrefs
-            ? "Fresh uploads matching your preferences."
-            : "Set preferences to get better recommendations."
-        }
-        href="/study/materials"
-        hrefLabel="See all"
-      >
-        {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Skeleton />
-            <Skeleton />
-          </div>
-        ) : forYou.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {forYou.map((m) => (
-              <MaterialCard key={m.id} m={m} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            variant="compact"
-            title={hasPrefs ? "No recommendations yet" : "No preferences set"}
-            description={
-              hasPrefs
-                ? "Check Materials or search for a course code."
-                : "Set preferences to see recommended materials here."
-            }
-            action={
-              <div className="flex flex-wrap items-center gap-2">
-                {!hasPrefs ? (
-                  <Link
-                    href="/study/onboarding"
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2",
-                      "text-sm font-semibold text-foreground hover:opacity-90"
-                    )}
-                  >
-                    Set preferences <ArrowRight className="h-4 w-4" />
-                  </Link>
-                ) : null}
-
-                <Link
-                  href="/study/materials"
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2",
-                    "text-sm font-semibold text-foreground hover:bg-secondary/50"
-                  )}
-                >
-                  Browse materials <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            }
-            icon={Bookmark}
-          />
-        )}
-      </Section>
+      <ForYouSection chips={chips} onClearFilters={clearFilters} />
 
       <Section
         title="Trending"
-        subtitle="Most downloaded materials right now."
+        subtitle={hasPrefs ? "Most downloaded across all departments." : "Most downloaded materials right now."}
         href="/study/materials"
         hrefLabel="Explore"
       >
@@ -651,12 +409,31 @@ export default function StudyHomeClient() {
             <Skeleton />
             <Skeleton />
           </div>
-        ) : trending.length > 0 ? (
+        ) : filteredTrending.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {trending.map((m) => (
+            {filteredTrending.map((m) => (
               <MaterialCard key={m.id} m={m} trending />
             ))}
           </div>
+        ) : trending.length > 0 ? (
+          <EmptyState
+            variant="compact"
+            title="No matches for these filters"
+            description="Try clearing the filters to see trending materials."
+            action={
+              <button
+                type="button"
+                onClick={clearFilters}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2",
+                  "text-sm font-semibold text-foreground hover:bg-secondary/50"
+                )}
+              >
+                <X className="h-4 w-4" /> Clear filters
+              </button>
+            }
+            icon={TrendingUp}
+          />
         ) : (
           <EmptyState
             variant="compact"
@@ -667,155 +444,59 @@ export default function StudyHomeClient() {
         )}
       </Section>
 
-      <Section
-        title="Courses"
-        subtitle="Recently added courses you can browse."
-        href="/study/materials"
-        hrefLabel="View"
-      >
-        {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Skeleton />
-            <Skeleton />
-          </div>
-        ) : recentCourses.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {recentCourses.map((c) => (
-              <Link
-                key={c.id}
-                href={`/study/courses/${encodeURIComponent(c.course_code)}`}
-                className={cn(
-                  "rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-secondary/20",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-extrabold text-foreground">
-                      {c.course_code}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                      {c.course_title ?? "Course"}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span className="rounded-full border border-border bg-background px-2 py-1">
-                        {c.level}L
-                      </span>
-                      <span className="rounded-full border border-border bg-background px-2 py-1">
-                        {c.semester}
-                      </span>
+      {hasPrefs && (
+        <Section
+          title="Courses"
+          subtitle="Recently added courses you can browse."
+          href="/study/materials"
+          hrefLabel="View"
+        >
+          {loading ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Skeleton />
+              <Skeleton />
+            </div>
+          ) : recentCourses.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {recentCourses.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/study/courses/${encodeURIComponent(c.course_code)}`}
+                  className={cn(
+                    "rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-secondary/20",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-extrabold text-foreground">{c.course_code}</p>
+                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+                        {c.course_title ?? "Course"}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="rounded-full border border-border bg-background px-2 py-1">
+                          {c.level}L
+                        </span>
+                        <span className="rounded-full border border-border bg-background px-2 py-1">
+                          {c.semester}
+                        </span>
+                      </div>
                     </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            variant="compact"
-            title="No courses yet"
-            description="Add courses to start organizing materials by course code."
-            icon={BookOpen}
-          />
-        )}
-      </Section>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  subtitle,
-  href,
-  hrefLabel,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  href?: string;
-  hrefLabel?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-base font-extrabold text-foreground">{title}</p>
-          {subtitle ? (
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-          ) : null}
-        </div>
-        {href ? (
-          <Link
-            href={href}
-            className={cn(
-              "shrink-0 inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-              "text-sm font-semibold text-foreground hover:bg-secondary/50"
-            )}
-          >
-            {hrefLabel ?? "See all"} <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function MaterialCard({ m, trending }: { m: MaterialMini; trending?: boolean }) {
-  // ✅ consistent with hero search: q=
-  const courseQ = m.course_code ?? "";
-  const href = `/study/materials${courseQ ? `?q=${encodeURIComponent(courseQ)}` : ""}`;
-
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-secondary/20",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              variant="compact"
+              title="No courses yet"
+              description="Add courses to start organizing materials by course code."
+              icon={BookOpen}
+            />
+          )}
+        </Section>
       )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-foreground line-clamp-1">
-            {m.title ?? m.course_code ?? "Material"}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-            {(m.course_code ? `${m.course_code} • ` : "") + (m.material_type ?? "material")}
-          </p>
-
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {m.level ? (
-              <span className="rounded-full border border-border bg-background px-2 py-1">{m.level}</span>
-            ) : null}
-            {m.semester ? (
-              <span className="rounded-full border border-border bg-background px-2 py-1">{m.semester}</span>
-            ) : null}
-            {trending ? (
-              <span className="rounded-full border border-border bg-background px-2 py-1">
-                <TrendingUp className="mr-1 inline-block h-3.5 w-3.5" />
-                {m.downloads ?? 0}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <ArrowRight className="h-4 w-4 text-muted-foreground" />
-      </div>
-    </Link>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm animate-pulse">
-      <div className="h-4 w-2/3 rounded bg-muted" />
-      <div className="mt-2 h-3 w-1/2 rounded bg-muted" />
-      <div className="mt-4 flex gap-2">
-        <div className="h-6 w-16 rounded-full bg-muted" />
-        <div className="h-6 w-20 rounded-full bg-muted" />
-      </div>
     </div>
   );
 }

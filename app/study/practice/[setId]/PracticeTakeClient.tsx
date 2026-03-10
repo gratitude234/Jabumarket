@@ -1,4 +1,4 @@
-// [setId]/PracticeTakeClient.tsx
+// app/study/practice/[setId]/PracticeTakeClient.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,61 +6,63 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowRight,
-  LayoutGrid,
+  ArrowLeft,
   Loader2,
   RefreshCcw,
   Send,
-  Info,
-  ChevronDown,
-  ChevronUp,
+  Timer,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+  Trophy,
+  Star,
+  X,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
-import { cn, normalize, usePracticeEngine } from "./usePracticeEngine";
-import TopBar, { type PracticeMode } from "./parts/TopBar";
-import MetaCard from "./parts/MetaCard";
-import ExamRunner from "./runners/ExamRunner";
-import InteractiveRunner from "./runners/InteractiveRunner";
-import PaletteSheet from "./sheets/PaletteSheet";
-import SubmitSheet from "./sheets/SubmitSheet";
-import TimeUpSheet from "./sheets/TimeUpSheet";
+import { cn, msToClock, normalize } from "@/lib/utils";
+import { usePracticeEngine } from "./usePracticeEngine";
 
-function Chip({
-  active,
-  children,
-  onClick,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-extrabold transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        active
-          ? "border-border bg-secondary text-foreground"
-          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
+type AnyOption = {
+  id: string;
+  text: string | null;
+  // your engine may expose one of these:
+  is_correct?: boolean | null;
+  correct?: boolean | null;
+  isCorrect?: boolean | null;
+};
+
+function getIsCorrect(o: AnyOption) {
+  return Boolean(o.is_correct ?? o.correct ?? o.isCorrect ?? false);
 }
 
-function getPreferredMode(): PracticeMode {
-  if (typeof window === "undefined") return "interactive";
-  try {
-    const raw = window.localStorage.getItem("jabu:practiceMode") as PracticeMode | null;
-    if (raw === "exam" || raw === "interactive") return raw;
-  } catch {
-    // ignore
-  }
-  return "interactive";
+// ── Milestone toast ───────────────────────────────────────────────────────────
+
+type MilestoneLevel = "perfect" | "excellent" | "great" | "good" | "done";
+
+type Milestone = {
+  level: MilestoneLevel;
+  emoji: string;
+  heading: string;
+  sub: string;
+};
+
+function getMilestone(correct: number, total: number): Milestone {
+  if (total === 0) return { level: "done", emoji: "✅", heading: "Session saved", sub: "No questions to score." };
+  const pct = Math.round((correct / total) * 100);
+  if (pct === 100) return { level: "perfect",   emoji: "🎯", heading: "Perfect score!",     sub: `${correct}/${total} — flawless.` };
+  if (pct >= 90)   return { level: "excellent", emoji: "⭐", heading: "Outstanding!",        sub: `${pct}% — keep it up!` };
+  if (pct >= 80)   return { level: "great",     emoji: "🔥", heading: "Great work!",         sub: `${pct}% — solid performance.` };
+  if (pct >= 60)   return { level: "good",      emoji: "💪", heading: "Good effort!",        sub: `${pct}% — practice makes perfect.` };
+  return              { level: "done",      emoji: "✅", heading: "Session complete",     sub: `${pct}% — review your answers below.` };
 }
+
+const MILESTONE_STYLES: Record<MilestoneLevel, string> = {
+  perfect:   "border-amber-300/50  bg-amber-50   text-amber-900  dark:border-amber-700/50 dark:bg-amber-950/60 dark:text-amber-200",
+  excellent: "border-violet-300/50 bg-violet-50  text-violet-900 dark:border-violet-700/50 dark:bg-violet-950/60 dark:text-violet-200",
+  great:     "border-orange-300/50 bg-orange-50  text-orange-900 dark:border-orange-700/50 dark:bg-orange-950/60 dark:text-orange-200",
+  good:      "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:border-emerald-700/50 dark:bg-emerald-950/60 dark:text-emerald-200",
+  done:      "border-border bg-card text-foreground",
+};
 
 export default function PracticeTakeClient() {
   const router = useRouter();
@@ -69,17 +71,6 @@ export default function PracticeTakeClient() {
 
   const setId = String(params?.setId ?? "");
   const attemptFromUrl = String(sp.get("attempt") ?? "").trim();
-  const urlMode = (sp.get("mode") ?? "") as PracticeMode | "";
-  const defaultModeRef = useRef<PracticeMode>("interactive");
-  const [defaultMode, setDefaultMode] = useState<PracticeMode>("interactive");
-
-  useEffect(() => {
-    const pref = getPreferredMode();
-    defaultModeRef.current = pref;
-    setDefaultMode(pref);
-  }, []);
-
-  const mode: PracticeMode = urlMode === "exam" || urlMode === "interactive" ? urlMode : defaultMode;
 
   const engine = usePracticeEngine({ setId, attemptFromUrl });
 
@@ -93,121 +84,131 @@ export default function PracticeTakeClient() {
     current,
     opts,
     answers,
-    flagged,
     submitted,
     setSubmitted,
     timeLeftMs,
-    reviewTab,
-    setReviewTab,
-    reviewItems,
     stats,
     finalizing,
     choose,
-    toggleFlag,
-    goToQuestion,
     restart,
     finalizeAttempt,
   } = engine;
 
-  // UI
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [submitOpen, setSubmitOpen] = useState(false);
-  const [timeUpOpen, setTimeUpOpen] = useState(false);
+  // Instant feedback: reveal correctness after first tap (per question)
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [autoNext, setAutoNext] = useState(true);
 
-  // Meta / info panel: show initially, then auto-collapse once user starts
-  const [infoOpen, setInfoOpen] = useState(true);
-  const autoCollapsedRef = useRef(false);
+  // Milestone toast — fires once when finalization completes
+  const [milestone, setMilestone] = useState<Milestone | null>(null);
+  const milestoneShownRef = useRef(false);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (autoCollapsedRef.current) return;
-    if (submitted) return;
-    if (stats.answered > 0 || idx > 0) {
-      autoCollapsedRef.current = true;
-      setInfoOpen(false);
-    }
-  }, [stats.answered, idx, submitted]);
+    if (!submitted || finalizing || milestoneShownRef.current) return;
+    milestoneShownRef.current = true;
+    const m = getMilestone(stats.correct, stats.total);
+    setMilestone(m);
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => setMilestone(null), 5000);
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, [submitted, finalizing, stats.correct, stats.total]);
 
   const total = stats.total;
   const isLast = questions.length > 0 && idx >= questions.length - 1;
 
-  const nextLabel = useMemo(() => (isLast ? "Finish" : "Next"), [isLast]);
+  const chosenId = current ? answers[current.id] : null;
 
-  // Auto-open time up sheet when timer hits zero.
+  const currentOptions = (opts as AnyOption[]) ?? [];
+  const correctOptionId = useMemo(() => {
+    const c = currentOptions.find((o) => getIsCorrect(o));
+    return c?.id ?? null;
+  }, [currentOptions]);
+
+  const isRevealed = current ? !!revealed[current.id] : false;
+
+  const answeredPct = useMemo(() => {
+    const t = Math.max(0, total || 0);
+    const a = Math.max(0, stats.answered || 0);
+    return t ? Math.round((a / t) * 100) : 0;
+  }, [stats.answered, total]);
+
+  // Auto-submit when time hits 0
   const prevLeft = useRef<number | null>(null);
   useEffect(() => {
     if (submitted) return;
     if (typeof timeLeftMs !== "number") return;
     const was = prevLeft.current;
     prevLeft.current = timeLeftMs;
-    if (was !== null && was > 0 && timeLeftMs <= 0) {
-      setTimeUpOpen(true);
-      setSubmitted(true);
-    }
+    if (was !== null && was > 0 && timeLeftMs <= 0) setSubmitted(true);
   }, [timeLeftMs, submitted, setSubmitted]);
 
-  // When submitted changes to true, finalize reliably
+  // Finalize attempt when submitted
   useEffect(() => {
     if (!submitted) return;
-    void finalizeAttempt(timeUpOpen ? "timeup" : "manual");
+    void finalizeAttempt(typeof timeLeftMs === "number" && timeLeftMs <= 0 ? "timeup" : "manual");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitted]);
 
-  // Keyboard shortcuts (desktop power)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!questions.length || !current) return;
+  function submitNow() {
     if (submitted) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        setIdx((v) => Math.max(0, v - 1));
-      }
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        setIdx((v) => Math.min(questions.length - 1, v + 1));
-      }
-      if (e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        toggleFlag(current.id);
-      }
-      // 1-5 selects option
-      if (/^[1-5]$/.test(e.key)) {
-        const n = Number(e.key) - 1;
-        const o = opts[n];
-        if (o) {
-          e.preventDefault();
-          choose(current.id, o.id);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [questions.length, current?.id, submitted, opts, choose, setIdx, toggleFlag]);
-
-  if (loading) {
-    return (
-      <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-4">
-        <Card className="rounded-3xl">
-          <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading practice…
-          </div>
-        </Card>
-      </div>
-    );
+    setSubmitted(true);
   }
 
-  if (err || !meta) {
+  function resetAll() {
+    setRevealed({});
+    restart();
+  }
+
+  function goNext() {
+    setIdx((v) => Math.min(questions.length - 1, v + 1));
+  }
+
+  function goPrev() {
+    setIdx((v) => Math.max(0, v - 1));
+  }
+
+  function onPick(optionId: string) {
+    if (!current) return;
+    if (submitted) return;
+
+    // lock a question after reveal (no changing answers)
+    if (revealed[current.id]) return;
+
+    choose(current.id, optionId);
+    setRevealed((m) => ({ ...m, [current.id]: true }));
+
+    if (autoNext) {
+      window.setTimeout(() => {
+        if (isLast) return;
+        goNext();
+      }, 700);
+    }
+  }
+
+  if (loading) {
+  // Route-level skeleton (loading.tsx) will usually render first.
+  // This is a minimal fallback for client-side transitions.
+  return (
+    <div className="space-y-4 pb-28 md:pb-6">
+      <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 py-2 backdrop-blur border-b border-border">
+        <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+          <div className="h-full w-1/3 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-foreground/70" />
+        </div>
+      </div>
+    </div>
+  );
+}
+if (err || !meta) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-4">
+      <div className="pb-32">
         <button
           type="button"
           onClick={() => router.back()}
           className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          Back
+          <ArrowLeft className="h-4 w-4" /> Back
         </button>
 
         <div className="mt-4">
@@ -219,7 +220,7 @@ export default function PracticeTakeClient() {
                 href="/study/practice"
                 className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                Go to Practice <ArrowRight className="h-4 w-4" />
+                Go to Practice <ChevronRight className="h-4 w-4" />
               </Link>
             }
             icon={<AlertTriangle className="h-5 w-5 text-muted-foreground" />}
@@ -230,390 +231,354 @@ export default function PracticeTakeClient() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-40 pt-3">
-      <TopBar
-        timeLeftMs={timeLeftMs}
-        answered={stats.answered}
-        total={stats.total}
-        flaggedCount={stats.flaggedCount}
-        disabled={submitted}
-        defaultMode={defaultModeRef.current}
-      />
-
-      {/* Collapsible set info */}
-      <div className="mt-3">
-        <Card className="rounded-3xl">
+    <div className="pb-28 md:pb-6">
+      {/* Sticky mobile header */}
+      <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 pb-3 pt-2 backdrop-blur border-b border-border">
+        <div className="flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => setInfoOpen((v) => !v)}
+            onClick={() => router.back()}
             className={cn(
-              "w-full rounded-3xl px-4 py-3 text-left",
-              "flex items-center justify-between gap-3",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground",
+              "hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              submitted ? "opacity-60" : ""
             )}
-            aria-expanded={infoOpen}
+            disabled={submitted}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-border bg-background">
-                <Info className="h-4 w-4 text-muted-foreground" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-foreground">Set info</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {stats.total} questions • {mode === "exam" ? "Exam mode" : "Interactive mode"}
-                </p>
-              </div>
-            </div>
-
-            <span className="shrink-0 inline-flex items-center gap-2 text-xs font-extrabold text-muted-foreground">
-              {infoOpen ? (
-                <>
-                  Hide <ChevronUp className="h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Show <ChevronDown className="h-4 w-4" />
-                </>
-              )}
-            </span>
+            <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
-          {infoOpen ? (
-            <div className="px-4 pb-4">
-              <MetaCard meta={meta} />
+          <div className="flex items-center gap-2">
+            {typeof timeLeftMs === "number" ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
+                  timeLeftMs <= 60_000
+                    ? "border-amber-300/40 bg-amber-100/40 text-foreground dark:bg-amber-950/30"
+                    : "border-border bg-background text-foreground"
+                )}
+              >
+                <Timer className="h-4 w-4" />
+                <span className="tabular-nums">{msToClock(timeLeftMs)}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-2 text-xs font-extrabold text-muted-foreground">
+                Untimed
+              </span>
+            )}
+
+            <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-2 text-xs font-extrabold text-foreground">
+              <span className="tabular-nums">{idx + 1}</span>
+              <span className="text-muted-foreground">/</span>
+              <span className="tabular-nums">{total}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-foreground">{normalize(meta.title)}</p>
+              <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">
+                Answered <span className="tabular-nums">{stats.answered}</span>{" "}
+                <span className="text-muted-foreground">•</span>{" "}
+                Correct <span className="tabular-nums">{stats.correct}</span>
+              </p>
             </div>
-          ) : null}
-        </Card>
+
+            {/* Tiny toggle - mobile friendly */}
+            <button
+              type="button"
+              onClick={() => setAutoNext((v) => !v)}
+              className={cn(
+                "shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-extrabold",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                autoNext ? "border-border bg-secondary text-foreground" : "border-border bg-background text-muted-foreground"
+              )}
+              aria-pressed={autoNext}
+              title="Auto move to next question"
+            >
+              Auto-next: {autoNext ? "On" : "Off"}
+            </button>
+          </div>
+
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary" aria-hidden="true">
+            <div className="h-full rounded-full bg-foreground/80" style={{ width: `${answeredPct}%` }} />
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+            <span className="tabular-nums">{answeredPct}% done</span>
+            <span className="tabular-nums">
+              {stats.total - stats.answered} left
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Empty */}
+      {/* No questions */}
       {questions.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             title="No questions in this set yet"
-            description="Add questions in study_quiz_questions and options in study_quiz_options."
+            description="Add questions and options, then come back."
             action={
               <Link
                 href="/study/practice"
                 className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50"
               >
-                Back to sets <ArrowRight className="h-4 w-4" />
+                Back to sets <ChevronRight className="h-4 w-4" />
               </Link>
             }
             icon={<AlertTriangle className="h-5 w-5 text-muted-foreground" />}
           />
         </div>
       ) : submitted ? (
-        /* Review Mode */
+        /* Results */
         <div className="mt-4 space-y-3">
           <Card className="rounded-3xl">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-foreground">Results</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Score: <span className="font-extrabold text-foreground">{stats.correct}</span> / {stats.total}
+                  Score:{" "}
+                  <span className="font-extrabold text-foreground">{stats.correct}</span> /{" "}
+                  <span className="font-extrabold text-foreground">{stats.total}</span>
                   {finalizing ? (
                     <span className="ml-2 inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
                     </span>
                   ) : null}
                 </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Instant feedback mode is on. Next improvement: a simple review list.
+                </p>
               </div>
 
               <button
                 type="button"
-                onClick={restart}
+                onClick={resetAll}
                 className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <RefreshCcw className="h-4 w-4" />
-                Restart
-              </button>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Chip active={reviewTab === "all"} onClick={() => setReviewTab("all")}>
-                All
-              </Chip>
-              <Chip active={reviewTab === "wrong"} onClick={() => setReviewTab("wrong")}>
-                Wrong
-              </Chip>
-              <Chip active={reviewTab === "flagged"} onClick={() => setReviewTab("flagged")}>
-                Flagged
-              </Chip>
-              <Chip active={reviewTab === "unanswered"} onClick={() => setReviewTab("unanswered")}>
-                Unanswered
-              </Chip>
-
-              <button
-                type="button"
-                onClick={() => setPaletteOpen(true)}
-                className="ml-auto inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                Questions
+                <RefreshCcw className="h-4 w-4" /> Restart
               </button>
             </div>
           </Card>
 
-          <div className="grid gap-3">
-            {reviewItems.length === 0 ? (
-              <EmptyState
-                title="Nothing here"
-                description="No questions match this filter."
-                icon={<AlertTriangle className="h-5 w-5 text-muted-foreground" />}
-              />
-            ) : (
-              reviewItems.map((it) => {
-                const chosenText = it.chosenOpt?.text ?? null;
-                const correctText = it.correctOpt?.text ?? null;
+          <Card className="rounded-3xl">
+            <p className="text-xs font-extrabold text-muted-foreground">Set</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">{normalize(meta.title)}</p>
+            {meta.course_code || meta.level ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {[meta.course_code, meta.level].filter(Boolean).join(" • ")}
+              </p>
+            ) : null}
 
-                return (
-                  <Card key={it.q.id} className="rounded-3xl">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-extrabold text-muted-foreground">
-                          Question {it.index + 1} of {total}
-                          {it.isFlagged ? <span className="ml-2">🚩</span> : null}
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-foreground">
-                          {normalize(String(it.q.prompt ?? ""))}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          goToQuestion(it.index);
-                          setPaletteOpen(false);
-                          try {
-                            window.scrollTo({ top: 0, behavior: "smooth" });
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                        className="shrink-0 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        Jump
-                      </button>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 text-sm">
-                      <div
-                        className={cn(
-                          "rounded-2xl border p-3",
-                          it.isUnanswered
-                            ? "border-border bg-background"
-                            : it.isWrong
-                            ? "border-rose-300/40 bg-rose-100/30 dark:bg-rose-950/20"
-                            : "border-emerald-300/40 bg-emerald-100/30 dark:bg-emerald-950/20"
-                        )}
-                      >
-                        <p className="text-xs font-extrabold text-muted-foreground">YOUR ANSWER</p>
-                        <p className="mt-1 font-semibold text-foreground">
-                          {it.isUnanswered ? "— Unanswered —" : chosenText ?? "—"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-border bg-background p-3">
-                        <p className="text-xs font-extrabold text-muted-foreground">CORRECT ANSWER</p>
-                        <p className="mt-1 font-semibold text-foreground">{correctText ?? "—"}</p>
-                      </div>
-
-                      {it.q.explanation ? (
-                        <div className="rounded-2xl border border-border bg-card p-3">
-                          <p className="text-xs font-extrabold text-muted-foreground">EXPLANATION</p>
-                          <p className="mt-1 text-sm text-muted-foreground">{normalize(it.q.explanation)}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Taking Mode */
-        <div className="mt-4">
-          {mode === "interactive" ? (
-            <InteractiveRunner
-              idx={idx}
-              total={total}
-              current={current!}
-              opts={opts}
-              answers={answers}
-              flagged={flagged}
-              submitted={submitted}
-              onChoose={choose}
-              onToggleFlag={toggleFlag}
-              onNext={() => {
-                if (idx >= questions.length - 1) setSubmitOpen(true);
-                else setIdx((v) => Math.min(questions.length - 1, v + 1));
-              }}
-            />
-          ) : (
-            <ExamRunner
-              idx={idx}
-              total={total}
-              current={current!}
-              opts={opts}
-              answers={answers}
-              flagged={flagged}
-              submitted={submitted}
-              onChoose={choose}
-              onToggleFlag={toggleFlag}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Sticky bottom controls */}
-      {questions.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-50">
-          <div className="mx-auto w-full max-w-3xl px-4 pb-[calc(12px+env(safe-area-inset-bottom))]">
-            <div className="rounded-3xl border border-border bg-background/85 p-3 shadow-lg backdrop-blur">
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIdx((v) => Math.max(0, v - 1))}
-                  disabled={submitted || idx === 0}
-                  className={cn(
-                    "inline-flex items-center justify-center rounded-2xl border px-3 py-2 text-sm font-extrabold",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                    submitted || idx === 0
-                      ? "border-border/50 bg-background text-muted-foreground opacity-60"
-                      : "border-border bg-background text-foreground hover:bg-secondary/50"
-                  )}
-                >
-                  Prev
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaletteOpen(true)}
-                  className={cn(
-                    "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground",
-                    "hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  )}
-                  aria-label="Open question palette"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                  <span className="tabular-nums">{stats.answered}</span>
-                  <span className="text-muted-foreground">/</span>
-                  <span className="tabular-nums">{stats.total}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (submitted) return;
-                    if (isLast) setSubmitOpen(true);
-                    else setIdx((v) => Math.min(questions.length - 1, v + 1));
-                  }}
-                  disabled={submitted || idx >= questions.length - 1}
-                  className={cn(
-                    "inline-flex items-center justify-center rounded-2xl px-3 py-2 text-sm font-extrabold",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                    submitted
-                      ? "bg-secondary/50 text-muted-foreground opacity-60"
-                      : "bg-secondary text-foreground hover:opacity-90"
-                  )}
-                  aria-label={nextLabel}
-                >
-                  {nextLabel}
-                </button>
-
-                {!submitted ? (
-                  <button
-                    type="button"
-                    onClick={() => setSubmitOpen(true)}
-                    className="hidden sm:inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <Send className="h-4 w-4" /> Submit
-                  </button>
-                ) : null}
-              </div>
-
-              {!submitted ? (
-                <div className="mt-2 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setSubmitOpen(true)}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <Send className="h-4 w-4" /> Submit
-                  </button>
-                </div>
-              ) : null}
-
-              {submitted ? (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={restart}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <RefreshCcw className="h-4 w-4" /> Restart
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <PaletteSheet
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        questions={questions}
-        activeIndex={idx}
-        answers={answers}
-        flagged={flagged}
-        onJump={(i) => {
-          goToQuestion(i);
-          setPaletteOpen(false);
-        }}
-        footer={
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Chip active={false} onClick={() => setPaletteOpen(false)}>
-              Close
-            </Chip>
-            {!submitted ? (
+            <div className="mt-4 flex items-center gap-2">
+              <Link
+                href="/study/practice"
+                className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50"
+              >
+                Back to sets
+              </Link>
               <button
                 type="button"
-                onClick={() => {
-                  setPaletteOpen(false);
-                  setSubmitOpen(true);
-                }}
-                className="ml-auto inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                onClick={resetAll}
+                className="inline-flex items-center justify-center rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90"
+              >
+                Try again
+              </button>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        /* Question */
+        <div className="mt-4 space-y-3">
+          <Card className="rounded-3xl">
+            <p className="text-xs font-extrabold text-muted-foreground">
+              Question <span className="tabular-nums">{idx + 1}</span> of{" "}
+              <span className="tabular-nums">{total}</span>
+            </p>
+
+            <p className="mt-2 whitespace-pre-wrap text-base font-extrabold leading-snug text-foreground">
+              {normalize(String(current?.prompt ?? ""))}
+            </p>
+
+            {/* hint row */}
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-[12px] font-semibold text-muted-foreground">
+                Tap an option to see if it’s right.
+              </p>
+
+              {isRevealed ? (
+                chosenId === correctOptionId ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[12px] font-extrabold text-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Correct
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[12px] font-extrabold text-foreground">
+                    <XCircle className="h-4 w-4 text-rose-600" /> Wrong
+                  </span>
+                )
+              ) : null}
+            </div>
+
+            {/* Options */}
+            <div className="mt-4 grid gap-2">
+              {currentOptions.map((o, i) => {
+                const checked = chosenId === o.id;
+                const isCorrect = getIsCorrect(o);
+
+                const show = isRevealed;
+
+                const isGreen = show && isCorrect;
+                const isRed = show && checked && !isCorrect;
+
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => onPick(o.id)}
+                    className={cn(
+                      "w-full text-left rounded-2xl border p-3 transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      show && "cursor-default",
+                      isGreen && "border-emerald-500/35 bg-emerald-500/10",
+                      isRed && "border-rose-500/35 bg-rose-500/10",
+                      !show && checked && "border-foreground bg-secondary",
+                      !show && !checked && "border-border bg-background hover:bg-secondary/50"
+                    )}
+                    aria-pressed={checked}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={cn(
+                          "mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-extrabold",
+                          isGreen && "border-emerald-500 bg-emerald-500 text-white",
+                          isRed && "border-rose-500 bg-rose-500 text-white",
+                          !show && checked
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-border text-muted-foreground"
+                        )}
+                        aria-hidden="true"
+                      >
+                        {String.fromCharCode(65 + i)}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-foreground">
+                          {normalize(o.text ?? "")}
+                        </span>
+
+                        {show ? (
+                          isCorrect ? (
+                            <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+                              <CheckCircle2 className="h-4 w-4" /> Correct answer
+                            </span>
+                          ) : checked ? (
+                            <span className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-rose-700 dark:text-rose-300">
+                              <XCircle className="h-4 w-4" /> Your choice
+                            </span>
+                          ) : null
+                        ) : null}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Navigation + submit */}
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={goPrev}
+                disabled={idx === 0}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-2xl border px-4 py-2 text-sm font-extrabold",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                  idx === 0
+                    ? "border-border/50 bg-background text-muted-foreground opacity-60"
+                    : "border-border bg-background text-foreground hover:bg-secondary/50"
+                )}
+              >
+                Prev
+              </button>
+
+              <div className="flex items-center gap-2">
+                {!isLast ? (
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    className="inline-flex items-center justify-center rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  >
+                    Next
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={submitNow}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  >
+                    <Send className="h-4 w-4" /> Submit
+                  </button>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Bottom quick actions (simple, mobile-friendly) */}
+          <Card className="rounded-3xl">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-muted-foreground">Quick actions</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Submit anytime. After you pick an option, it locks and shows the correct one.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={submitNow}
+                className="shrink-0 inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
                 <Send className="h-4 w-4" /> Submit
               </button>
-            ) : null}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Milestone toast ── */}
+      {milestone && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4"
+        >
+          <div
+            className={cn(
+              "pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-3xl border px-4 py-3 shadow-lg",
+              "animate-in slide-in-from-bottom-4 fade-in duration-300",
+              MILESTONE_STYLES[milestone.level]
+            )}
+          >
+            <span className="mt-0.5 text-xl leading-none" aria-hidden="true">
+              {milestone.emoji}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-extrabold">{milestone.heading}</p>
+              <p className="mt-0.5 text-xs font-semibold opacity-80">{milestone.sub}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMilestone(null)}
+              aria-label="Dismiss"
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-xl opacity-60 transition-opacity hover:opacity-100"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
-        }
-      />
-
-      <SubmitSheet
-        open={submitOpen}
-        onClose={() => setSubmitOpen(false)}
-        answered={stats.answered}
-        total={stats.total}
-        onSubmit={() => {
-          setSubmitOpen(false);
-          setSubmitted(true);
-        }}
-      />
-
-      {/* ✅ Updated call: pass answered/total + restart for best UX */}
-      <TimeUpSheet
-        open={timeUpOpen}
-        onClose={() => setTimeUpOpen(false)}
-        finalizing={finalizing}
-        answered={stats.answered}
-        total={stats.total}
-        onReview={() => setTimeUpOpen(false)}
-        onRestart={restart}
-      />
+        </div>
+      )}
     </div>
   );
 }

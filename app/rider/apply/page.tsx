@@ -1,5 +1,6 @@
-// app/rider/apply/page.tsx
 "use client";
+// app/rider/apply/page.tsx
+import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -15,10 +16,6 @@ function normalizePhone(input: string) {
 function isLikelyValidNigeriaPhone(digits: string) {
   // Simple: accept 10–13 digits to avoid blocking legit formats
   return digits.length >= 10 && digits.length <= 13;
-}
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
 }
 
 const FEE_CHIPS = [
