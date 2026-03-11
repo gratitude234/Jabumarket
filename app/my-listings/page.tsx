@@ -324,8 +324,8 @@ export default function MyListingsPage() {
           .from("listing_stats")
           .select("listing_id,views,contact_clicks,saves")
           .in("listing_id", ids)
-          .then(({ data: sData }) => {
-            if (!sData) return;
+          .then(({ data: sData, error: sErr }) => {
+            if (sErr || !sData) return;
             const map: Record<string, { views: number; contact_clicks: number; saves: number }> = {};
             for (const s of sData) {
               map[s.listing_id] = {
@@ -335,8 +335,7 @@ export default function MyListingsPage() {
               };
             }
             setStatsMap(map);
-          })
-          .catch(() => {});
+          });
       }
     } catch (err: any) {
       console.error(err);
