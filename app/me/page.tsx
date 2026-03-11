@@ -232,7 +232,6 @@ function MeInner() {
               roles={roles}
               vendor={vendor}
               onVendorUpdated={(v) => setVendor(v)}
-              isActive
             />
           )}
 
