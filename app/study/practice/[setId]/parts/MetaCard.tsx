@@ -5,7 +5,8 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Card } from "../../../_components/StudyUI";
 import { cn } from "@/lib/utils";
-import { normalize, QuizSet } from "../usePracticeEngine";
+import { normalize } from "@/lib/utils";
+import type { QuizSet } from "@/lib/types";
 
 export default function MetaCard({ meta }: { meta: QuizSet }) {
   const [open, setOpen] = useState(false);
