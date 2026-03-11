@@ -78,7 +78,7 @@ export default function DeliveryClient({
   const router = useRouter();
 
   // Request form state
-  const [step, setStep] = useState<Step>(listing ? "form" : "directory");
+  const [step, setStep] = useState<Step>("form");
   const [dropoff, setDropoff] = useState("");
   const [note, setNote] = useState("");
   const [selectedRider, setSelectedRider] = useState<RiderRow | null>(null);
@@ -555,7 +555,7 @@ function RiderDirectory({
           </div>
           <button
             type="button"
-            onClick={() => setShowFilters((s) => !s)}
+            onClick={() => setShowFilters(!showFilters)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold",
               showFilters ? "bg-zinc-900 text-white" : "bg-white text-zinc-700 hover:bg-zinc-50"
@@ -594,7 +594,7 @@ function RiderDirectory({
             </select>
             <button
               type="button"
-              onClick={() => setVerifiedOnly((v) => !v)}
+              onClick={() => setVerifiedOnly(!verifiedOnly)}
               className={cn(
                 "flex w-full items-center justify-between rounded-2xl border px-3 py-2.5",
                 verifiedOnly ? "bg-zinc-50" : "bg-white"
