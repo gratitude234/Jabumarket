@@ -2,7 +2,7 @@
 "use client";
 
 import { AlarmClock, Loader2, RotateCcw, BookOpen, X } from "lucide-react";
-import { cn } from "../usePracticeEngine";
+import { cn } from "@/lib/utils";
 
 export default function TimeUpSheet({
   open,

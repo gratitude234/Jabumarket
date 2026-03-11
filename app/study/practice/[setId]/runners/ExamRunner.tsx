@@ -4,7 +4,8 @@
 import { Flag } from "lucide-react";
 import { Card } from "../../../_components/StudyUI";
 import OptionCard from "../parts/OptionCard";
-import { cn, normalize, QuizOption, QuizQuestion } from "../usePracticeEngine";
+import { cn, normalize } from "@/lib/utils";
+import type { QuizOption, QuizQuestion } from "@/lib/types";
 
 export default function ExamRunner({
   idx,

@@ -11,7 +11,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Card } from "../../../_components/StudyUI";
-import { cn, normalize, type QuizOption } from "../usePracticeEngine";
+import { cn, normalize } from "@/lib/utils";
+import type { QuizOption } from "@/lib/types";
 
 export default function ResponsePanel({
   explanation,

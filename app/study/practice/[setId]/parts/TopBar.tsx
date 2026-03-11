@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Timer, Sparkles } from "lucide-react";
-import { cn, msToClock } from "../usePracticeEngine";
+import { cn, msToClock } from "@/lib/utils";
 
 export type PracticeMode = "exam" | "interactive";
 

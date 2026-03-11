@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X, Flag, Circle, CheckCircle2, Dot, Filter } from "lucide-react";
-import { cn, type QuizQuestion } from "../usePracticeEngine";
+import { cn } from "@/lib/utils";
+import type { QuizQuestion } from "@/lib/types";
 
 type FilterKey = "all" | "unanswered" | "flagged";
 

@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { CheckCircle2, Circle, XCircle } from "lucide-react";
-import { cn, normalize } from "../usePracticeEngine";
+import { cn, normalize } from "@/lib/utils";
 
 type Props = {
   label: string;

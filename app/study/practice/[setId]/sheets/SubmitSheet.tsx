@@ -2,7 +2,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Send, X } from "lucide-react";
-import { cn } from "../usePracticeEngine";
+import { cn } from "@/lib/utils";
 
 function StatPill({
   label,
