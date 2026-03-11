@@ -43,7 +43,7 @@ export type RepState = {
   loading: boolean;
   status: RepStatus;
   role: RepRole;
-  scope: RepMeResponse extends { ok: true } ? RepMeResponse["scope"] : null;
+  scope: Extract<RepMeResponse, { ok: true }>["scope"];
 };
 
 // ── Context shape ─────────────────────────────────────────────────────────────
