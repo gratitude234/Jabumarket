@@ -14,9 +14,10 @@ function idFromUrl(req: Request) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { scope } = await requireStudyModeratorFromRequest(req);
+    const resolvedParams = await params;
 
     // Prefer dynamic route param, but fall back to body.id for resilience
     let body: any = null;
