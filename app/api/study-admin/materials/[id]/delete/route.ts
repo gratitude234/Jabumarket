@@ -17,9 +17,10 @@ function idFromUrl(req: Request) {
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { scope } = await requireStudyModeratorFromRequest(req);
+    const resolvedParams = await params;
 
     let body: any = null;
     try {

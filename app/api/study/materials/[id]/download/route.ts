@@ -17,8 +17,8 @@ function jsonError(message: string, status: number, code: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const { id } = params;
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const materialId = String(id || "").trim();
   if (!materialId) return jsonError("Missing id", 400, "BAD_REQUEST");
 
