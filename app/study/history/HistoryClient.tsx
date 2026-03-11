@@ -19,7 +19,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
-import { FilterChip, SelectRow, ToggleRow } from "@/components/ui/study-filters";
+import { FilterChip as Chip, SelectRow, ToggleRow } from "@/components/ui/study-filters";
 
 function normalizeQuery(v: string) {
   return v.trim().replace(/\s+/g, " ");
