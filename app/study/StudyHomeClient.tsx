@@ -120,14 +120,12 @@ function StudyHomeInner({
 
         const cur = await supabase
           .rpc("get_current_semester", { p_session: session })
-          .then((r: any) => (r?.data?.[0]?.semester as string | undefined) ?? null)
-          .catch(() => null);
+          .then((r: any) => r?.error ? null : (r?.data?.[0]?.semester as string | undefined) ?? null);
         const suggested =
           cur ??
           (await supabase
             .rpc("get_current_semester_fallback", { p_session: session })
-            .then((r: any) => (r?.data?.[0]?.semester as string | undefined) ?? null)
-            .catch(() => null));
+            .then((r: any) => r?.error ? null : (r?.data?.[0]?.semester as string | undefined) ?? null));
 
         if (!suggested || saved === suggested) return;
 
