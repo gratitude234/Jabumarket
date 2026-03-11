@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Flame, CheckCircle2, TrendingUp, Zap } from "lucide-react";
+import { AlertTriangle, Calendar, Flame, CheckCircle2, TrendingUp, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Matches the PracticeAttemptRow shape from @/lib/studyPractice
