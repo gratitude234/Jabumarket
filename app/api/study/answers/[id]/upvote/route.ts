@@ -13,7 +13,7 @@ import { notifyUpvoteMilestone } from "@/lib/studyNotify";
 
 export async function POST(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
@@ -22,7 +22,8 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Unauthorised" }, { status: 401 });
   }
 
-  const questionId = params.id?.trim();
+  const { id } = await params;
+  const questionId = id?.trim();
   if (!questionId) {
     return NextResponse.json({ ok: false, error: "Missing question id" }, { status: 400 });
   }
