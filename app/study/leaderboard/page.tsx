@@ -588,7 +588,7 @@ export default async function LeaderboardPage({
             >
               Ask a question
             </Link>
-            {scopeEmpty && scope !== "all" && (
+            {scopeEmpty && (
               <Link
                 href="/study/leaderboard"
                 className={cn(
