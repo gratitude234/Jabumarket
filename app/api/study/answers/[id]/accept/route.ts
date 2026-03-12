@@ -17,7 +17,7 @@ import { notifyAnswerAccepted } from "@/lib/studyNotify";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
@@ -26,7 +26,8 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Unauthorised" }, { status: 401 });
   }
 
-  const answerId = params.id?.trim();
+  const { id } = await params;
+  const answerId = id?.trim();
   if (!answerId) {
     return NextResponse.json({ ok: false, error: "Missing answer id" }, { status: 400 });
   }
