@@ -2,7 +2,6 @@
 import { cn, normalize, msToClock, safePushRecent } from "@/lib/utils";
 import type { QuizSet, QuizQuestion, QuizOption, ReviewTab } from "@/lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type LatestRestore = {
@@ -32,7 +31,6 @@ export function usePracticeEngine({
   setId: string;
   attemptFromUrl: string;
 }) {
-  const router = useRouter();
 
   const [meta, setMeta] = useState<QuizSet | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -66,23 +64,41 @@ export function usePracticeEngine({
   // Review
   const [reviewTab, setReviewTab] = useState<ReviewTab>("all");
 
+  // Soft-reset counter — incrementing triggers a full in-memory reload without
+  // a router.refresh() page wipe. This is the dependency that replaces router.
+  const [resetKey, setResetKey] = useState(0);
+
+  // Retry-weak mode — when set, the active question list is filtered to only
+  // these IDs. The full questions/options data is still held in memory.
+  const [retryWeakIds, setRetryWeakIds] = useState<Set<string> | null>(null);
+
   // Local draft autosave (backup if DB upsert fails)
   const draftKey = useMemo(
     () => `jabu:practiceDraft:${setId}:${attemptId ?? "noattempt"}`,
     [setId, attemptId]
   );
 
-  const current = questions[idx];
+  // The active question list — either the full set or a weak-only subset
+  // when the student has chosen "Retry Weak Questions".
+  const activeQuestions = useMemo(
+    () =>
+      retryWeakIds
+        ? questions.filter((q) => retryWeakIds.has(q.id))
+        : questions,
+    [questions, retryWeakIds]
+  );
+
+  const current = activeQuestions[idx];
   const opts = current ? optionsByQ[current.id] ?? [] : [];
 
   const stats = useMemo(() => {
-    const total = questions.length;
-    const answered = Object.keys(answers).length;
-    const flaggedCount = Object.values(flagged).filter(Boolean).length;
+    const total = activeQuestions.length;
+    const answered = activeQuestions.filter((q) => answers[q.id]).length;
+    const flaggedCount = activeQuestions.filter((q) => flagged[q.id]).length;
 
     let correct = 0;
     if (submitted) {
-      for (const q of questions) {
+      for (const q of activeQuestions) {
         const chosen = answers[q.id];
         if (!chosen) continue;
         const o = (optionsByQ[q.id] ?? []).find((x) => x.id === chosen);
@@ -90,7 +106,7 @@ export function usePracticeEngine({
       }
     }
     return { total, answered, flaggedCount, correct };
-  }, [questions, answers, flagged, submitted, optionsByQ]);
+  }, [activeQuestions, answers, flagged, submitted, optionsByQ]);
 
   // Load + restore/create attempt + timer base
   useEffect(() => {
@@ -275,7 +291,10 @@ export function usePracticeEngine({
     return () => {
       cancelled = true;
     };
-  }, [setId, router]);
+  // resetKey is the soft-reset trigger. Incrementing it re-runs this effect
+  // without a full page navigation (unlike router.refresh()).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setId, resetKey]);
 
   // Sync URL with attempt id (without re-loading data)
   useEffect(() => {
@@ -356,8 +375,56 @@ export function usePracticeEngine({
     setIdx(Math.max(0, Math.min(questions.length - 1, i)));
   }
 
-  function restart() {
-    router.refresh();
+  /**
+   * Soft reset — clears all session state and reloads data in-memory.
+   * No router navigation, no full-page wipe. Works well on slow campus networks.
+   */
+  function softReset() {
+    // Clear retry-weak filter so the full set is shown again
+    setRetryWeakIds(null);
+    // Clear per-question UI state (revealed answers, etc.) by resetting
+    // session-level state. The load useEffect will re-run on resetKey change
+    // and reset answers/flags/timer itself.
+    initialAttemptRef.current = null;
+    setAttemptId(null);
+    setResetKey((k) => k + 1);
+  }
+
+  /**
+   * Retry only the questions the student got wrong or left unanswered.
+   * Reuses the already-loaded questions/options — no network request.
+   * Creates a fresh in-memory session without affecting the original attempt.
+   */
+  function retryWeakQuestions() {
+    const weakIds = new Set<string>(
+      questions
+        .filter((q) => {
+          const chosen = answers[q.id];
+          if (!chosen) return true; // unanswered
+          const o = (optionsByQ[q.id] ?? []).find((x) => x.id === chosen);
+          return !o?.is_correct; // wrong
+        })
+        .map((q) => q.id)
+    );
+
+    if (weakIds.size === 0) return; // nothing to retry
+
+    setRetryWeakIds(weakIds);
+    setAnswers({});
+    setFlagged({});
+    setIdx(0);
+    setSubmitted(false);
+    setReviewTab("all");
+    finalizedRef.current = false;
+    // Timer: restart from full duration for the weak-only subset
+    if (meta?.time_limit_minutes) {
+      const deadline = Date.now() + meta.time_limit_minutes * 60_000;
+      deadlineRef.current = deadline;
+      setTimeLeftMs(meta.time_limit_minutes * 60_000);
+    } else {
+      deadlineRef.current = null;
+      setTimeLeftMs(null);
+    }
   }
 
   async function finalizeAttempt(reason: "manual" | "timeup") {
@@ -373,9 +440,9 @@ export function usePracticeEngine({
         return;
       }
 
-      const total = questions.length;
+      const total = activeQuestions.length;
       let correct = 0;
-      for (const q of questions) {
+      for (const q of activeQuestions) {
         const chosen = answers[q.id];
         if (!chosen) continue;
         const o = (optionsByQ[q.id] ?? []).find((x) => x.id === chosen);
@@ -445,7 +512,7 @@ export function usePracticeEngine({
   const reviewItems = useMemo(() => {
     if (!submitted) return [];
 
-    const list = questions.map((q, i) => {
+    const list = activeQuestions.map((q, i) => {
       const chosen = answers[q.id] ?? null;
       const opts = optionsByQ[q.id] ?? [];
       const correctOpt = opts.find((o) => o.is_correct) ?? null;
@@ -471,12 +538,12 @@ export function usePracticeEngine({
     if (reviewTab === "flagged") return list.filter((x) => x.isFlagged);
     if (reviewTab === "unanswered") return list.filter((x) => x.isUnanswered);
     return list;
-  }, [submitted, questions, answers, optionsByQ, flagged, reviewTab]);
+  }, [submitted, activeQuestions, answers, optionsByQ, flagged, reviewTab]);
 
   return {
     // data
     meta,
-    questions,
+    questions: activeQuestions,
     optionsByQ,
     loading,
     err,
@@ -492,6 +559,7 @@ export function usePracticeEngine({
     setSubmitted,
     attemptId,
     timeLeftMs,
+    isRetryMode: retryWeakIds !== null,
 
     // review
     reviewTab,
@@ -504,7 +572,8 @@ export function usePracticeEngine({
     choose,
     toggleFlag,
     goToQuestion,
-    restart,
+    softReset,
+    retryWeakQuestions,
     finalizeAttempt,
   };
 }

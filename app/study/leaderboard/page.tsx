@@ -1,17 +1,20 @@
 // app/study/leaderboard/page.tsx
+// Scoped leaderboard: All / My Department / My Level
+// Scope is resolved server-side using the requesting user's study_preferences.
+// The page remains a Server Component; scope is passed via URL search param
+// so scope tabs work without JS-heavy client state.
+
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, Crown, Medal, MessageSquare, Star, Trophy, User } from "lucide-react";
+import { ArrowLeft, Crown, Medal, MessageSquare, Star, Trophy, User, Users, GraduationCap, Globe } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-// Leaderboard refreshes every 5 minutes.
-// Once user counts grow, swap the view for a MATERIALIZED VIEW + pg_cron refresh.
+// 5-min revalidation — swap for MATERIALIZED VIEW + pg_cron when user base grows.
 export const revalidate = 300;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LeaderRow = {
-  // user_id is the stable identifier — email can change, user_id never does.
   user_id: string;
   email: string;
   questions: number;
@@ -23,15 +26,17 @@ type LeaderRow = {
   points: number;
 };
 
+type Scope = "all" | "dept" | "level";
+
+type UserPrefs = {
+  department_id: string | null;
+  faculty_id: string | null;
+  level: number | null;
+  department: string | null;
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Derive a short, deterministic alias from a user_id.
- * Uses the last 8 hex chars of the UUID → maps to an adjective + noun pair
- * so every user sees a consistent nickname that is non-reversible.
- *
- * e.g. user_id "…3f2a" → "Swift Eagle #3F2A"
- */
 const ADJECTIVES = [
   "Swift", "Bright", "Bold", "Keen", "Sharp", "Brave", "Calm", "Clear",
   "Deep", "Fair", "Fine", "Firm", "Free", "Full", "Grand", "Great",
@@ -46,7 +51,6 @@ const NOUNS = [
 ];
 
 function toAlias(userId: string): string {
-  // Take the last 8 chars of the UUID (hex segment after last "-")
   const raw = userId.replace(/-/g, "");
   const tail = raw.slice(-8);
   const num = parseInt(tail, 16);
@@ -66,11 +70,11 @@ function initials(alias: string): string {
 // ─── Points breakdown ─────────────────────────────────────────────────────────
 
 const POINT_RULES: Array<{ key: keyof LeaderRow; label: string; multiplier: number }> = [
-  { key: "accepted",        label: "Accepted answers", multiplier: 5 },
-  { key: "answers",         label: "Answers posted",   multiplier: 2 },
-  { key: "questions",       label: "Questions asked",  multiplier: 1 },
-  { key: "question_upvotes",label: "Upvotes received", multiplier: 1 },
-  { key: "practice_points", label: "Practice pts",     multiplier: 1 },
+  { key: "accepted",         label: "Accepted answers", multiplier: 5 },
+  { key: "answers",          label: "Answers posted",   multiplier: 2 },
+  { key: "questions",        label: "Questions asked",  multiplier: 1 },
+  { key: "question_upvotes", label: "Upvotes received", multiplier: 1 },
+  { key: "practice_points",  label: "Practice pts",     multiplier: 1 },
 ];
 
 function PointsBreakdown({ row }: { row: LeaderRow }) {
@@ -105,15 +109,12 @@ function PointsBreakdown({ row }: { row: LeaderRow }) {
                   ×{multiplier}
                 </span>
               </p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                = {earned} pts
-              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">= {earned} pts</p>
             </div>
           );
         })}
       </div>
 
-      {/* Practice days callout — only shown when non-zero */}
       {row.practice_days > 0 && (
         <p className="mt-2 text-[10px] text-muted-foreground">
           🔥 Practiced on {row.practice_days} day{row.practice_days !== 1 ? "s" : ""}
@@ -125,30 +126,76 @@ function PointsBreakdown({ row }: { row: LeaderRow }) {
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
 
-async function fetchLeaderboard(): Promise<{
+async function fetchLeaderboard(scope: Scope): Promise<{
   rows: LeaderRow[];
   viewMissing: boolean;
   currentUserId: string | null;
+  userPrefs: UserPrefs | null;
+  scopeLabel: string;
 }> {
   const supabase = await createSupabaseServerClient();
 
-  // Fetch current session in parallel with leaderboard data
-  const [{ data: authData }, leaderboardResult] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase
-      .from("study_leaderboard_v")
-      .select("user_id,email,questions,question_upvotes,answers,accepted,practice_points,practice_days,points")
-      .order("points", { ascending: false })
-      .limit(50),
-  ]);
-
+  const { data: authData } = await supabase.auth.getUser();
   const currentUserId = authData?.user?.id ?? null;
+
+  // Fetch user prefs (needed for dept/level scope labels and filtering)
+  let userPrefs: UserPrefs | null = null;
+  if (currentUserId) {
+    const { data } = await supabase
+      .from("study_preferences")
+      .select("department_id, faculty_id, level, department")
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+    if (data) userPrefs = data as UserPrefs;
+  }
+
+  // Build the base leaderboard query
+  let query = supabase
+    .from("study_leaderboard_v")
+    .select(
+      "user_id,email,questions,question_upvotes,answers,accepted,practice_points,practice_days,points"
+    )
+    .order("points", { ascending: false })
+    .limit(50);
+
+  let scopeLabel = "All of JABU";
+
+  // Scope: filter to users who share the same department_id or level
+  if (scope === "dept" && userPrefs?.department_id) {
+    // Get user_ids in the same department from study_preferences
+    const { data: deptUsers } = await supabase
+      .from("study_preferences")
+      .select("user_id")
+      .eq("department_id", userPrefs.department_id);
+
+    const userIds = (deptUsers ?? []).map((r: any) => r.user_id as string);
+    if (userIds.length > 0) {
+      query = query.in("user_id", userIds);
+    }
+    scopeLabel = userPrefs.department
+      ? `${userPrefs.department} Dept.`
+      : "My Department";
+  } else if (scope === "level" && userPrefs?.level) {
+    // Get user_ids at the same level
+    const { data: levelUsers } = await supabase
+      .from("study_preferences")
+      .select("user_id")
+      .eq("level", userPrefs.level);
+
+    const userIds = (levelUsers ?? []).map((r: any) => r.user_id as string);
+    if (userIds.length > 0) {
+      query = query.in("user_id", userIds);
+    }
+    scopeLabel = `${userPrefs.level}L Students`;
+  }
+
+  const leaderboardResult = await query;
 
   if (leaderboardResult.error) {
     const viewMissing =
       leaderboardResult.error.code === "42P01" ||
       leaderboardResult.error.message.toLowerCase().includes("study_leaderboard_v");
-    if (viewMissing) return { rows: [], viewMissing: true, currentUserId };
+    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel };
     throw new Error(leaderboardResult.error.message);
   }
 
@@ -156,32 +203,75 @@ async function fetchLeaderboard(): Promise<{
     rows: (leaderboardResult.data as LeaderRow[]) ?? [],
     viewMissing: false,
     currentUserId,
+    userPrefs,
+    scopeLabel,
   };
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Scope Tab Bar ────────────────────────────────────────────────────────────
 
-function YourRankCard({
-  row,
-  rank,
+function ScopeTabs({
+  scope,
+  userPrefs,
 }: {
-  row: LeaderRow;
-  rank: number;
+  scope: Scope;
+  userPrefs: UserPrefs | null;
 }) {
+  const tabs: Array<{ key: Scope; label: string; icon: React.ReactNode; disabled?: boolean }> = [
+    { key: "all",   label: "All JABU",     icon: <Globe className="h-4 w-4" /> },
+    {
+      key: "dept",
+      label: userPrefs?.department ?? "My Dept.",
+      icon: <Users className="h-4 w-4" />,
+      disabled: !userPrefs?.department_id,
+    },
+    {
+      key: "level",
+      label: userPrefs?.level ? `${userPrefs.level}L` : "My Level",
+      icon: <GraduationCap className="h-4 w-4" />,
+      disabled: !userPrefs?.level,
+    },
+  ];
+
+  return (
+    <div className="flex w-full items-center gap-2 overflow-x-auto rounded-3xl border border-border bg-background p-2">
+      {tabs.map((t) => {
+        const active = scope === t.key;
+        const href = t.key === "all" ? "/study/leaderboard" : `/study/leaderboard?scope=${t.key}`;
+        return (
+          <Link
+            key={t.key}
+            href={t.disabled ? "#" : href}
+            aria-disabled={t.disabled}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              active
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+              t.disabled && "pointer-events-none opacity-40"
+            )}
+          >
+            {t.icon}
+            <span className="max-w-[140px] truncate">{t.label}</span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Sub-components (unchanged from original) ─────────────────────────────────
+
+function YourRankCard({ row, rank }: { row: LeaderRow; rank: number }) {
   const alias = toAlias(row.user_id);
   return (
-    <div
-      className={cn(
-        "rounded-3xl border-2 border-foreground bg-card p-4 shadow-sm",
-      )}
-    >
+    <div className="rounded-3xl border-2 border-foreground bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-muted-foreground">Your rank</p>
           <p className="mt-1 text-2xl font-extrabold text-foreground">#{rank}</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">
-            {alias}
-          </p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{alias}</p>
           <p className="mt-1 text-sm font-extrabold text-foreground">
             {row.points.toLocaleString("en-NG")}{" "}
             <span className="font-normal text-muted-foreground">pts</span>
@@ -232,41 +322,28 @@ function PodiumCard({
               </span>
             )}
           </div>
-          <p className="mt-1 truncate text-base font-extrabold text-foreground">
-            {alias}
-          </p>
+          <p className="mt-1 truncate text-base font-extrabold text-foreground">{alias}</p>
           <p className="mt-1 text-sm font-semibold text-foreground">
             {row.points.toLocaleString("en-NG")}{" "}
             <span className="text-muted-foreground font-normal">pts</span>
           </p>
         </div>
-        <div
-          className={cn(
-            "grid h-12 w-12 shrink-0 place-items-center rounded-2xl border",
-            iconBg
-          )}
-        >
+        <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl border", iconBg)}>
           {rank === 1 ? (
             <Crown className="h-6 w-6 text-amber-600" />
           ) : (
-            <Medal
-              className={cn(
-                "h-6 w-6",
-                rank === 2 ? "text-muted-foreground" : "text-rose-500"
-              )}
-            />
+            <Medal className={cn("h-6 w-6", rank === 2 ? "text-muted-foreground" : "text-rose-500")} />
           )}
         </div>
       </div>
 
-      {/* Expandable breakdown */}
       <div className="mt-3 space-y-2">
         <div className="flex flex-wrap gap-1.5">
           {[
             { label: "accepted", value: row.accepted },
-            { label: "answers", value: row.answers },
-            { label: "questions", value: row.questions },
-            { label: "upvotes", value: row.question_upvotes },
+            { label: "answers",  value: row.answers },
+            { label: "questions",value: row.questions },
+            { label: "upvotes",  value: row.question_upvotes },
           ].map(({ label, value }) => (
             <span
               key={label}
@@ -301,9 +378,7 @@ function RankRow({
     <details
       className={cn(
         "group rounded-2xl border bg-card transition-colors",
-        isCurrentUser
-          ? "border-foreground ring-1 ring-foreground/20"
-          : "border-border"
+        isCurrentUser ? "border-foreground ring-1 ring-foreground/20" : "border-border"
       )}
     >
       <summary
@@ -342,7 +417,6 @@ function RankRow({
         </div>
       </summary>
 
-      {/* Expanded breakdown */}
       <div className="border-t border-border px-4 py-3">
         <PointsBreakdown row={row} />
       </div>
@@ -352,17 +426,29 @@ function RankRow({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function LeaderboardPage() {
+export default async function LeaderboardPage({
+  searchParams,
+}: {
+  searchParams?: { scope?: string };
+}) {
+  // Validate scope param
+  const rawScope = (searchParams?.scope ?? "all").toLowerCase();
+  const scope: Scope = rawScope === "dept" || rawScope === "level" ? rawScope : "all";
+
   let rows: LeaderRow[] = [];
   let fetchError: string | null = null;
   let viewMissing = false;
   let currentUserId: string | null = null;
+  let userPrefs: UserPrefs | null = null;
+  let scopeLabel = "All of JABU";
 
   try {
-    const result = await fetchLeaderboard();
+    const result = await fetchLeaderboard(scope);
     rows = result.rows;
     viewMissing = result.viewMissing;
     currentUserId = result.currentUserId;
+    userPrefs = result.userPrefs;
+    scopeLabel = result.scopeLabel;
   } catch (e: any) {
     fetchError = e?.message ?? "Failed to load leaderboard";
   }
@@ -370,14 +456,18 @@ export default async function LeaderboardPage() {
   const top3 = rows.slice(0, 3) as Array<LeaderRow & { rank: 1 | 2 | 3 }>;
   const rest = rows.slice(3);
 
-  // Find the current user's row and rank (1-indexed)
   const myRankIndex = currentUserId
     ? rows.findIndex((r) => r.user_id === currentUserId)
     : -1;
   const myRow = myRankIndex >= 0 ? rows[myRankIndex] : null;
   const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
-  // Only show the "Your rank" banner if user is NOT already in the visible top-3 podium
   const showYourRankCard = myRow !== null && myRank !== null && myRank > 3;
+
+  // Show a hint when dept/level scope finds no one (user is alone or prefs missing)
+  const scopeEmpty = !fetchError && rows.length === 0 && scope !== "all";
+  const noPrefsForScope =
+    (scope === "dept" && !userPrefs?.department_id) ||
+    (scope === "level" && !userPrefs?.level);
 
   return (
     <div className="space-y-4 pb-28 md:pb-6">
@@ -407,15 +497,16 @@ export default async function LeaderboardPage() {
       <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-muted-foreground">
-              Community
-            </p>
+            <p className="text-sm font-semibold text-muted-foreground">Community</p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">
               Leaderboard
             </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Top contributors in Jabu Study. Points: accepted answer (×5) +
-              answer (×2) + question (×1) + upvote (×1) + practice points (×1).
+            <p className="mt-1 text-sm text-muted-foreground">
+              Showing: <span className="font-semibold text-foreground">{scopeLabel}</span>
+              {" "}·{" "}
+              <span className="text-xs">
+                Points: accepted (×5) + answer (×2) + question (×1) + upvote (×1) + practice (×1)
+              </span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Names are anonymised — tap any row to see how points were earned.
@@ -440,32 +531,54 @@ export default async function LeaderboardPage() {
               <code className="rounded bg-amber-100 px-1 dark:bg-amber-900">
                 003_add_practice_points_to_leaderboard.sql
               </code>{" "}
-              in your Supabase SQL editor to enable the leaderboard.
+              in your Supabase SQL editor.
             </p>
           </div>
         ) : null}
       </div>
 
-      {/* ── Your rank card (only shown when not in the top 3 podium) ── */}
+      {/* Scope tab bar */}
+      <ScopeTabs scope={scope} userPrefs={userPrefs} />
+
+      {/* No prefs hint for dept/level scope */}
+      {noPrefsForScope && (
+        <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 px-4 py-3 text-sm dark:border-amber-800/40 dark:bg-amber-950/30">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">
+            {scope === "dept" ? "Department not set" : "Level not set"}
+          </p>
+          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+            Set your {scope === "dept" ? "department" : "level"} in{" "}
+            <Link href="/study/onboarding" className="underline underline-offset-2">
+              Study Preferences
+            </Link>{" "}
+            to see a scoped leaderboard.
+          </p>
+        </div>
+      )}
+
+      {/* Your rank card */}
       {showYourRankCard && myRow && myRank ? (
         <YourRankCard row={myRow} rank={myRank} />
       ) : null}
 
-      {/* ── Your rank is in the top 3: subtle callout instead ── */}
       {myRow && myRank && myRank <= 3 ? (
         <div className="rounded-2xl border border-foreground/30 bg-card px-4 py-3 text-sm font-semibold text-foreground">
           🏆 You&apos;re in the top 3! Your card is highlighted in the podium below.
         </div>
       ) : null}
 
-      {/* Empty */}
-      {!fetchError && rows.length === 0 ? (
+      {/* Empty state */}
+      {!fetchError && rows.length === 0 && !viewMissing ? (
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-          <p className="text-sm font-semibold text-foreground">No activity yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Once people start asking and answering questions, top helpers will appear here.
+          <p className="text-sm font-semibold text-foreground">
+            {scopeEmpty ? "No activity in this scope yet" : "No activity yet"}
           </p>
-          <div className="mt-4">
+          <p className="mt-1 text-sm text-muted-foreground">
+            {scopeEmpty
+              ? "Be the first to earn points in this scope — ask questions, answer peers, and practice."
+              : "Once people start asking and answering questions, top helpers will appear here."}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href="/study/questions/ask"
               className={cn(
@@ -475,6 +588,17 @@ export default async function LeaderboardPage() {
             >
               Ask a question
             </Link>
+            {scopeEmpty && scope !== "all" && (
+              <Link
+                href="/study/leaderboard"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-3",
+                  "text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
+                )}
+              >
+                View all of JABU
+              </Link>
+            )}
           </div>
         </div>
       ) : null}
@@ -484,7 +608,7 @@ export default async function LeaderboardPage() {
         <div className="grid gap-3 md:grid-cols-3">
           {top3.map((r, i) => (
             <PodiumCard
-              key={r.user_id}  // ← stable user_id key, not email
+              key={r.user_id}
               row={r}
               rank={(i + 1) as 1 | 2 | 3}
               isCurrentUser={r.user_id === currentUserId}
@@ -493,14 +617,14 @@ export default async function LeaderboardPage() {
         </div>
       ) : null}
 
-      {/* Rest of top 50 — each row is expandable */}
+      {/* Rest of top 50 */}
       {rest.length > 0 ? (
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <h2 className="text-base font-extrabold text-foreground">Top 50</h2>
           <div className="mt-4 space-y-2">
             {rest.map((r, i) => (
               <RankRow
-                key={r.user_id}  // ← stable user_id key, not email
+                key={r.user_id}
                 row={r}
                 rank={i + 4}
                 isCurrentUser={r.user_id === currentUserId}

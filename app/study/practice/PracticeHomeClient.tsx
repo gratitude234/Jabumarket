@@ -77,6 +77,7 @@ type QuizSetRow = {
   total_questions?: number | null;
 
   time_limit_minutes?: number | null;
+  difficulty?: "easy" | "medium" | "hard" | null;
   created_at?: string | null;
 };
 
@@ -301,6 +302,29 @@ function safeSemesterLabel(v?: string | null) {
   return s;
 }
 
+const DIFFICULTY_STYLES: Record<
+  "easy" | "medium" | "hard",
+  { label: string; className: string }
+> = {
+  easy:   { label: "Easy",   className: "border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-300" },
+  medium: { label: "Medium", className: "border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300" },
+  hard:   { label: "Hard",   className: "border-rose-200/80 bg-rose-50/80 text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/30 dark:text-rose-300" },
+};
+
+function DifficultyBadge({ difficulty }: { difficulty: "easy" | "medium" | "hard" }) {
+  const s = DIFFICULTY_STYLES[difficulty];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-extrabold",
+        s.className
+      )}
+    >
+      {difficulty === "easy" ? "●" : difficulty === "medium" ? "◆" : "▲"} {s.label}
+    </span>
+  );
+}
+
 function pill(text: string, icon?: React.ReactNode) {
   return (
     <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
@@ -423,6 +447,7 @@ function QuizSetCard({ s, onStart, onPreview }: { s: QuizSetRow; onStart: () => 
             {qCount !== null ? pill(`${qCount} questions`) : null}
             {time ? pill(time) : null}
             {s.created_at ? pill(formatWhen(s.created_at)) : null}
+            {s.difficulty ? <DifficultyBadge difficulty={s.difficulty} /> : null}
           </div>
         </div>
 
@@ -481,6 +506,7 @@ function CreateSetDrawer({
   const [level, setLevel]         = useState("");
   const [semester, setSemester]   = useState("");
   const [timeLimit, setTimeLimit] = useState("");
+  const [difficulty, setDifficulty] = useState("");
   const [saving, setSaving]       = useState(false);
   const [err, setErr]             = useState<string | null>(null);
 
@@ -489,6 +515,7 @@ function CreateSetDrawer({
     if (!open) return;
     setTitle(""); setDesc(""); setCourse("");
     setLevel(""); setSemester(""); setTimeLimit("");
+    setDifficulty("");
     setErr(null); setSaving(false);
   }, [open]);
 
@@ -521,6 +548,7 @@ function CreateSetDrawer({
         level:        lvNum,
         semester:     semester || null,
         time_limit_minutes: tlNum,
+        difficulty:   difficulty || null,
         published: false,
         questions_count: 0,
       };
@@ -674,6 +702,38 @@ function CreateSetDrawer({
           </label>
         </div>
 
+        {/* Difficulty */}
+        <div className="block rounded-2xl border border-border bg-background px-3 py-2">
+          <span className="text-xs font-semibold text-muted-foreground">Difficulty</span>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {(["", "easy", "medium", "hard"] as const).map((d) => {
+              const label = d === "" ? "Any" : d === "easy" ? "● Easy" : d === "medium" ? "◆ Medium" : "▲ Hard";
+              const active = difficulty === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDifficulty(d)}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition",
+                    active
+                      ? d === "" ? "border-border bg-secondary text-foreground"
+                        : d === "easy" ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : d === "medium" ? "border-amber-300 bg-amber-50 text-amber-700"
+                        : "border-rose-300 bg-rose-50 text-rose-700"
+                      : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[10px] text-muted-foreground">
+            Easy = warm-up / ≤10 Qs · Medium = 11–30 Qs · Hard = exam sim / 30+ Qs
+          </p>
+        </div>
+
         <p className="text-xs text-muted-foreground">
           After creating the set you'll be taken to the editor to add questions. The set starts unpublished — submit it
           for review when ready.
@@ -694,6 +754,7 @@ export default function PracticeHomeClient() {
   const levelParam = sp.get("level") ?? "";
   const semesterParam = sp.get("semester") ?? "";
   const sortParam = (sp.get("sort") ?? "newest") as SortKey;
+  const difficultyParam = sp.get("difficulty") ?? "";
 
   // view tab
   const viewParam = (sp.get("view") ?? "for_you") as ViewKey;
@@ -716,6 +777,7 @@ export default function PracticeHomeClient() {
   const [draftSemester, setDraftSemester] = useState(semesterParam);
   const [draftSort, setDraftSort] = useState<SortKey>(sortParam);
   const [draftPublished, setDraftPublished] = useState(publishedOnly);
+  const [draftDifficulty, setDraftDifficulty] = useState(difficultyParam);
 
   // Data
   const [loading, setLoading] = useState(true);
@@ -802,6 +864,7 @@ export default function PracticeHomeClient() {
       courseParam.trim().toUpperCase(),
       levelParam,
       semesterParam,
+      difficultyParam,
       sortParam,
       publishedOnly ? "p1" : "p0",
       viewParam,
@@ -934,7 +997,7 @@ export default function PracticeHomeClient() {
 
     try {
       const selectFields =
-        "id,title,description,course_code,level,semester,time_limit_minutes,published,questions_count,created_at";
+        "id,title,description,course_code,level,semester,time_limit_minutes,difficulty,published,questions_count,created_at";
 
       let query = supabase.from("study_quiz_sets").select(selectFields, { count: "exact" });
 
@@ -956,6 +1019,13 @@ export default function PracticeHomeClient() {
       if (semesterParam) {
         const s = semesterParam.trim().toLowerCase();
         if (s) query = query.eq("semester", s);
+      }
+
+      if (difficultyParam) {
+        const d = difficultyParam.trim().toLowerCase();
+        if (d === "easy" || d === "medium" || d === "hard") {
+          query = query.eq("difficulty", d);
+        }
       }
 
       if (sortParam === "oldest") query = query.order("created_at", { ascending: true });
@@ -1021,6 +1091,7 @@ export default function PracticeHomeClient() {
     setDraftSemester(semesterParam);
     setDraftSort(sortParam);
     setDraftPublished(publishedOnly);
+    setDraftDifficulty(difficultyParam);
     setDrawerOpen(true);
   }
 
@@ -1031,6 +1102,7 @@ export default function PracticeHomeClient() {
         course: draftCourse.trim().toUpperCase() || null,
         level: draftLevel || null,
         semester: draftSemester || null,
+        difficulty: draftDifficulty || null,
         sort: draftSort !== "newest" ? draftSort : null,
         published: draftPublished ? "1" : null,
         view: viewParam !== "for_you" ? viewParam : null,
@@ -1063,6 +1135,7 @@ export default function PracticeHomeClient() {
       courseParam ||
       levelParam ||
       semesterParam ||
+      difficultyParam ||
       (sortParam && sortParam !== "newest") ||
       publishedOnly
   );
@@ -1107,6 +1180,16 @@ export default function PracticeHomeClient() {
         (s.semester ?? "").toString().trim().toLowerCase() === wantSem
       )
         score += 1;
+
+      // Difficulty score: prefer sets appropriate for user's level
+      // Upper levels (400+) get a boost for harder sets; lower levels for easier ones.
+      const diff = (s.difficulty ?? "").toLowerCase();
+      if (Number.isFinite(wantLevel)) {
+        if (wantLevel >= 400 && diff === "hard")   score += 1.5;
+        if (wantLevel >= 300 && diff === "medium")  score += 0.5;
+        if (wantLevel <= 200 && diff === "easy")    score += 1.5;
+        if (wantLevel <= 200 && diff === "hard")    score -= 1;
+      }
 
       // Slight recency boost
       if (s.created_at) score += 0.2;
@@ -1553,6 +1636,7 @@ export default function PracticeHomeClient() {
                 setDraftSemester("");
                 setDraftSort("newest");
                 setDraftPublished(false);
+                setDraftDifficulty("");
               }}
               className={cn(
                 "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
@@ -1646,6 +1730,36 @@ export default function PracticeHomeClient() {
           />
         </div>
 
+        {/* Difficulty */}
+        <div className="mt-3 rounded-3xl border border-border bg-background p-3">
+          <p className="text-sm font-semibold text-foreground">Difficulty</p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {(["", "easy", "medium", "hard"] as const).map((d) => {
+              const label = d === "" ? "Any" : d === "easy" ? "● Easy" : d === "medium" ? "◆ Medium" : "▲ Hard";
+              const active = draftDifficulty === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDraftDifficulty(d)}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-1.5 rounded-2xl border px-3 py-2.5 text-sm font-semibold transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    active
+                      ? d === "" ? "border-border bg-secondary text-foreground"
+                        : d === "easy" ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                        : d === "medium" ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                        : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                      : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="mt-3">
           <ToggleRow
             label="Published only"
@@ -1709,6 +1823,11 @@ export default function PracticeHomeClient() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {previewSet.description ? previewSet.description : "Practice past questions and test yourself."}
               </p>
+              {previewSet.difficulty ? (
+                <div className="mt-3">
+                  <DifficultyBadge difficulty={previewSet.difficulty} />
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

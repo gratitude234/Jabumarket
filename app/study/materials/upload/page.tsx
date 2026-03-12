@@ -155,6 +155,7 @@ export default function UploadMaterialsPage() {
   const [materialType, setMaterialType] = useState<MaterialType>("past_question");
   const [title, setTitle] = useState("");
   const [semester, setSemester] = useState<Semester>("first");
+  const [description, setDescription] = useState("");
 
   // Past question metadata
   const [pqYear, setPqYear] = useState<number | "">("");
@@ -165,6 +166,7 @@ export default function UploadMaterialsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [fileHash, setFileHash] = useState<string | null>(null);
   const [hashing, setHashing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // submit + banners
   const [submitting, setSubmitting] = useState(false);
@@ -328,6 +330,7 @@ export default function UploadMaterialsPage() {
     setFile(null);
     setFileHash(null);
     setDuplicateNote(null);
+    setUploadProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -483,6 +486,7 @@ export default function UploadMaterialsPage() {
     const finalTitle = (title || "").trim() || materialTitleSuggestion(selectedCourse, materialType);
 
     setSubmitting(true);
+    setUploadProgress(null);
     try {
       const initRes = await fetch("/api/study/materials/upload", {
         method: "POST",
@@ -495,6 +499,7 @@ export default function UploadMaterialsPage() {
           semester: selectedCourse.semester,
           material_type: materialType,
           title: finalTitle,
+          description: description.trim() || null,
           past_question_year: materialType === "past_question" ? pqYear : null,
           session: materialType === "past_question" ? pqSession.trim() : null,
           file_name: file.name,
@@ -519,8 +524,21 @@ export default function UploadMaterialsPage() {
 
       const { bucket, path, token, material_id } = initRes;
 
-      const { error: uploadErr } = await supabase.storage.from(bucket).uploadToSignedUrl(path, token, file);
-      if (uploadErr) throw new Error(uploadErr.message || "File upload failed.");
+      setUploadProgress(0);
+      const { error: uploadErr } = await (supabase.storage.from(bucket) as any).uploadToSignedUrl(
+        path,
+        token,
+        file,
+        {
+          onUploadProgress: (progress: { loaded: number; total: number }) => {
+            if (progress.total > 0) {
+              setUploadProgress(Math.round((progress.loaded / progress.total) * 100));
+            }
+          },
+        }
+      );
+      if (uploadErr) throw new Error((uploadErr as any).message || "File upload failed.");
+      setUploadProgress(100);
 
       setBanner({ type: "success", text: "Uploaded! Your material is pending review." });
 
@@ -550,6 +568,7 @@ export default function UploadMaterialsPage() {
 
       // keep course selection for fast multi-upload
       setTitle("");
+      setDescription("");
       setPqYear("");
       setPqSession("");
       resetFile();
@@ -884,6 +903,19 @@ export default function UploadMaterialsPage() {
                 </div>
               </div>
             ) : null}
+
+            <label className="mt-4 block space-y-1">
+              <div className="text-sm font-medium text-zinc-800">
+                Notes <span className="text-zinc-500 font-normal">(optional)</span>
+              </div>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Any context for students or reviewers, e.g. which lecturer, which section it covers…"
+                rows={2}
+                className="w-full resize-none rounded-2xl border bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              />
+            </label>
           </Card>
 
           {/* Step 3: File */}
@@ -952,6 +984,24 @@ export default function UploadMaterialsPage() {
             <div className="mt-2 text-xs text-zinc-600">
               Submissions are <span className="font-medium text-zinc-800">pending review</span> before they appear to students.
             </div>
+
+            {uploadProgress !== null && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-xs text-zinc-600 mb-1">
+                  <span>{uploadProgress < 100 ? "Uploading…" : "Upload complete"}</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-zinc-100 overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-300",
+                      uploadProgress === 100 ? "bg-emerald-500" : "bg-zinc-900"
+                    )}
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* Sticky submit bar (mobile-first) */}

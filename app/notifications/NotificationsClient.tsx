@@ -8,8 +8,13 @@ import {
   Bell,
   BellOff,
   Bookmark,
+  BookCheck,
+  BookX,
   CheckCheck,
+  CheckCircle2,
   MessageCircle,
+  MessageSquarePlus,
+  ThumbsUp,
   TrendingDown,
   Truck,
   Megaphone,
@@ -95,6 +100,41 @@ function getTypeConfig(type: string): TypeConfig {
         bg: "bg-amber-50",
         iconColor: "text-amber-600",
         accent: "border-l-amber-400",
+      };
+    case "study_answer_posted":
+      return {
+        icon: <MessageSquarePlus className="h-4 w-4" />,
+        bg: "bg-violet-50 dark:bg-violet-950/30",
+        iconColor: "text-violet-600 dark:text-violet-400",
+        accent: "border-l-violet-400",
+      };
+    case "study_answer_accepted":
+      return {
+        icon: <CheckCircle2 className="h-4 w-4" />,
+        bg: "bg-emerald-50 dark:bg-emerald-950/30",
+        iconColor: "text-emerald-600 dark:text-emerald-400",
+        accent: "border-l-emerald-400",
+      };
+    case "study_upvote_milestone":
+      return {
+        icon: <ThumbsUp className="h-4 w-4" />,
+        bg: "bg-blue-50 dark:bg-blue-950/30",
+        iconColor: "text-blue-600 dark:text-blue-400",
+        accent: "border-l-blue-400",
+      };
+    case "material_approved":
+      return {
+        icon: <BookCheck className="h-4 w-4" />,
+        bg: "bg-emerald-50 dark:bg-emerald-950/30",
+        iconColor: "text-emerald-600 dark:text-emerald-400",
+        accent: "border-l-emerald-400",
+      };
+    case "material_rejected":
+      return {
+        icon: <BookX className="h-4 w-4" />,
+        bg: "bg-rose-50 dark:bg-rose-950/30",
+        iconColor: "text-rose-600 dark:text-rose-400",
+        accent: "border-l-rose-400",
       };
     default:
       return {

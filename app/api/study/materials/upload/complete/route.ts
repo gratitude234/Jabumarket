@@ -46,13 +46,16 @@ function splitPath(file_path: string) {
 async function objectExists(admin: any, file_path: string): Promise<boolean> {
   if (!file_path) return false;
 
-  // Storage list/search can lag or miss exact matches briefly.
-  // A direct download is a more reliable existence check. We retry a few times
-  // to account for eventual consistency.
+  const { dir, name } = splitPath(file_path);
+
+  // list() is much lighter than download() — no data transfer, just metadata
+  // Retry a couple of times for eventual consistency
   for (let i = 0; i < 3; i++) {
-    const { error } = await admin.storage.from(BUCKET).download(file_path);
-    if (!error) return true;
-    await new Promise((r) => setTimeout(r, 400));
+    const { data, error } = await admin.storage
+      .from(BUCKET)
+      .list(dir, { search: name, limit: 5 });
+    if (!error && Array.isArray(data) && data.some((f: any) => f.name === name)) return true;
+    if (i < 2) await new Promise((r) => setTimeout(r, 400));
   }
 
   return false;
@@ -88,22 +91,16 @@ export async function POST(req: Request) {
     const exists = file_path ? await objectExists(admin as any, file_path) : false;
     const nowIso = new Date().toISOString();
 
-    // We no longer rely on file_url anywhere in the UI (signed downloads are used).
-    // Still, keeping a public URL string can be useful for debugging if the bucket is public.
-    const file_url = exists && file_path
-      ? ((admin.storage.from(BUCKET).getPublicUrl(file_path).data as any)?.publicUrl ?? null)
-      : null;
-
     const patch: any = { updated_at: nowIso };
-    if (file_path) patch.file_url = file_url;
 
-    if (!exists) {
+    if (exists) {
+      patch.verified = true;
+    } else {
       const prior = (row as any).description as string | null;
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
       const note = `[BROKEN_UPLOAD ${stamp}] Client reported completion but file not found in storage.`;
       patch.description = prior ? `${prior}\n\n${note}` : note;
       // keep file_path intact so moderators can re-check storage later
-      patch.file_url = null;
     }
 
     const { error: updErr } = await admin.from("study_materials").update(patch).eq("id", material_id);

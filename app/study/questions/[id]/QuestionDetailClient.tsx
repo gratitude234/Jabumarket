@@ -7,14 +7,134 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
+  AlertTriangle,
   ArrowLeft,
-  Loader2,
-  MessageSquare,
-  ThumbsUp,
+  BrainCircuit,
   CheckCircle2,
   Flag,
+  Loader2,
+  MessageSquare,
+  RotateCcw,
   Send,
+  Sparkles,
+  ThumbsUp,
 } from "lucide-react";
+
+// ── AI Answer Button ──────────────────────────────────────────────────────────
+
+type AiAnswerState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done" }
+  | { status: "error"; message: string };
+
+function AiAnswerButton({
+  questionId,
+  title,
+  questionBody,
+  courseCode,
+  level,
+  onAnswerAdded,
+}: {
+  questionId: string;
+  title: string;
+  questionBody: string | null;
+  courseCode: string | null;
+  level: string | null;
+  onAnswerAdded: (answer: AnswerRow) => void;
+}) {
+  const [state, setState] = useState<AiAnswerState>({ status: "idle" });
+
+  async function askAi() {
+    setState({ status: "loading" });
+    try {
+      const res = await fetch("/api/ai/qa-answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, title, questionBody, courseCode, level }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setState({ status: "error", message: json.error ?? "Something went wrong." });
+      } else {
+        const a = json.answer;
+        setState({ status: "done" });
+        onAnswerAdded({
+          id: a.id ?? `ai-${Date.now()}`,
+          question_id: questionId,
+          body: a.body,
+          created_at: a.created_at ?? new Date().toISOString(),
+          author_email: "ai@jabumarket.app",
+          author_id: null,
+          is_accepted: false,
+        });
+      }
+    } catch {
+      setState({ status: "error", message: "Network error. Please try again." });
+    }
+  }
+
+  if (state.status === "done") return null;
+
+  if (state.status === "loading") {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-violet-200/70 bg-violet-50/60 px-3 py-3 dark:border-violet-700/30 dark:bg-violet-950/20">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+        <div>
+          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Generating AI answer…</p>
+          <p className="text-[11px] text-violet-500/80">Powered by Gemini</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="flex items-start gap-2 rounded-2xl border border-rose-200/60 bg-rose-50/60 px-3 py-2.5 dark:border-rose-800/40 dark:bg-rose-950/20">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-rose-700 dark:text-rose-400">Couldn&apos;t get AI answer</p>
+          <p className="text-[11px] text-rose-600/80">{state.message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={askAi}
+          className="shrink-0 grid h-7 w-7 place-items-center rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+          aria-label="Retry"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  // idle
+  return (
+    <button
+      type="button"
+      onClick={askAi}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-all",
+        "border-violet-200/70 bg-violet-50/60 hover:bg-violet-100/60",
+        "dark:border-violet-700/30 dark:bg-violet-950/20 dark:hover:bg-violet-950/30",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+      )}
+    >
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+        <BrainCircuit className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Get an AI answer</p>
+        <p className="text-[11px] text-violet-500/80 dark:text-violet-400/70">No human answers yet — ask Gemini for a starting point</p>
+      </div>
+      <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function formatDateTime(iso?: string | null) {
   if (!iso) return "";
@@ -58,7 +178,6 @@ type AnswerRow = {
 export default function QuestionDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [meId, setMeId] = useState<string | null>(null);
-  const [meEmail, setMeEmail] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +200,6 @@ export default function QuestionDetailClient({ id }: { id: string }) {
     (async () => {
       const { data } = await supabase.auth.getUser();
       setMeId(data?.user?.id ?? null);
-      setMeEmail(data?.user?.email ?? null);
     })();
   }, []);
 
@@ -141,32 +259,26 @@ export default function QuestionDetailClient({ id }: { id: string }) {
     }
     if (!question) return;
     if (myVoteLoading) return;
+
+    // Optimistic update so the button feels instant
+    const optimisticCount = myUpvoted
+      ? Math.max(0, (question.upvotes_count ?? 0) - 1)
+      : (question.upvotes_count ?? 0) + 1;
+    setQuestion({ ...question, upvotes_count: optimisticCount });
+    setMyUpvoted(!myUpvoted);
     setMyVoteLoading(true);
+
     try {
-      if (myUpvoted) {
-        const del = await supabase
-          .from("study_question_votes")
-          .delete()
-          .eq("question_id", id)
-          .eq("voter_id", meId);
-        if (del.error) throw del.error;
-        const next = Math.max(0, (question.upvotes_count ?? 0) - 1);
-        setQuestion({ ...question, upvotes_count: next });
-        setMyUpvoted(false);
-      } else {
-        const ins = await supabase
-          .from("study_question_votes")
-          .insert({ question_id: id, voter_id: meId });
-        if (ins.error) throw ins.error;
-        const next = (question.upvotes_count ?? 0) + 1;
-        setQuestion({ ...question, upvotes_count: next });
-        setMyUpvoted(true);
-      }
-      await supabase
-        .from("study_questions")
-        .update({ upvotes_count: (question.upvotes_count ?? 0) + (myUpvoted ? -1 : 1) })
-        .eq("id", id);
+      const res = await fetch(`/api/study/questions/${id}/upvote`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to update vote.");
+      // Reconcile with server truth
+      setQuestion((q) => q ? { ...q, upvotes_count: json.count } : q);
+      setMyUpvoted(json.upvoted);
     } catch (e: any) {
+      // Roll back optimistic update on failure
+      setQuestion({ ...question, upvotes_count: question.upvotes_count });
+      setMyUpvoted(myUpvoted);
       setPostError(e?.message ?? "Failed to update vote.");
     } finally {
       setMyVoteLoading(false);
@@ -183,25 +295,16 @@ export default function QuestionDetailClient({ id }: { id: string }) {
     if (b.length < 10) return;
     setPosting(true);
     try {
-      const ins = await supabase
-        .from("study_answers")
-        .insert({
-          question_id: id,
-          body: b,
-          author_id: meId,
-          author_email: meEmail,
-          is_accepted: false,
-        })
-        .select("id,question_id,body,created_at,author_email,author_id,is_accepted")
-        .single();
-      if (ins.error) throw ins.error;
-      setAnswers((prev) => [...prev, ins.data as any]);
+      const res = await fetch("/api/study/answers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: id, body: b }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to post answer.");
+      setAnswers((prev) => [...prev, json.answer as any]);
       setAnswerBody("");
-      await supabase
-        .from("study_questions")
-        .update({ answers_count: (question?.answers_count ?? 0) + 1 })
-        .eq("id", id);
-      setQuestion((q) => (q ? { ...q, answers_count: (q.answers_count ?? 0) + 1 } : q));
+      setQuestion((q) => q ? { ...q, answers_count: (q.answers_count ?? 0) + 1 } : q);
     } catch (e: any) {
       setPostError(e?.message ?? "Failed to post answer.");
     } finally {
@@ -217,10 +320,13 @@ export default function QuestionDetailClient({ id }: { id: string }) {
       return;
     }
     try {
-      await supabase.from("study_answers").update({ is_accepted: false }).eq("question_id", id);
-      const up = await supabase.from("study_answers").update({ is_accepted: true }).eq("id", answerId);
-      if (up.error) throw up.error;
-      await supabase.from("study_questions").update({ solved: true }).eq("id", id);
+      const res = await fetch(`/api/study/answers/${answerId}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to accept answer.");
       setQuestion({ ...question, solved: true });
       setAnswers((prev) =>
         prev
@@ -320,6 +426,16 @@ export default function QuestionDetailClient({ id }: { id: string }) {
             <div className="mt-3 space-y-3">
               {answers.length === 0 ? (
                 <p className="text-sm text-zinc-600">No answers yet. Be the first to help.</p>
+                {question && (
+                  <AiAnswerButton
+                    questionId={question.id}
+                    title={question.title}
+                    questionBody={question.body}
+                    courseCode={question.course_code}
+                    level={question.level}
+                    onAnswerAdded={(a) => setAnswers([a])}
+                  />
+                )}
               ) : (
                 answers.map((a) => (
                   <div
@@ -333,7 +449,13 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                       <div className="min-w-0 flex-1">
                         <p className="whitespace-pre-wrap text-sm text-zinc-800">{a.body}</p>
                         <p className="mt-2 text-xs text-zinc-600">
-                          {a.author_email ? `By ${a.author_email}` : "Answer"} • {formatDateTime(a.created_at)}
+                          {a.author_email === "ai@jabumarket.app" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-violet-200/60 bg-violet-50 px-2 py-0.5 text-[10px] font-extrabold text-violet-700 dark:border-violet-700/30 dark:bg-violet-950/30 dark:text-violet-300">
+                              <Sparkles className="h-3 w-3" /> AI · Gemini
+                            </span>
+                          ) : (
+                            <span>{a.author_email ? `By ${a.author_email}` : "Answer"} • {formatDateTime(a.created_at)}</span>
+                          )}
                         </p>
                       </div>
                       {a.is_accepted ? (

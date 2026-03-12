@@ -19,6 +19,7 @@ import {
   UserCheck,
   X,
   Zap,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +64,7 @@ const OVERFLOW_PREFIXES = [
   "/study/leaderboard",
   "/study/apply-rep",
   "/study/materials/upload",
+  "/study/ai-plan",
 ];
 
 function isOverflowActive(pathname: string) {
@@ -389,6 +391,15 @@ export default function StudyTabs({
       icon: Trophy,
       color:
         "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
+    },
+    {
+      href: "/study/ai-plan",
+      label: "AI Study Plan",
+      description: "Generate a personalised study schedule with Gemini",
+      icon: BrainCircuit,
+      color:
+        "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
+      badge: "AI",
     },
     contributorStatus === "approved"
       ? {

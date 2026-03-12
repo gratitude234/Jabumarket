@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Bookmark,
@@ -21,7 +22,9 @@ import {
   Loader2,
   Maximize2,
   RefreshCw,
+  RotateCcw,
   Share2,
+  Sparkles,
   Star,
   ThumbsDown,
   ThumbsUp,
@@ -508,6 +511,164 @@ function MaterialRating({
   );
 }
 
+// ─── AI Summarize Card ────────────────────────────────────────────────────────
+
+type AiSummaryState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; overview: string; keyTopics: string[]; examTips: string[]; cached: boolean }
+  | { status: "error"; message: string };
+
+function AiSummarizeCard({
+  materialId,
+  title,
+  description,
+  courseCode,
+  materialType,
+}: {
+  materialId: string;
+  title: string;
+  description: string | null;
+  courseCode: string | null | undefined;
+  materialType: string | null;
+}) {
+  const [state, setState] = useState<AiSummaryState>({ status: "idle" });
+
+  async function fetchSummary() {
+    setState({ status: "loading" });
+    try {
+      const res = await fetch("/api/ai/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialId, title, description, courseCode, materialType }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setState({ status: "error", message: json.error ?? "Something went wrong." });
+      } else {
+        const s = json.summary;
+        setState({
+          status: "done",
+          overview: s.overview ?? "",
+          keyTopics: Array.isArray(s.keyTopics) ? s.keyTopics : [],
+          examTips: Array.isArray(s.examTips) ? s.examTips : [],
+          cached: !!json.cached,
+        });
+      }
+    } catch {
+      setState({ status: "error", message: "Network error. Please try again." });
+    }
+  }
+
+  if (state.status === "idle") {
+    return (
+      <button
+        type="button"
+        onClick={fetchSummary}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
+          "border-violet-200/70 bg-violet-50/60 hover:bg-violet-100/60",
+          "dark:border-violet-700/30 dark:bg-violet-950/20 dark:hover:bg-violet-950/30",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+        )}
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">Summarize with AI</p>
+          <p className="text-xs text-violet-500/80 dark:text-violet-400/70">Get key topics & exam tips · Powered by Gemini</p>
+        </div>
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+      </button>
+    );
+  }
+
+  if (state.status === "loading") {
+    return (
+      <div className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3", "border-violet-200/70 bg-violet-50/60", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+        <div>
+          <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">Analysing material…</p>
+          <p className="text-xs text-violet-500/80">Gemini is generating your summary</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className={cn("rounded-2xl border px-4 py-3", "border-rose-200/60 bg-rose-50/60 dark:border-rose-800/40 dark:bg-rose-950/20")}>
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold text-rose-700 dark:text-rose-400">Couldn&apos;t generate summary</p>
+            <p className="mt-0.5 text-xs text-rose-600/80">{state.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchSummary}
+            className="shrink-0 grid h-8 w-8 place-items-center rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+            aria-label="Retry"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // done
+  return (
+    <div className={cn("rounded-2xl border px-4 py-4 space-y-4", "border-violet-200/70 bg-violet-50/50", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-3.5 w-3.5" />
+        </span>
+        <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">AI Summary</p>
+        <span className="ml-auto text-[10px] font-semibold text-violet-400/80">Gemini · {state.cached ? "cached" : "generated"}</span>
+      </div>
+
+      {/* Overview */}
+      <p className="text-sm leading-relaxed text-foreground">{state.overview}</p>
+
+      {/* Key Topics */}
+      {state.keyTopics.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-extrabold text-violet-700 dark:text-violet-300">Key Topics</p>
+          <div className="flex flex-wrap gap-2">
+            {state.keyTopics.map((t, i) => (
+              <span key={i} className="rounded-full border border-violet-200/60 bg-background px-2.5 py-1 text-xs font-semibold text-foreground dark:border-violet-700/30">
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Exam Tips */}
+      {state.examTips.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-extrabold text-violet-700 dark:text-violet-300">Exam Tips</p>
+          <ul className="space-y-1.5">
+            {state.examTips.map((tip, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+                {tip}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-[10px] text-muted-foreground">AI can make mistakes. Cross-check with your lecturer or textbook.</p>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function MaterialDetailClient({ material: m }: { material: Material }) {
@@ -765,6 +926,15 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       {hasFile && (
         <InlinePreview url={fileUrl} title={title} kind={kind} />
       )}
+
+      {/* ── AI Summarize ── */}
+      <AiSummarizeCard
+        materialId={m.id}
+        title={title}
+        description={m.description}
+        courseCode={course?.course_code}
+        materialType={m.material_type}
+      />
 
       {/* Stats + uploader */}
       <MaterialRating

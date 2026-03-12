@@ -43,11 +43,19 @@ export async function POST(req: Request) {
 
     const material_type = typeof body.material_type === "string" ? body.material_type.trim() : "other";
     const session = typeof body.session === "string" ? body.session.trim().slice(0, 40) : null;
+    const past_question_year = typeof body.past_question_year === "number" ? body.past_question_year : null;
+    const description = typeof body.description === "string" ? body.description.trim().slice(0, 1000) : null;
 
     const file_name = typeof body.file_name === "string" ? body.file_name.trim() : "file";
     const mime_type = typeof body.mime_type === "string" ? body.mime_type.trim() : null;
     const file_size = typeof body.file_size === "number" ? body.file_size : null;
     const file_hash = typeof body.file_hash === "string" ? body.file_hash.trim() : null;
+
+    // Server-side file size guard: reject anything over 50 MB
+    const MAX_FILE_SIZE = 52_428_800; // 50 MB
+    if (file_size !== null && file_size > MAX_FILE_SIZE) {
+      return jsonError(`File too large (max 50 MB, got ${(file_size / 1_048_576).toFixed(1)} MB)`, 400, "FILE_TOO_LARGE");
+    }
 
     const admin = createSupabaseAdminClient();
 
@@ -107,6 +115,8 @@ export async function POST(req: Request) {
         file_hash: file_hash || null,
         uploader_id: userId,
         uploader_email: uploader_email,
+        past_question_year: past_question_year || null,
+        description: description || null,
         // placeholders; updated below
         file_path: null,
         file_url: null,
@@ -154,17 +164,12 @@ export async function POST(req: Request) {
     const finalName = safeFilename(file_name).replace(/\.[^.]+$/, "") + ext;
     const file_path = `materials/${dept}/${code}/${material_id}-${finalName}`;
 
-    // Compute public url (works if the bucket is public; if bucket is private, client should switch to signed download later)
-    const { data: pub } = admin.storage.from(BUCKET).getPublicUrl(file_path);
-    const file_url = (pub as any)?.publicUrl ?? null;
-
-    // Update the material row with file_path and file_url
+    // Update the material row with file_path (no public URL yet — the complete endpoint resolves this)
     const { error: updErr } = await admin
       .from("study_materials")
       .update(
         {
           file_path,
-          file_url,
           mime_type: mime_type || null,
           file_size: file_size || null,
           updated_at: new Date().toISOString(),
@@ -177,7 +182,7 @@ export async function POST(req: Request) {
       console.error("study_materials update failed:", updErr);
       await admin
         .from("study_materials")
-        .update({ file_path, file_url, updated_at: new Date().toISOString() } as any)
+        .update({ file_path, updated_at: new Date().toISOString() } as any)
         .eq("id", material_id);
     }
 

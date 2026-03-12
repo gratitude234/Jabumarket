@@ -17,6 +17,8 @@ import {
   Trophy,
   Star,
   X,
+  Sparkles,
+  RotateCcw,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
 import { cn, msToClock, normalize } from "@/lib/utils";
@@ -64,6 +66,132 @@ const MILESTONE_STYLES: Record<MilestoneLevel, string> = {
   done:      "border-border bg-card text-foreground",
 };
 
+// ── AI Explain Inline ─────────────────────────────────────────────────────────
+
+type AiState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; text: string; cached: boolean }
+  | { status: "error"; message: string };
+
+function AiExplainInline({
+  questionId,
+  questionPrompt,
+  chosenOptionText,
+  correctOptionText,
+  isCorrect,
+}: {
+  questionId: string;
+  questionPrompt: string;
+  chosenOptionText: string | null | undefined;
+  correctOptionText: string | null | undefined;
+  isCorrect: boolean;
+}) {
+  const [state, setState] = useState<AiState>({ status: "idle" });
+
+  async function fetchExplanation() {
+    setState({ status: "loading" });
+    try {
+      const res = await fetch("/api/ai/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionId,
+          questionPrompt,
+          chosenOptionText,
+          correctOptionText,
+          isCorrect,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setState({ status: "error", message: json.error ?? "Something went wrong." });
+      } else {
+        setState({ status: "done", text: json.explanation, cached: json.cached });
+      }
+    } catch {
+      setState({ status: "error", message: "Network error. Please try again." });
+    }
+  }
+
+  if (state.status === "idle") {
+    return (
+      <button
+        type="button"
+        onClick={fetchExplanation}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-all",
+          "border-violet-200/70 bg-violet-50/60 hover:bg-violet-100/60",
+          "dark:border-violet-700/30 dark:bg-violet-950/20 dark:hover:bg-violet-950/30",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+        )}
+      >
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Ask AI to explain</p>
+          <p className="text-[11px] text-violet-500/80 dark:text-violet-400/70">Deeper explanation powered by Gemini</p>
+        </div>
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+      </button>
+    );
+  }
+
+  if (state.status === "loading") {
+    return (
+      <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-3", "border-violet-200/70 bg-violet-50/60", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+        <div>
+          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Thinking…</p>
+          <p className="text-[11px] text-violet-500/80">Gemini is generating your explanation</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className={cn("rounded-2xl border px-3 py-2.5", "border-rose-200/60 bg-rose-50/60 dark:border-rose-800/40 dark:bg-rose-950/20")}>
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-rose-700 dark:text-rose-400">Couldn&apos;t generate explanation</p>
+            <p className="mt-0.5 text-[11px] text-rose-600/80">{state.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchExplanation}
+            className="shrink-0 grid h-7 w-7 place-items-center rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+            aria-label="Retry"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // done
+  return (
+    <div className={cn("rounded-2xl border px-3 py-3 space-y-2", "border-violet-200/70 bg-violet-50/50", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+      <div className="flex items-center gap-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-3.5 w-3.5" />
+        </span>
+        <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">AI Explanation</p>
+        <span className="ml-auto text-[10px] font-semibold text-violet-400/80">Gemini · {state.cached ? "cached" : "generated"}</span>
+      </div>
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{state.text}</p>
+      <p className="text-[10px] text-muted-foreground">AI can make mistakes. Cross-check with your textbook or lecturer.</p>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export default function PracticeTakeClient() {
   const router = useRouter();
   const params = useParams<{ setId: string }>();
@@ -90,8 +218,10 @@ export default function PracticeTakeClient() {
     stats,
     finalizing,
     choose,
-    restart,
+    softReset,
+    retryWeakQuestions,
     finalizeAttempt,
+    isRetryMode,
   } = engine;
 
   // Instant feedback: reveal correctness after first tap (per question)
@@ -158,7 +288,7 @@ export default function PracticeTakeClient() {
 
   function resetAll() {
     setRevealed({});
-    restart();
+    softReset();
   }
 
   function goNext() {
@@ -337,7 +467,9 @@ if (err || !meta) {
           <Card className="rounded-3xl">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-extrabold text-foreground">Results</p>
+                <p className="text-sm font-extrabold text-foreground">
+                  {isRetryMode ? "Retry Results" : "Results"}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Score:{" "}
                   <span className="font-extrabold text-foreground">{stats.correct}</span> /{" "}
@@ -348,9 +480,11 @@ if (err || !meta) {
                     </span>
                   ) : null}
                 </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Instant feedback mode is on. Next improvement: a simple review list.
-                </p>
+                {isRetryMode && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Practising weak questions only.
+                  </p>
+                )}
               </div>
 
               <button
@@ -372,7 +506,7 @@ if (err || !meta) {
               </p>
             ) : null}
 
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <Link
                 href="/study/practice"
                 className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50"
@@ -386,6 +520,25 @@ if (err || !meta) {
               >
                 Try again
               </button>
+              {/* Retry Weak Questions — only shown when there are wrong/unanswered */}
+              {stats.correct < stats.total && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRevealed({});
+                    retryWeakQuestions();
+                  }}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold",
+                    "bg-rose-500/10 text-rose-700 hover:bg-rose-500/20",
+                    "dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-950/50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                  )}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry Weak ({stats.total - stats.correct})
+                </button>
+              )}
             </div>
           </Card>
         </div>
@@ -524,6 +677,21 @@ if (err || !meta) {
               </div>
             </div>
           </Card>
+
+          {/* ── AI Explain Panel — appears after student answers ────────── */}
+          {isRevealed && current ? (
+            <AiExplainInline
+              questionId={current.id}
+              questionPrompt={String(current.prompt ?? "")}
+              chosenOptionText={
+                currentOptions.find((o) => o.id === chosenId)?.text ?? null
+              }
+              correctOptionText={
+                currentOptions.find((o) => getIsCorrect(o))?.text ?? null
+              }
+              isCorrect={chosenId === correctOptionId}
+            />
+          ) : null}
 
           {/* Bottom quick actions (simple, mobile-friendly) */}
           <Card className="rounded-3xl">
