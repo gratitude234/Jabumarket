@@ -425,17 +425,19 @@ export default function QuestionDetailClient({ id }: { id: string }) {
 
             <div className="mt-3 space-y-3">
               {answers.length === 0 ? (
-                <p className="text-sm text-zinc-600">No answers yet. Be the first to help.</p>
-                {question && (
-                  <AiAnswerButton
-                    questionId={question.id}
-                    title={question.title}
-                    questionBody={question.body}
-                    courseCode={question.course_code}
-                    level={question.level}
-                    onAnswerAdded={(a) => setAnswers([a])}
-                  />
-                )}
+                <>
+                  <p className="text-sm text-zinc-600">No answers yet. Be the first to help.</p>
+                  {question && (
+                    <AiAnswerButton
+                      questionId={question.id}
+                      title={question.title}
+                      questionBody={question.body}
+                      courseCode={question.course_code}
+                      level={question.level}
+                      onAnswerAdded={(a) => setAnswers([a])}
+                    />
+                  )}
+                </>
               ) : (
                 answers.map((a) => (
                   <div
