@@ -112,22 +112,22 @@ Note at the end in one line: "— AI-generated answer. Verify with your lecturer
   }
 
   // Bump answers_count on the question
-  await admin.rpc("increment_answers_count", { q_id: questionId }).catch(() => {
+  try {
+    await admin.rpc("increment_answers_count", { q_id: questionId });
+  } catch {
     // RPC may not exist — fall back to manual update
-    admin
+    const { data } = await admin
       .from("study_questions")
       .select("answers_count")
       .eq("id", questionId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          admin
-            .from("study_questions")
-            .update({ answers_count: (data.answers_count ?? 0) + 1 })
-            .eq("id", questionId);
-        }
-      });
-  });
+      .maybeSingle();
+    if (data) {
+      await admin
+        .from("study_questions")
+        .update({ answers_count: (data.answers_count ?? 0) + 1 })
+        .eq("id", questionId);
+    }
+  }
 
   return NextResponse.json({ answer: inserted, cached: false });
 }
