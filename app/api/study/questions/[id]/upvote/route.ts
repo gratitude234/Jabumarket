@@ -1,8 +1,6 @@
-// app/api/study/answers/[id]/upvote/route.ts
-// POST — Toggle an upvote on a study answer.
-//
-// Uses study_answer_votes (voter_id, answer_id) and increments/decrements
-// upvotes_count on study_answers.
+// app/api/study/questions/[id]/upvote/route.ts
+// POST — Toggle an upvote on a study question.
+//        Fires a milestone notification when the new count hits 1/5/10/25/50.
 //
 // Response:
 //   { ok: true; upvoted: boolean; count: number }
@@ -11,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { notifyUpvoteMilestone } from "@/lib/studyNotify";
 
 export async function POST(
   _req: NextRequest,
@@ -24,36 +23,31 @@ export async function POST(
   }
 
   const { id } = await params;
-  const answerId = id?.trim();
-  if (!answerId) {
-    return NextResponse.json({ ok: false, error: "Missing answer id" }, { status: 400 });
+  const questionId = id?.trim();
+  if (!questionId) {
+    return NextResponse.json({ ok: false, error: "Missing question id" }, { status: 400 });
   }
 
   const admin = createSupabaseAdminClient();
 
-  // ── Fetch answer ───────────────────────────────────────────────────────────
-  const { data: answer } = await admin
-    .from("study_answers")
-    .select("id,upvotes_count,author_id")
-    .eq("id", answerId)
+  // ── Fetch question ─────────────────────────────────────────────────────────
+  const { data: question } = await admin
+    .from("study_questions")
+    .select("id,title,author_id,upvotes_count")
+    .eq("id", questionId)
     .maybeSingle();
 
-  if (!answer) {
-    return NextResponse.json({ ok: false, error: "Answer not found." }, { status: 404 });
+  if (!question) {
+    return NextResponse.json({ ok: false, error: "Question not found." }, { status: 404 });
   }
 
-  // Prevent authors from upvoting their own answers
-  if (answer.author_id && answer.author_id === user.id) {
-    return NextResponse.json({ ok: false, error: "You cannot upvote your own answer." }, { status: 403 });
-  }
-
-  const currentCount = answer.upvotes_count ?? 0;
+  const currentCount = question.upvotes_count ?? 0;
 
   // ── Check current vote state ───────────────────────────────────────────────
   const { data: existingVote } = await admin
-    .from("study_answer_votes")
+    .from("study_question_votes")
     .select("id")
-    .eq("answer_id", answerId)
+    .eq("question_id", questionId)
     .eq("voter_id", user.id)
     .maybeSingle();
 
@@ -62,23 +56,23 @@ export async function POST(
   if (wasUpvoted) {
     // ── Remove vote ──────────────────────────────────────────────────────────
     await admin
-      .from("study_answer_votes")
+      .from("study_question_votes")
       .delete()
-      .eq("answer_id", answerId)
+      .eq("question_id", questionId)
       .eq("voter_id", user.id);
 
     const newCount = Math.max(0, currentCount - 1);
     await admin
-      .from("study_answers")
+      .from("study_questions")
       .update({ upvotes_count: newCount })
-      .eq("id", answerId);
+      .eq("id", questionId);
 
     return NextResponse.json({ ok: true, upvoted: false, count: newCount });
   } else {
     // ── Add vote ─────────────────────────────────────────────────────────────
     const { error: insErr } = await admin
-      .from("study_answer_votes")
-      .insert({ answer_id: answerId, voter_id: user.id });
+      .from("study_question_votes")
+      .insert({ question_id: questionId, voter_id: user.id });
 
     if (insErr) {
       return NextResponse.json({ ok: false, error: insErr.message }, { status: 500 });
@@ -86,9 +80,20 @@ export async function POST(
 
     const newCount = currentCount + 1;
     await admin
-      .from("study_answers")
+      .from("study_questions")
       .update({ upvotes_count: newCount })
-      .eq("id", answerId);
+      .eq("id", questionId);
+
+    // ── Fire milestone notification (non-blocking) ───────────────────────────
+    if (question.author_id) {
+      void notifyUpvoteMilestone({
+        questionId,
+        questionTitle: question.title ?? "your question",
+        questionAuthorId: question.author_id,
+        newCount,
+        voterId: user.id,
+      });
+    }
 
     return NextResponse.json({ ok: true, upvoted: true, count: newCount });
   }

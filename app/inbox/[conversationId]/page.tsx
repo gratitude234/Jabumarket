@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Send,
   ShoppingBag,
+  Store,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,6 +85,12 @@ export default function ConversationPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // FIX (Bug 2 & 3): Keep always-current refs so the real-time subscription
+  // never reads stale closure values of userId, vendorId, or meta.
+  const userIdRef = useRef<string | null>(null);
+  const vendorIdRef = useRef<string | null>(null);
+  const metaRef = useRef<ConversationMeta | null>(null);
+
   const listing = meta ? (Array.isArray(meta.listing) ? meta.listing[0] : meta.listing) : null;
   const vendor = meta ? (Array.isArray(meta.vendor) ? meta.vendor[0] : meta.vendor) : null;
 
@@ -104,10 +111,15 @@ export default function ConversationPage() {
     setMessages((data as Message[]) ?? []);
   }
 
+  // FIX (Bug 2 & 3): Read from refs so this is always correct regardless of
+  // when it's called from inside a stale closure (e.g. the real-time handler).
   async function markRead() {
-    if (!userId || !meta) return;
-    // Zero out the unread counter for this side
-    const field = isVendorSide ? "vendor_unread" : "buyer_unread";
+    const uid = userIdRef.current;
+    const currentMeta = metaRef.current;
+    if (!uid || !currentMeta) return;
+    const vid = vendorIdRef.current;
+    const onVendorSide = vid !== null && currentMeta.vendor_id === vid;
+    const field = onVendorSide ? "vendor_unread" : "buyer_unread";
     await supabase
       .from("conversations")
       .update({ [field]: 0 })
@@ -123,6 +135,7 @@ export default function ConversationPage() {
       const uid = authData.user?.id ?? null;
       if (!uid) { router.replace(`/login?next=/inbox/${conversationId}`); return; }
       setUserId(uid);
+      userIdRef.current = uid;
 
       // Get vendor profile
       const { data: vendorData } = await supabase
@@ -132,6 +145,7 @@ export default function ConversationPage() {
         .maybeSingle();
       const vid = (vendorData as any)?.id ?? null;
       setVendorId(vid);
+      vendorIdRef.current = vid;
 
       // Load conversation meta
       const { data: convData, error } = await supabase
@@ -154,6 +168,7 @@ export default function ConversationPage() {
       if (!isBuyer && !isVendor) { setNotFound(true); setLoading(false); return; }
 
       setMeta(conv);
+      metaRef.current = conv;
       await loadMessages();
       setLoading(false);
     })();
@@ -166,7 +181,8 @@ export default function ConversationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta?.id, userId]);
 
-  // Real-time messages
+  // Real-time messages — subscription is set up once and never needs to
+  // re-subscribe because markRead() now reads from refs, not the closure.
   useEffect(() => {
     if (!conversationId) return;
     const channel = supabase
@@ -180,14 +196,14 @@ export default function ConversationPage() {
             if (prev.find((m) => m.id === newMsg.id)) return prev;
             return [...prev, newMsg];
           });
-          // Mark read if the new message is from the other party
-          if (newMsg.sender_id !== userId) markRead();
+          // FIX (Bug 3): Use ref so userId is never stale here
+          if (newMsg.sender_id !== userIdRef.current) markRead();
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, userId]);
+  }, [conversationId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -226,16 +242,29 @@ export default function ConversationPage() {
         prev.map((m) => (m.id === optimisticId ? (inserted as Message) : m))
       );
 
-      // Update conversation preview + increment other party's unread
+      // FIX (Bug 1): Read the current unread value from metaRef (which we keep
+      // up to date below) so consecutive sends accumulate correctly, not reset to 1.
+      const currentMeta = metaRef.current!;
       const unreadField = isVendorSide ? "buyer_unread" : "vendor_unread";
+      const currentOtherUnread = isVendorSide ? currentMeta.buyer_unread : currentMeta.vendor_unread;
+      const newOtherUnread = currentOtherUnread + 1;
+
       await supabase
         .from("conversations")
         .update({
           last_message_preview: text.length > 80 ? text.slice(0, 80) + "…" : text,
           last_message_at: new Date().toISOString(),
-          [unreadField]: (isVendorSide ? meta.buyer_unread : meta.vendor_unread) + 1,
+          [unreadField]: newOtherUnread,
         })
         .eq("id", conversationId);
+
+      // FIX (Bug 1): Keep metaRef in sync so the next send reads the updated count.
+      const updatedMeta: ConversationMeta = {
+        ...currentMeta,
+        [unreadField]: newOtherUnread,
+      };
+      setMeta(updatedMeta);
+      metaRef.current = updatedMeta;
 
       // Send in-app notification to other party
       const otherUserId = isVendorSide
@@ -289,38 +318,55 @@ export default function ConversationPage() {
     <div className="mx-auto flex max-w-xl flex-col" style={{ height: "calc(100dvh - 56px - 4rem)" }}>
 
       {/* Top bar */}
-      <div className="flex items-center gap-3 border-b bg-white px-4 py-3">
-        <Link
-          href="/inbox"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border hover:bg-zinc-50"
-          aria-label="Back to inbox"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-
-        {listing ? (
+      <div className="flex flex-col border-b bg-white">
+        <div className="flex items-center gap-3 px-4 py-3">
           <Link
-            href={`/listing/${listing.id}`}
-            className="flex min-w-0 flex-1 items-center gap-3 no-underline"
+            href="/inbox"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border hover:bg-zinc-50"
+            aria-label="Back to inbox"
           >
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100">
-              {listing.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={listing.image_url} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                  <ShoppingBag className="h-4 w-4" />
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-zinc-900">{listing.title ?? "Listing"}</p>
-              <p className="text-xs text-zinc-500">{otherPartyName}</p>
-            </div>
+            <ArrowLeft className="h-4 w-4" />
           </Link>
-        ) : (
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-zinc-900">{otherPartyName}</p>
+
+          {listing ? (
+            <Link
+              href={`/listing/${listing.id}`}
+              className="flex min-w-0 flex-1 items-center gap-3 no-underline"
+            >
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100">
+                {listing.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={listing.image_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-zinc-300">
+                    <ShoppingBag className="h-4 w-4" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-zinc-900">{listing.title ?? "Listing"}</p>
+                <p className="text-xs text-zinc-500">{otherPartyName}</p>
+              </div>
+            </Link>
+          ) : (
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-zinc-900">{otherPartyName}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Role context strip — the key fix: user always knows which hat they're wearing */}
+        {!loading && meta && (
+          <div className={[
+            "flex items-center gap-2 px-4 py-1.5 text-[11px] font-medium",
+            isVendorSide
+              ? "bg-emerald-50 text-emerald-700 border-t border-emerald-100"
+              : "bg-indigo-50 text-indigo-700 border-t border-indigo-100",
+          ].join(" ")}>
+            {isVendorSide
+              ? <><Store className="h-3 w-3 shrink-0" /> You&rsquo;re the <strong>seller</strong> in this chat &mdash; buyer is asking about your listing</>
+              : <><ShoppingBag className="h-3 w-3 shrink-0" /> You&rsquo;re the <strong>buyer</strong> in this chat &mdash; messaging the seller</>
+            }
           </div>
         )}
       </div>
@@ -349,6 +395,11 @@ export default function ConversationPage() {
             const isOptimistic = msg.id.startsWith("opt-");
             const showDate = shouldShowDateSeparator(messages, i);
 
+            // Show the other party's label only on their first message in a sequence
+            const prevMsg = i > 0 ? messages[i - 1] : null;
+            const isFirstInSequence = !prevMsg || prevMsg.sender_id !== msg.sender_id;
+            const showSenderLabel = !isMine && isFirstInSequence;
+
             return (
               <div key={msg.id}>
                 {showDate && (
@@ -358,7 +409,19 @@ export default function ConversationPage() {
                     </span>
                   </div>
                 )}
-                <div className={`flex ${isMine ? "justify-end" : "justify-start"} mb-1`}>
+                <div className={`flex flex-col ${isMine ? "items-end" : "items-start"} mb-1`}>
+                  {/* Other party label — only on first bubble in a sequence */}
+                  {showSenderLabel && (
+                    <span className={[
+                      "mb-1 flex items-center gap-1 px-1 text-[10px] font-semibold",
+                      isVendorSide ? "text-indigo-500" : "text-emerald-600",
+                    ].join(" ")}>
+                      {isVendorSide
+                        ? <><ShoppingBag className="h-2.5 w-2.5" /> Buyer</>
+                        : <><Store className="h-2.5 w-2.5" /> {vendor?.name ?? "Seller"}</>
+                      }
+                    </span>
+                  )}
                   <div
                     className={[
                       "max-w-[78%] rounded-2xl px-4 py-2.5 text-sm",

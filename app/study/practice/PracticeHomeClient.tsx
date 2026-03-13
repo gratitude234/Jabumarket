@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  GraduationCap,
   CheckCircle2,
   Clock,
   Hash,
@@ -770,6 +771,7 @@ export default function PracticeHomeClient() {
   // Preview sheet
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSet, setPreviewSet] = useState<QuizSetRow | null>(null);
+  const [previewMode, setPreviewMode] = useState<"exam" | "study">("exam");
 
   // Drawer drafts
   const [draftCourse, setDraftCourse] = useState(courseParam);
@@ -787,6 +789,20 @@ export default function PracticeHomeClient() {
   const [hasMore, setHasMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schemaHint, setSchemaHint] = useState<string | null>(null);
+
+  // Due Today (SRS)
+  const [dueData, setDueData] = useState<{
+    total: number;
+    sets: Array<{
+      set_id: string;
+      set_title: string;
+      course_code: string | null;
+      question_count: number;
+      question_ids: string[];
+      miss_counts: Record<string, number>;
+    }>;
+  } | null>(null);
+  const [dueLoading, setDueLoading] = useState(true);
 
   // Attempts
   const [latestAttempt, setLatestAttempt] = useState<LatestAttempt | null>(null);
@@ -906,6 +922,27 @@ export default function PracticeHomeClient() {
     setHasMore(false);
     setTotal(0);
   }, [filtersKey]);
+
+  // Load Due Today count on mount
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setDueLoading(true);
+        const res = await fetch("/api/study/practice/due");
+        if (!mounted) return;
+        if (res.ok) {
+          const json = await res.json();
+          setDueData(json);
+        }
+      } catch {
+        // non-fatal — Due Today card just stays hidden
+      } finally {
+        if (mounted) setDueLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   // Load latest + recent attempts
   useEffect(() => {
@@ -1212,11 +1249,15 @@ export default function PracticeHomeClient() {
 
   function openPreview(s: QuizSetRow) {
     setPreviewSet(s);
+    setPreviewMode("exam"); // reset to default each time
     setPreviewOpen(true);
   }
 
-  function startSet(id: string) {
-    router.push(`/study/practice/${id}`);
+  function startSet(id: string, mode: "exam" | "study" = "exam") {
+    const url = mode === "study"
+      ? `/study/practice/${id}?mode=study`
+      : `/study/practice/${id}`;
+    router.push(url);
   }
 
   return (
@@ -1283,6 +1324,68 @@ export default function PracticeHomeClient() {
           }
         />
       </Card>
+
+      {/* ── Due Today card (SRS) ─────────────────────────────────────── */}
+      {!dueLoading && dueData && dueData.total > 0 ? (
+        <Card className="w-full max-w-full overflow-hidden rounded-3xl border-violet-200/70 bg-gradient-to-br from-violet-50/60 to-background p-4 dark:border-violet-800/40 dark:from-violet-950/20">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                  <GraduationCap className="h-4 w-4" />
+                </span>
+                <p className="text-base font-semibold text-foreground">Due today</p>
+                <span className="inline-flex items-center rounded-full border border-violet-300/50 bg-violet-100/60 px-2 py-0.5 text-[11px] font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+                  {dueData.total} question{dueData.total !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Questions you’ve missed before, timed for today’s review.
+              </p>
+              {/* Show which sets have due questions */}
+              <div className="mt-2.5 flex max-w-full flex-wrap gap-1.5">
+                {dueData.sets.slice(0, 3).map((s) => (
+                  <span
+                    key={s.set_id}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground"
+                  >
+                    {s.course_code ? (
+                      <span className="font-extrabold text-foreground">{s.course_code}</span>
+                    ) : null}
+                    {s.question_count} Q
+                  </span>
+                ))}
+                {dueData.sets.length > 3 ? (
+                  <span className="text-[11px] text-muted-foreground">+{dueData.sets.length - 3} more sets</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 shrink-0">
+              {dueData.sets.slice(0, 3).map((s, i) => (
+                <button
+                  key={s.set_id}
+                  type="button"
+                  onClick={() => router.push(`/study/practice/${s.set_id}?mode=study&due=1`)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold",
+                    i === 0
+                      ? "bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-700 dark:hover:bg-violet-600"
+                      : "border border-violet-300/50 bg-violet-50 text-violet-800 hover:bg-violet-100 dark:border-violet-700/50 dark:bg-violet-950/30 dark:text-violet-300",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  )}
+                >
+                  <GraduationCap className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate max-w-[120px]">
+                    {s.course_code ?? s.set_title.slice(0, 18)}
+                  </span>
+                  <span className="opacity-75">({s.question_count})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Continue card */}
       {latestAttempt?.set_id ? (
@@ -1783,33 +1886,85 @@ export default function PracticeHomeClient() {
         title="Preview"
         footer={
           previewSet ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewOpen(false);
-                  startSet(previewSet.id);
-                }}
-                className={cn(
-                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
-                  "hover:opacity-90",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            <div className="space-y-3">
+              {/* Mode picker */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Practice mode</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Show answers immediately?</p>
+                </div>
+                <div className="flex items-center gap-1 rounded-xl border border-border bg-secondary/50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode("study")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      previewMode === "study"
+                        ? "bg-violet-100 text-violet-800 border border-violet-300/60 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-700/50"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <GraduationCap className="h-3.5 w-3.5" />
+                    Study
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode("exam")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      previewMode === "exam"
+                        ? "bg-background text-foreground border border-border shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Exam
+                  </button>
+                </div>
+              </div>
+              <p className="px-1 text-xs text-muted-foreground">
+                {previewMode === "study" ? (
+                  <><span className="font-semibold text-violet-700 dark:text-violet-400">Study mode:</span>{" "}answer revealed with explanation after each pick. No timer.</>
+                ) : (
+                  <><span className="font-semibold">Exam mode:</span>{" "}answers shown after you submit. Timer active if set.</>
                 )}
-              >
-                <Play className="h-4 w-4" />
-                Start
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(false)}
-                className={cn(
-                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
-                  "hover:bg-secondary/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                )}
-              >
-                Close
-              </button>
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    startSet(previewSet.id, previewMode);
+                  }}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold",
+                    "hover:opacity-90",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    previewMode === "study"
+                      ? "bg-violet-600 text-white border border-violet-500 dark:bg-violet-700"
+                      : "border border-border bg-secondary text-foreground"
+                  )}
+                >
+                  {previewMode === "study" ? (
+                    <><GraduationCap className="h-4 w-4" /> Start in Study mode</>
+                  ) : (
+                    <><Play className="h-4 w-4" /> Start</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
+                    "hover:bg-secondary/50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                  )}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           ) : null
         }

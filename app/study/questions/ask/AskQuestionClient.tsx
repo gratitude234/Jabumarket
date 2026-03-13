@@ -8,7 +8,9 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ArrowLeft, Loader2, Plus, ShieldAlert } from "lucide-react";
 
-const LEVELS = ["100", "200", "300", "400", "500"] as const;
+const LEVELS = ["100", "200", "300", "400", "500", "600"] as const;
+const TITLE_MAX = 120;
+const BODY_MAX = 3000;
 
 export default function AskQuestionClient() {
   const router = useRouter();
@@ -51,8 +53,8 @@ export default function AskQuestionClient() {
     }
     const t = title.trim();
     const b = body.trim();
-    if (t.length < 8) return setError("Title is too short.");
-    if (b.length < 10) return setError("Please add more details.");
+    if (t.length < 8) return setError("Title is too short (min 8 characters).");
+    if (b.length < 10) return setError("Please add more details (min 10 characters).");
 
     setLoading(true);
     try {
@@ -83,38 +85,47 @@ export default function AskQuestionClient() {
     }
   }
 
+  const titleRemaining = TITLE_MAX - title.length;
+  const bodyRemaining = BODY_MAX - body.length;
+
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/study/questions"
-            className="grid h-10 w-10 place-items-center rounded-2xl border bg-white hover:bg-zinc-50"
-            aria-label="Back"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <p className="text-lg font-semibold text-zinc-900">Ask a question</p>
-            <p className="text-sm text-zinc-600">Be clear — it helps people answer faster.</p>
-          </div>
+      {/* Top bar */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/study/questions"
+          className={cn(
+            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
+            "hover:bg-secondary/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          )}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Questions
+        </Link>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">Ask a question</p>
+          <p className="text-xs text-muted-foreground">Be clear — it helps people answer faster.</p>
         </div>
       </div>
 
       {!userId && (
-        <div className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-4">
+        <div className="rounded-3xl border border-amber-200/70 bg-amber-500/5 p-4 dark:border-amber-700/30 dark:bg-amber-950/10">
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 grid h-10 w-10 place-items-center rounded-2xl bg-white">
-              <ShieldAlert className="h-4 w-4 text-amber-700" />
+            <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-background">
+              <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-900">Sign in required</p>
-              <p className="mt-1 text-sm text-amber-800">
+              <p className="text-sm font-semibold text-foreground">Sign in required</p>
+              <p className="mt-1 text-sm text-muted-foreground">
                 To prevent spam, you need to be signed in to ask questions and post answers.
               </p>
               <Link
                 href="/login"
-                className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                className={cn(
+                  "mt-3 inline-flex items-center gap-2 rounded-2xl border border-border bg-foreground px-4 py-2 text-sm font-semibold text-background no-underline",
+                  "hover:opacity-90"
+                )}
               >
                 Go to Login
               </Link>
@@ -124,34 +135,46 @@ export default function AskQuestionClient() {
       )}
 
       <div className="space-y-3">
-        <label className="block rounded-3xl border bg-white p-4">
-          <span className="text-xs font-semibold text-zinc-600">Title</span>
+        {/* Title */}
+        <div className="rounded-3xl border border-border bg-background p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">Title</span>
+            <span
+              className={cn(
+                "text-xs font-semibold",
+                titleRemaining < 20 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+              )}
+            >
+              {title.length}/{TITLE_MAX}
+            </span>
+          </div>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="E.g., How do I calculate standard deviation in GST101?"
-            className="mt-1 h-10 w-full bg-transparent text-sm text-zinc-900 outline-none"
-            maxLength={120}
+            className="mt-2 h-10 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            maxLength={TITLE_MAX}
           />
-          <p className="mt-1 text-xs text-zinc-500">Keep it short and specific (max 120 chars).</p>
-        </label>
+          <p className="mt-1 text-xs text-muted-foreground">Keep it short and specific.</p>
+        </div>
 
+        {/* Course + Level */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block rounded-3xl border bg-white p-4">
-            <span className="text-xs font-semibold text-zinc-600">Course code (optional)</span>
+          <div className="rounded-3xl border border-border bg-background p-4">
+            <span className="text-xs font-semibold text-muted-foreground">Course code (optional)</span>
             <input
               value={course}
-              onChange={(e) => setCourse(e.target.value)}
+              onChange={(e) => setCourse(e.target.value.toUpperCase())}
               placeholder="GST101"
-              className="mt-1 h-10 w-full bg-transparent text-sm text-zinc-900 outline-none"
+              className="mt-2 h-10 w-full bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground"
             />
-          </label>
-          <label className="block rounded-3xl border bg-white p-4">
-            <span className="text-xs font-semibold text-zinc-600">Level (optional)</span>
+          </div>
+          <div className="rounded-3xl border border-border bg-background p-4">
+            <span className="text-xs font-semibold text-muted-foreground">Level (optional)</span>
             <select
               value={level}
               onChange={(e) => setLevel(e.target.value)}
-              className="mt-1 h-10 w-full bg-transparent text-sm text-zinc-900 outline-none"
+              className="mt-2 h-10 w-full bg-transparent text-sm text-foreground outline-none"
             >
               <option value="">Select level</option>
               {LEVELS.map((lv) => (
@@ -160,23 +183,36 @@ export default function AskQuestionClient() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         </div>
 
-        <label className="block rounded-3xl border bg-white p-4">
-          <span className="text-xs font-semibold text-zinc-600">Details</span>
+        {/* Details */}
+        <div className="rounded-3xl border border-border bg-background p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">Details</span>
+            <span
+              className={cn(
+                "text-xs font-semibold",
+                bodyRemaining < 200 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+              )}
+            >
+              {body.length}/{BODY_MAX}
+            </span>
+          </div>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Explain what you tried, what you don’t understand, and include the exact question if possible."
-            className="mt-1 min-h-[140px] w-full resize-none bg-transparent text-sm text-zinc-900 outline-none"
-            maxLength={3000}
+            placeholder="Explain what you tried, what you don't understand, and include the exact question if possible."
+            className="mt-2 min-h-[140px] w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            maxLength={BODY_MAX}
           />
-          <p className="mt-1 text-xs text-zinc-500">The more detail, the better (max 3000 chars).</p>
-        </label>
+          <p className="mt-1 text-xs text-muted-foreground">The more detail, the better answers you'll get.</p>
+        </div>
 
         {error && (
-          <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          <div className="rounded-3xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {error}
+          </div>
         )}
 
         <button
@@ -184,10 +220,11 @@ export default function AskQuestionClient() {
           disabled={!canSubmit || loading}
           onClick={submit}
           className={cn(
-            "inline-flex w-full items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-semibold",
+            "inline-flex w-full items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-semibold transition-all",
             !canSubmit || loading
-              ? "cursor-not-allowed bg-zinc-200 text-zinc-500"
-              : "bg-zinc-900 text-white hover:bg-zinc-800"
+              ? "cursor-not-allowed bg-muted text-muted-foreground"
+              : "bg-foreground text-background hover:opacity-90",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           )}
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}

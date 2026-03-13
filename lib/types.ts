@@ -1,5 +1,18 @@
 export type ListingType = "product" | "service";
 
+export type ListingCondition =
+  | "new"
+  | "fairly_used"
+  | "used"
+  | "for_parts";
+
+export const LISTING_CONDITION_LABELS: Record<ListingCondition, string> = {
+  new: "New",
+  fairly_used: "Fairly used",
+  used: "Used",
+  for_parts: "For parts",
+};
+
 export type ListingRow = {
   id: string;
   vendor_id: string | null;
@@ -7,6 +20,8 @@ export type ListingRow = {
   description: string | null;
   listing_type: ListingType;
   category: string;
+  /** Physical condition of the item — null for services or when not specified. */
+  condition?: ListingCondition | null;
   price: number | null;
   price_label: string | null;
   location: string | null;

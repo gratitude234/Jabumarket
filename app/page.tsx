@@ -92,10 +92,6 @@ const quickLinks = [
   { label: "Verified vendors", href: "/vendors" },
 ];
 
-function NoScrollbarStyle() {
-  // Keep it local to this page, but only inject once.
-  return <style>{`*::-webkit-scrollbar{display:none}`}</style>;
-}
 
 function SectionHeader({
   title,
@@ -218,8 +214,6 @@ export default async function HomePage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-10 px-4 pb-28 pt-5 sm:pb-10 sm:pt-8">
-      <NoScrollbarStyle />
-
       {/* HERO */}
       <section className="relative overflow-hidden rounded-3xl border bg-white p-4 shadow-sm sm:p-7">
         {/* background */}

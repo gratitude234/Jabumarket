@@ -19,6 +19,10 @@ import {
   X,
   Sparkles,
   RotateCcw,
+  BookOpen,
+  GraduationCap,
+  CalendarClock,
+  TrendingUp,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
 import { cn, msToClock, normalize } from "@/lib/utils";
@@ -56,6 +60,17 @@ function getMilestone(correct: number, total: number): Milestone {
   if (pct >= 80)   return { level: "great",     emoji: "🔥", heading: "Great work!",         sub: `${pct}% — solid performance.` };
   if (pct >= 60)   return { level: "good",      emoji: "💪", heading: "Good effort!",        sub: `${pct}% — practice makes perfect.` };
   return              { level: "done",      emoji: "✅", heading: "Session complete",     sub: `${pct}% — review your answers below.` };
+}
+
+function formatDue(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const diff = t - Date.now();
+  const hours = Math.round(diff / 3_600_000);
+  if (hours <= 0) return "now";
+  if (hours < 24) return `in ${hours}h`;
+  const days = Math.round(diff / 86_400_000);
+  return `in ${days}d`;
 }
 
 const MILESTONE_STYLES: Record<MilestoneLevel, string> = {
@@ -199,8 +214,44 @@ export default function PracticeTakeClient() {
 
   const setId = String(params?.setId ?? "");
   const attemptFromUrl = String(sp.get("attempt") ?? "").trim();
+  const modeParam = sp.get("mode") ?? "exam";
+  const isStudyMode = modeParam === "study";
+  const isDueParam = sp.get("due") === "1";
 
-  const engine = usePracticeEngine({ setId, attemptFromUrl });
+  // Fetch the due question IDs for this set when ?due=1 is present.
+  // Falls back to null (= full set) if the fetch fails or the table doesn't exist yet.
+  const [dueQuestionIds, setDueQuestionIds] = useState<string[] | null>(null);
+  const [dueFetching, setDueFetching] = useState(isDueParam);
+
+  useEffect(() => {
+    if (!isDueParam || !setId) { setDueFetching(false); return; }
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/study/practice/due");
+        if (!mounted) return;
+        if (res.ok) {
+          const json = await res.json();
+          const match = (json.sets ?? []).find((s: any) => s.set_id === setId);
+          setDueQuestionIds(match?.question_ids ?? null);
+        }
+      } catch { /* non-fatal — fall back to full set */ } finally {
+        if (mounted) setDueFetching(false);
+      }
+    })();
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setId, isDueParam]);
+
+  // Don't mount the engine until we know the due IDs (avoids a double-load flash).
+  const engineReady = !isDueParam || !dueFetching;
+
+  const engine = usePracticeEngine({
+    setId,
+    attemptFromUrl,
+    studyMode: isStudyMode,
+    dueQuestionIds: isDueParam ? dueQuestionIds : null,
+  });
 
   const {
     meta,
@@ -217,11 +268,14 @@ export default function PracticeTakeClient() {
     timeLeftMs,
     stats,
     finalizing,
+    weakSummary,
     choose,
     softReset,
     retryWeakQuestions,
     finalizeAttempt,
     isRetryMode,
+    isDueMode,
+    studyMode,
   } = engine;
 
   // Instant feedback: reveal correctness after first tap (per question)
@@ -317,6 +371,27 @@ export default function PracticeTakeClient() {
     }
   }
 
+  if (dueFetching || (isDueParam && !engineReady)) {
+    return (
+      <div className="space-y-4 pb-28 md:pb-6">
+        <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 py-2 backdrop-blur border-b border-border">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+            <div className="h-full w-2/5 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-violet-500/70" />
+          </div>
+        </div>
+        <div className="mt-4 rounded-3xl border border-violet-200/60 bg-violet-50/50 dark:border-violet-800/40 dark:bg-violet-950/20 p-4">
+          <div className="flex items-center gap-3">
+            <GraduationCap className="h-5 w-5 text-violet-600 dark:text-violet-400 shrink-0" />
+            <div>
+              <p className="text-sm font-extrabold text-foreground">Loading Due Today</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Finding your queued questions…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
   // Route-level skeleton (loading.tsx) will usually render first.
   // This is a minimal fallback for client-side transitions.
@@ -379,7 +454,12 @@ if (err || !meta) {
           </button>
 
           <div className="flex items-center gap-2">
-            {typeof timeLeftMs === "number" ? (
+            {studyMode ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-300/50 bg-violet-100/60 px-2.5 py-2 text-xs font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+                <GraduationCap className="h-4 w-4" />
+                Study
+              </span>
+            ) : typeof timeLeftMs === "number" ? (
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
@@ -408,7 +488,14 @@ if (err || !meta) {
         <div className="mt-3">
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-extrabold text-foreground">{normalize(meta.title)}</p>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isDueMode && (
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-violet-300/50 bg-violet-100/60 px-2 py-0.5 text-[10px] font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+                    Due
+                  </span>
+                )}
+                <p className="truncate text-sm font-extrabold text-foreground">{normalize(meta.title)}</p>
+              </div>
               <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">
                 Answered <span className="tabular-nums">{stats.answered}</span>{" "}
                 <span className="text-muted-foreground">•</span>{" "}
@@ -468,7 +555,7 @@ if (err || !meta) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-foreground">
-                  {isRetryMode ? "Retry Results" : "Results"}
+                  {isDueMode ? "Due Today — Done" : isRetryMode ? "Retry Results" : "Results"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Score:{" "}
@@ -480,7 +567,12 @@ if (err || !meta) {
                     </span>
                   ) : null}
                 </p>
-                {isRetryMode && (
+                {isDueMode && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Spaced repetition queue for this set.
+                  </p>
+                )}
+                {!isDueMode && isRetryMode && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Practising weak questions only.
                   </p>
@@ -541,6 +633,87 @@ if (err || !meta) {
               )}
             </div>
           </Card>
+
+          {/* ── SRS summary card ──────────────────────────────────────────── */}
+          {weakSummary && weakSummary.filter((r) => !r.wasCorrect).length > 0 ? (
+            <Card className="rounded-3xl">
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-extrabold text-foreground">Weak questions tracked</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {weakSummary.filter((r) => !r.wasCorrect).length} question{weakSummary.filter((r) => !r.wasCorrect).length !== 1 ? "s" : ""} added to your spaced repetition queue
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {weakSummary
+                  .filter((r) => !r.wasCorrect)
+                  .slice(0, 5)
+                  .map((r) => (
+                    <div
+                      key={r.questionId}
+                      className="flex items-center gap-2.5 rounded-xl border border-border bg-background px-3 py-2"
+                    >
+                      <span
+                        className={cn(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          r.missCount >= 4
+                            ? "bg-rose-500"
+                            : r.missCount >= 2
+                            ? "bg-amber-500"
+                            : "bg-muted-foreground/50"
+                        )}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
+                        {r.prompt}
+                      </span>
+                      <span className="shrink-0 text-[11px] font-extrabold text-muted-foreground">
+                        ×{r.missCount}
+                      </span>
+                      {r.nextDueAt ? (
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          due {formatDue(r.nextDueAt)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                {weakSummary.filter((r) => !r.wasCorrect).length > 5 && (
+                  <p className="pl-2 text-[11px] text-muted-foreground">
+                    +{weakSummary.filter((r) => !r.wasCorrect).length - 5} more tracked
+                  </p>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  href="/study/practice?view=due"
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold",
+                    "bg-violet-600 text-white hover:bg-violet-700",
+                    "dark:bg-violet-700 dark:hover:bg-violet-600",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                  )}
+                >
+                  <CalendarClock className="h-4 w-4" />
+                  View Due Today
+                </a>
+              </div>
+            </Card>
+          ) : weakSummary && weakSummary.every((r) => r.wasCorrect) && weakSummary.length > 0 ? (
+            <Card className="rounded-3xl">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <TrendingUp className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">No new weak questions</p>
+                  <p className="text-[11px] text-muted-foreground">Great session — all tracked questions answered correctly.</p>
+                </div>
+              </div>
+            </Card>
+          ) : null}
         </div>
       ) : (
         /* Question */
@@ -558,7 +731,9 @@ if (err || !meta) {
             {/* hint row */}
             <div className="mt-3 flex items-center justify-between gap-2">
               <p className="text-[12px] font-semibold text-muted-foreground">
-                Tap an option to see if it’s right.
+                {studyMode
+                  ? "Study mode — explanation shown after each answer."
+                  : "Tap an option to see if it’s right."}
               </p>
 
               {isRevealed ? (
@@ -669,28 +844,67 @@ if (err || !meta) {
                   <button
                     type="button"
                     onClick={submitNow}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                    className={cn(
+                      "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      studyMode
+                        ? "bg-violet-600 text-white dark:bg-violet-700"
+                        : "bg-secondary text-foreground"
+                    )}
                   >
-                    <Send className="h-4 w-4" /> Submit
+                    {studyMode ? (
+                      <><GraduationCap className="h-4 w-4" /> Finish session</>
+                    ) : (
+                      <><Send className="h-4 w-4" /> Submit</>
+                    )}
                   </button>
                 )}
               </div>
             </div>
           </Card>
 
-          {/* ── AI Explain Panel — appears after student answers ────────── */}
+          {/* ── Explanation Panel — appears after student answers ────────── */}
           {isRevealed && current ? (
-            <AiExplainInline
-              questionId={current.id}
-              questionPrompt={String(current.prompt ?? "")}
-              chosenOptionText={
-                currentOptions.find((o) => o.id === chosenId)?.text ?? null
-              }
-              correctOptionText={
-                currentOptions.find((o) => getIsCorrect(o))?.text ?? null
-              }
-              isCorrect={chosenId === correctOptionId}
-            />
+            <div className="space-y-2">
+              {/* Study mode: show stored explanation immediately */}
+              {studyMode && current.explanation ? (
+                <div className={cn(
+                  "rounded-2xl border px-3 py-3 space-y-1.5",
+                  chosenId === correctOptionId
+                    ? "border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-700/30 dark:bg-emerald-950/20"
+                    : "border-rose-200/60 bg-rose-50/50 dark:border-rose-700/30 dark:bg-rose-950/20"
+                )}>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "grid h-7 w-7 shrink-0 place-items-center rounded-xl text-xs",
+                      chosenId === correctOptionId
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                        : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                    )}>
+                      <BookOpen className="h-3.5 w-3.5" />
+                    </span>
+                    <p className={cn(
+                      "text-xs font-extrabold",
+                      chosenId === correctOptionId
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "text-rose-700 dark:text-rose-300"
+                    )}>Explanation</p>
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{current.explanation}</p>
+                </div>
+              ) : null}
+              {/* AI deep-dive button — always available after answering */}
+              <AiExplainInline
+                questionId={current.id}
+                questionPrompt={String(current.prompt ?? "")}
+                chosenOptionText={
+                  currentOptions.find((o) => o.id === chosenId)?.text ?? null
+                }
+                correctOptionText={
+                  currentOptions.find((o) => getIsCorrect(o))?.text ?? null
+                }
+                isCorrect={chosenId === correctOptionId}
+              />
+            </div>
           ) : null}
 
           {/* Bottom quick actions (simple, mobile-friendly) */}
@@ -699,16 +913,27 @@ if (err || !meta) {
               <div className="min-w-0">
                 <p className="text-xs font-extrabold text-muted-foreground">Quick actions</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Submit anytime. After you pick an option, it locks and shows the correct one.
+                  {studyMode
+                    ? "Finish when you’re done. Your progress is saved."
+                    : "Submit anytime. After you pick an option, it locks and shows the correct one."}
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={submitNow}
-                className="shrink-0 inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                className={cn(
+                  "shrink-0 inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                  studyMode
+                    ? "border-violet-300/50 bg-violet-100/60 text-violet-800 hover:bg-violet-100 dark:border-violet-700/50 dark:bg-violet-950/30 dark:text-violet-300"
+                    : "border-border bg-background text-foreground hover:bg-secondary/50"
+                )}
               >
-                <Send className="h-4 w-4" /> Submit
+                {studyMode ? (
+                  <><GraduationCap className="h-4 w-4" /> Finish</>
+                ) : (
+                  <><Send className="h-4 w-4" /> Submit</>
+                )}
               </button>
             </div>
           </Card>

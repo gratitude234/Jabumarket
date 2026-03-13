@@ -27,10 +27,22 @@ function readLocalDraft(key: string): LatestRestore {
 export function usePracticeEngine({
   setId,
   attemptFromUrl,
+  studyMode = false,
+  dueQuestionIds,
 }: {
   setId: string;
   attemptFromUrl: string;
+  /** Study mode: skip timer, reveal answers immediately. No schema changes needed. */
+  studyMode?: boolean;
+  /**
+   * Due Today mode — pre-filter questions to only these IDs.
+   * Passed in by PracticeTakeClient when ?due=1 is in the URL.
+   * Uses the same retryWeakIds mechanism so no extra engine state is needed.
+   */
+  dueQuestionIds?: string[] | null;
 }) {
+  // Track whether this is a pre-filtered Due Today session (vs normal or retry).
+  const isDueMode = Boolean(dueQuestionIds && dueQuestionIds.length > 0);
 
   const [meta, setMeta] = useState<QuizSet | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -71,6 +83,16 @@ export function usePracticeEngine({
   // Retry-weak mode — when set, the active question list is filtered to only
   // these IDs. The full questions/options data is still held in memory.
   const [retryWeakIds, setRetryWeakIds] = useState<Set<string> | null>(null);
+
+  // SRS summary surfaced to the results screen after finalize.
+  // Populated by finalizeAttempt — null until the attempt is submitted.
+  const [weakSummary, setWeakSummary] = useState<Array<{
+    questionId: string;
+    prompt: string;
+    missCount: number;
+    nextDueAt: string;
+    wasCorrect: boolean;
+  }> | null>(null);
 
   // Local draft autosave (backup if DB upsert fails)
   const draftKey = useMemo(
@@ -263,13 +285,13 @@ export function usePracticeEngine({
           }
         }
 
-        // Timer deadline based on startedAtMs
+        // Timer deadline based on startedAtMs — suppressed in study mode
         const mins =
           typeof (setRes.data as any)?.time_limit_minutes === "number"
             ? (setRes.data as any).time_limit_minutes
             : null;
 
-        if (mins && mins > 0) {
+        if (mins && mins > 0 && !studyMode) {
           const deadline = startedAtMs + mins * 60_000;
           deadlineRef.current = deadline;
           setTimeLeftMs(deadline - Date.now());
@@ -280,6 +302,15 @@ export function usePracticeEngine({
         setQuestions(cleanQData);
         setOptionsByQ(grouped);
         setAttemptId(effectiveAttemptId);
+
+        // Apply Due Today pre-filter immediately after questions load.
+        // Reuses the retryWeakIds mechanism so the rest of the engine is unchanged.
+        if (dueQuestionIds && dueQuestionIds.length > 0) {
+          const dueSet = new Set(dueQuestionIds);
+          // Only keep IDs that actually exist in this set (guard against stale cache).
+          const valid = new Set(cleanQData.map((q) => q.id).filter((id) => dueSet.has(id)));
+          if (valid.size > 0) setRetryWeakIds(valid);
+        }
       } catch (e: any) {
         if (!cancelled) setErr(e?.message ?? "Failed to load practice set");
       } finally {
@@ -488,6 +519,93 @@ export function usePracticeEngine({
           { onConflict: "user_id,activity_date" }
         );
 
+      // ── SRS: persist weak/correct signals ──────────────────────────────
+      // Fetch existing rows for the questions in this attempt so we can
+      // compute the new interval without a round-trip per question.
+      const questionIds = activeQuestions.map((q) => q.id);
+      const { data: existingRows } = await supabase
+        .from("study_weak_questions")
+        .select("question_id, miss_count, correct_streak")
+        .eq("user_id", userId)
+        .in("question_id", questionIds);
+
+      const existingMap: Record<string, { miss_count: number; correct_streak: number }> = {};
+      for (const row of (existingRows ?? []) as any[]) {
+        existingMap[row.question_id] = {
+          miss_count: row.miss_count ?? 0,
+          correct_streak: row.correct_streak ?? 0,
+        };
+      }
+
+      function computeNextDue(missCount: number, fromIso: string): string {
+        // SM-2 lite: interval doubles from miss 3 onwards, capped at 30 days.
+        // miss 1 & 2 → 1 day, miss 3 → 2 days, miss 4 → 4 days, miss N → 2^(N-2) days.
+        const daysMap: Record<number, number> = { 1: 1, 2: 1 };
+        const days = daysMap[missCount] ?? Math.min(Math.pow(2, missCount - 2), 30);
+        const base = new Date(fromIso).getTime();
+        return new Date(base + days * 86_400_000).toISOString();
+      }
+
+      const srsUpserts: any[] = [];
+      const summaryRows: typeof weakSummary = [];
+
+      for (const q of activeQuestions) {
+        const chosen = answers[q.id];
+        const opts = optionsByQ[q.id] ?? [];
+        const isCorrect = chosen ? (opts.find((o) => o.id === chosen)?.is_correct ?? false) : false;
+        const wasUnanswered = !chosen;
+        const existing = existingMap[q.id];
+
+        if (isCorrect && !existing) {
+          // Never seen as wrong — no row needed.
+          summaryRows.push({ questionId: q.id, prompt: q.prompt, missCount: 0, nextDueAt: "", wasCorrect: true });
+          continue;
+        }
+
+        if (isCorrect && existing) {
+          const newStreak = existing.correct_streak + 1;
+          const graduated = newStreak >= 3;
+          srsUpserts.push({
+            user_id: userId,
+            question_id: q.id,
+            miss_count: existing.miss_count,
+            last_missed_at: submittedIso, // keep existing — not a new miss
+            next_due_at: computeNextDue(existing.miss_count, submittedIso),
+            correct_streak: newStreak,
+            graduated_at: graduated ? submittedIso : null,
+            updated_at: submittedIso,
+          });
+          summaryRows.push({ questionId: q.id, prompt: q.prompt, missCount: existing.miss_count, nextDueAt: "", wasCorrect: true });
+          continue;
+        }
+
+        // Wrong or unanswered
+        const prevMiss = existing?.miss_count ?? 0;
+        const newMiss = prevMiss + 1;
+        const nextDue = computeNextDue(newMiss, submittedIso);
+        srsUpserts.push({
+          user_id: userId,
+          question_id: q.id,
+          miss_count: newMiss,
+          last_missed_at: submittedIso,
+          next_due_at: nextDue,
+          correct_streak: 0, // reset streak on any miss
+          graduated_at: null,
+          updated_at: submittedIso,
+        });
+        summaryRows.push({ questionId: q.id, prompt: q.prompt, missCount: newMiss, nextDueAt: nextDue, wasCorrect: false });
+      }
+
+      if (srsUpserts.length > 0) {
+        await supabase
+          .from("study_weak_questions")
+          .upsert(srsUpserts, { onConflict: "user_id,question_id" });
+      }
+
+      // Surface only wrong/unanswered in the summary (skip already-correct rows with no history).
+      setWeakSummary(summaryRows.filter((r) => !r.wasCorrect || r.missCount > 0));
+      // ── end SRS ────────────────────────────────────────────────────────
+
       safePushRecent({
         id: `practice:${attemptId}`,
         title: meta?.title ?? "Practice",
@@ -559,7 +677,9 @@ export function usePracticeEngine({
     setSubmitted,
     attemptId,
     timeLeftMs,
-    isRetryMode: retryWeakIds !== null,
+    isRetryMode: retryWeakIds !== null && !isDueMode,
+    isDueMode,
+    studyMode,
 
     // review
     reviewTab,
@@ -567,6 +687,7 @@ export function usePracticeEngine({
     reviewItems,
     stats,
     finalizing,
+    weakSummary,
 
     // actions
     choose,

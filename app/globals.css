@@ -167,3 +167,6 @@
   50% { transform: translateX(60%); }
   100% { transform: translateX(160%); }
 }
+-e 
+/* Hide scrollbars globally */
+*::-webkit-scrollbar { display: none; }

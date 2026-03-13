@@ -25,12 +25,14 @@ export default function AskSellerButton({
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (isOwner) return null;
 
   async function handleClick() {
     if (loading) return;
     setLoading(true);
+    setError(null); // Clear any previous error on retry
 
     try {
       // 1. Auth check
@@ -53,7 +55,7 @@ export default function AskSellerButton({
         return;
       }
 
-      const { data: created, error } = await supabase
+      const { data: created, error: insertError } = await supabase
         .from("conversations")
         .insert({
           listing_id: listingId,
@@ -63,7 +65,7 @@ export default function AskSellerButton({
         .select("id")
         .single();
 
-      if (error || !created) {
+      if (insertError || !created) {
         // Maybe race condition — try fetching again
         const { data: retry } = await supabase
           .from("conversations")
@@ -73,13 +75,17 @@ export default function AskSellerButton({
           .maybeSingle();
         if (retry?.id) {
           router.push(`/inbox/${retry.id}`);
+          return;
         }
+        // Both insert and retry failed — show user-facing error (#4)
+        setError("Couldn't open chat. Please try again.");
         return;
       }
 
       router.push(`/inbox/${created.id}`);
     } catch {
-      // fail silently — button just stops spinning
+      // Network or unexpected error — show user-facing message (#4)
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -87,37 +93,43 @@ export default function AskSellerButton({
 
   if (variant === "icon") {
     return (
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={loading || isSold}
-        aria-label="Message seller"
-        className={[
-          "grid h-10 w-10 place-items-center rounded-full border transition",
-          isSold ? "opacity-40 cursor-not-allowed bg-zinc-50 text-zinc-400" : "bg-white text-zinc-700 hover:bg-zinc-50",
-          className,
-        ].filter(Boolean).join(" ")}
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-      </button>
+      <div className="flex flex-col items-center gap-1">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={loading || isSold}
+          aria-label="Message seller"
+          className={[
+            "grid h-10 w-10 place-items-center rounded-full border transition",
+            isSold ? "opacity-40 cursor-not-allowed bg-zinc-50 text-zinc-400" : "bg-white text-zinc-700 hover:bg-zinc-50",
+            className,
+          ].filter(Boolean).join(" ")}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+        </button>
+        {error && <p className="text-[10px] text-red-500 text-center">{error}</p>}
+      </div>
     );
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={loading || isSold}
-      className={[
-        "inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
-        isSold
-          ? "bg-zinc-50 text-zinc-400 cursor-not-allowed"
-          : "bg-white text-zinc-900 hover:bg-zinc-50",
-        className,
-      ].filter(Boolean).join(" ")}
-    >
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-      {loading ? "Opening…" : "Message seller"}
-    </button>
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={loading || isSold}
+        className={[
+          "inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+          isSold
+            ? "bg-zinc-50 text-zinc-400 cursor-not-allowed"
+            : "bg-white text-zinc-900 hover:bg-zinc-50",
+          className,
+        ].filter(Boolean).join(" ")}
+      >
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+        {loading ? "Opening…" : "Message seller"}
+      </button>
+      {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+    </div>
   );
 }

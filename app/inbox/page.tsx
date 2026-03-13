@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -9,7 +9,7 @@ import {
   MessageCircle,
   ShoppingBag,
   Store,
-  Clock,
+  Tag,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,6 +69,8 @@ export default function InboxPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("buying");
+  // tabRef keeps the realtime handler in sync — avoids stale closure (#3)
+  const tabRef = useRef<Tab>("buying");
   const [loading, setLoading] = useState(true);
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
 
@@ -77,8 +79,10 @@ export default function InboxPage() {
 
   async function load(uid: string, vid: string | null) {
     setLoading(true);
+    // Read current tab from ref so realtime handler always sees the latest value (#3)
+    const currentTab = tabRef.current;
     try {
-      if (tab === "buying") {
+      if (currentTab === "buying") {
         const { data } = await supabase
           .from("conversations")
           .select(`
@@ -110,15 +114,25 @@ export default function InboxPage() {
         const rows = (data as any[]) ?? [];
         setConversations(rows);
 
-        // Fetch buyer identities for display (auth.users not directly accessible — use email from metadata stored in user_metadata via supabase functions)
-        // We get display name from conversations: buyer_id → fetch user metadata via RPC or fallback to buyer_id short form
-        // For now we show a truncated ID; real names need a profiles table or RPC
+        // Fix #2: Fetch real buyer display names from the profiles table.
+        // Falls back to email prefix, then short UUID if neither is available.
         const ids = [...new Set(rows.map((r: any) => r.buyer_id as string))];
         if (ids.length > 0) {
-          // Try fetching from a profiles view if available, otherwise use email prefix
           const metaMap: Record<string, { email: string | null; full_name: string | null }> = {};
+
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", ids);
+
+          // Seed with truncated-ID fallback so we never show "Unknown"
           for (const id of ids) {
             metaMap[id] = { email: null, full_name: `Buyer ${id.slice(0, 6)}` };
+          }
+          for (const p of (profiles as any[]) ?? []) {
+            if (p.full_name || p.email) {
+              metaMap[p.id] = { email: p.email ?? null, full_name: p.full_name ?? null };
+            }
           }
           setBuyerMeta(metaMap);
         }
@@ -150,6 +164,7 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
+    tabRef.current = tab; // Keep ref in sync whenever tab changes (#3)
     if (userId) load(userId, vendorId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
@@ -167,10 +182,13 @@ export default function InboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, vendorId]);
 
+  // Fix #8: Show total unread across BOTH roles (buyer + vendor) so the badge
+  // is always accurate regardless of which tab is currently active.
   const totalUnread = useMemo(() => {
     return conversations.reduce((sum, c) => {
-      const isVendor = vendorId && c.vendor_id === vendorId;
-      return sum + (isVendor ? c.vendor_unread : c.buyer_unread);
+      // Count whichever role is relevant for each conversation
+      const isVendorConv = vendorId && c.vendor_id === vendorId;
+      return sum + (isVendorConv ? c.vendor_unread : c.buyer_unread);
     }, 0);
   }, [conversations, vendorId]);
 
@@ -307,7 +325,23 @@ export default function InboxPage() {
                     </p>
                     <span className="shrink-0 text-[11px] text-zinc-400">{timeAgo(c.last_message_at)}</span>
                   </div>
-                  <p className="mt-0.5 text-xs text-zinc-500">{otherName}</p>
+
+                  {/* Role + other party row */}
+                  <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    {/* Role badge — makes it instantly clear which side you're on */}
+                    <span className={[
+                      "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                      isVendorSide
+                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                        : "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+                    ].join(" ")}>
+                      {isVendorSide ? <Store className="h-2.5 w-2.5" /> : <ShoppingBag className="h-2.5 w-2.5" />}
+                      {isVendorSide ? "Selling" : "Buying"}
+                    </span>
+                    <span className="text-xs text-zinc-400">·</span>
+                    <span className="text-xs text-zinc-500 truncate">{otherName}</span>
+                  </div>
+
                   {c.last_message_preview ? (
                     <p className={`mt-1 text-xs line-clamp-1 ${unread > 0 ? "text-zinc-700 font-medium" : "text-zinc-400"}`}>
                       {c.last_message_preview}

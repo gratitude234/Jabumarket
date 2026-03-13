@@ -26,6 +26,8 @@ export default function NotificationBell({ className }: { className?: string }) 
   }
 
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     (async () => {
       const { data } = await supabase.auth.getUser();
       const uid = data.user?.id ?? null;
@@ -34,7 +36,7 @@ export default function NotificationBell({ className }: { className?: string }) 
       if (uid) {
         await refresh(uid);
 
-        const channel = supabase
+        channel = supabase
           .channel(`notifications:${uid}`)
           .on(
             "postgres_changes",
@@ -42,12 +44,13 @@ export default function NotificationBell({ className }: { className?: string }) 
             () => refresh(uid)
           )
           .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
       }
     })();
+
+    // Cleanup is returned from useEffect directly so React can call it on unmount.
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   const icon = useMemo(

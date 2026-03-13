@@ -2,11 +2,18 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { ListingRow, ListingType } from "@/lib/types";
+import type { ListingRow, ListingType, ListingCondition, RiderRow, CourierRow } from "@/lib/types";
+import { LISTING_CONDITION_LABELS } from "@/lib/types";
 import ListingImage from "@/components/ListingImage";
 import { Search, ArrowRight, ArrowLeft } from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
 import ExploreNavProgress from "@/components/explore/ExploreNavProgress";
+import PriceRangeSlider from "@/components/explore/PriceRangeSlider";
+import VendorsClient from "@/app/vendors/VendorsClient";
+import DeliveryClient from "@/app/delivery/DeliveryClient";
+import CouriersClient from "@/app/couriers/CouriersClient";
+
+type ExploreTab = "listings" | "vendors" | "delivery" | "transport";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -19,6 +26,7 @@ function buildExploreHref(params: {
   q?: string;
   type?: string;
   category?: string;
+  condition?: string;
   sort?: string;
   page?: string | number;
   sold?: string;
@@ -40,6 +48,7 @@ function buildExploreHref(params: {
   if (category && category !== "all") sp.set("category", category);
   if (sort && sort !== "smart") sp.set("sort", sort);
 
+  if (params.condition) sp.set("condition", params.condition);
   if (params.sold === "1") sp.set("sold", "1");
   if (params.inactive === "1") sp.set("inactive", "1");
   if (params.negotiable === "1") sp.set("negotiable", "1");
@@ -61,11 +70,6 @@ function clampPage(n: number) {
   return Math.floor(n);
 }
 
-// reduce weird LIKE behavior
-function escapeLike(input: string) {
-  return input.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
-}
-
 const CATEGORIES = [
   "Phones",
   "Laptops",
@@ -83,9 +87,11 @@ export default async function ExplorePage({
   searchParams,
 }: {
   searchParams?: Promise<{
+    tab?: string;
     q?: string;
     type?: string;
     category?: string;
+    condition?: string;
     sort?: string;
     page?: string;
     sold?: string;
@@ -97,9 +103,11 @@ export default async function ExplorePage({
 }) {
   const supabase = await createSupabaseServerClient();
   const sp = (searchParams ? await searchParams : {}) as {
+    tab?: string;
     q?: string;
     type?: string;
     category?: string;
+    condition?: string;
     sort?: string;
     page?: string;
     sold?: string;
@@ -109,11 +117,75 @@ export default async function ExplorePage({
     negotiable?: string;
   };
 
+  // ── Tab routing ──────────────────────────────────────────────────────────
+  const activeTab = (sp.tab ?? "listings") as ExploreTab;
+
+  // Render non-listings tabs early (they manage their own data fetching)
+  if (activeTab === "vendors") {
+    return (
+      <div className="space-y-4">
+        <ExploreTabs active="vendors" />
+        <VendorsClient />
+      </div>
+    );
+  }
+
+  if (activeTab === "delivery") {
+    const { data: ridersData } = await supabase
+      .from("riders")
+      .select("id,name,phone,whatsapp,zone,fee_note,is_available,verified,created_at")
+      .order("verified", { ascending: false })
+      .order("is_available", { ascending: false })
+      .order("created_at", { ascending: false });
+    const riders = (ridersData ?? []) as RiderRow[];
+
+    return (
+      <div className="space-y-4">
+        <ExploreTabs active="delivery" />
+        <div className="mx-auto max-w-2xl">
+          <DeliveryClient listing={null} riders={riders} />
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTab === "transport") {
+    const { data: couriersData, error: couriersError } = await supabase
+      .from("couriers")
+      .select("id,name,whatsapp,phone,base_location,areas_covered,hours,price_note,verified,active,featured,created_at")
+      .eq("active", true)
+      .eq("verified", true)
+      .order("featured", { ascending: false })
+      .order("created_at", { ascending: false });
+    const couriers = (couriersData ?? []) as CourierRow[];
+
+    const prefill = `Hi! I need campus transport.\n\nPickup: (where to pick)\nDrop-off: (my location)\nBudget: (₦...)\n\nCan you help?`;
+
+    return (
+      <div className="space-y-4">
+        <ExploreTabs active="transport" />
+        <CouriersClient
+          listingId=""
+          listingTitle={null}
+          listingPickup={null}
+          prefill={prefill}
+          couriers={couriers}
+          loadError={couriersError?.message ?? null}
+        />
+      </div>
+    );
+  }
+
   const qRaw = (sp.q ?? "").trim();
   const q = qRaw; // keep original for UI
   const type = (sp.type ?? "all") as "all" | ListingType;
   const category = (sp.category ?? "all").trim();
   const sort = ((sp.sort ?? "smart").trim() as SortKey) || "smart";
+
+  const VALID_CONDITIONS: ListingCondition[] = ["new", "fairly_used", "used", "for_parts"];
+  const conditionFilter = sp.condition && VALID_CONDITIONS.includes(sp.condition as ListingCondition)
+    ? (sp.condition as ListingCondition)
+    : null;
 
   const includeSold = sp.sold === "1";
   const includeInactive = sp.inactive === "1";
@@ -141,12 +213,16 @@ export default async function ExplorePage({
   if (minPrice !== null && Number.isFinite(minPrice)) countQuery = countQuery.gte("price", minPrice);
   if (maxPrice !== null && Number.isFinite(maxPrice)) countQuery = countQuery.lte("price", maxPrice);
   if (onlyNegotiable) countQuery = countQuery.eq("negotiable", true);
+  if (conditionFilter) countQuery = countQuery.eq("condition", conditionFilter);
 
   if (qRaw && qRaw.length >= 2) {
-    const safe = escapeLike(qRaw);
-    countQuery = countQuery.or(
-      `title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`
-    );
+    // Use full-text search on the generated tsvector column — much faster and
+    // more relevant than LIKE. websearch_to_tsquery handles partial words,
+    // quoted phrases and hyphens without errors on arbitrary input.
+    countQuery = countQuery.textSearch("search_vector", qRaw, {
+      type: "websearch",
+      config: "english",
+    });
   }
 
   const { count, error: countError } = await countQuery;
@@ -156,7 +232,7 @@ export default async function ExplorePage({
 
   // If price range or negotiable filter is active, the RPC doesn't support these params
   // so we always use the standard query path in that case.
-  const hasPriceOrNegotiableFilter = (minPrice !== null) || (maxPrice !== null) || onlyNegotiable;
+  const hasPriceOrNegotiableFilter = (minPrice !== null) || (maxPrice !== null) || onlyNegotiable || !!conditionFilter;
 
   if (sort === "smart" && !hasPriceOrNegotiableFilter) {
     const { data: rankedData, error: rankedError } = await supabase.rpc("explore_ranked_listings", {
@@ -174,7 +250,7 @@ export default async function ExplorePage({
     let query = supabase
       .from("listings")
       .select(
-        "id,title,description,listing_type,category,price,price_label,location,image_url,negotiable,status,created_at"
+        "id,title,description,listing_type,category,condition,price,price_label,location,image_url,negotiable,status,created_at"
       );
 
     if (type !== "all") query = query.eq("listing_type", type);
@@ -184,12 +260,14 @@ export default async function ExplorePage({
     if (minPrice !== null && Number.isFinite(minPrice)) query = query.gte("price", minPrice);
     if (maxPrice !== null && Number.isFinite(maxPrice)) query = query.lte("price", maxPrice);
     if (onlyNegotiable) query = query.eq("negotiable", true);
+    if (conditionFilter) query = query.eq("condition", conditionFilter);
 
     if (qRaw && qRaw.length >= 2) {
-      const safe = escapeLike(qRaw);
-      query = query.or(
-        `title.ilike.%${safe}%,description.ilike.%${safe}%,location.ilike.%${safe}%`
-      );
+      // Full-text search — consistent with the count query above
+      query = query.textSearch("search_vector", qRaw, {
+        type: "websearch",
+        config: "english",
+      });
     }
 
     if (sort === "price_asc") {
@@ -220,6 +298,7 @@ export default async function ExplorePage({
     q,
     type,
     category,
+    condition: conditionFilter ?? "",
     sort,
     sold: includeSold ? "1" : "",
     inactive: includeInactive ? "1" : "",
@@ -232,6 +311,7 @@ export default async function ExplorePage({
     !!q ||
     type !== "all" ||
     category !== "all" ||
+    !!conditionFilter ||
     sort !== "smart" ||
     includeSold ||
     includeInactive ||
@@ -317,6 +397,9 @@ export default async function ExplorePage({
 
   return (
     <div className="space-y-4">
+      {/* Explore section tabs */}
+      <ExploreTabs active="listings" />
+
       {/* Progress bar — shown immediately when a filter link is clicked */}
       <Suspense fallback={null}>
         <ExploreNavProgress />
@@ -470,47 +553,31 @@ export default async function ExplorePage({
               </div>
 
               <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-700">Condition</p>
+                <div className="flex flex-wrap gap-2">
+                  <Pill
+                    href={buildExploreHref({ ...activeFilters, condition: "", page: 1 })}
+                    active={!conditionFilter}
+                    label="Any"
+                  />
+                  {(Object.entries(LISTING_CONDITION_LABELS) as [ListingCondition, string][]).map(([value, label]) => (
+                    <Pill
+                      key={value}
+                      href={buildExploreHref({ ...activeFilters, condition: conditionFilter === value ? "" : value, page: 1 })}
+                      active={conditionFilter === value}
+                      label={label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <p className="text-xs font-medium text-zinc-700">Price range (₦)</p>
-                <form method="GET" action="/explore" className="flex items-center gap-2">
-                  {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
-                  {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
-                  {sort !== "smart" ? <input type="hidden" name="sort" value={sort} /> : null}
-                  {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
-                  {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
-                  {onlyNegotiable ? <input type="hidden" name="negotiable" value="1" /> : null}
-                  {q ? <input type="hidden" name="q" value={q} /> : null}
-                  <input
-                    name="min_price"
-                    type="number"
-                    min="0"
-                    placeholder="Min"
-                    defaultValue={minPrice ?? ""}
-                    className="w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-1 focus:ring-zinc-300"
-                  />
-                  <span className="shrink-0 text-xs text-zinc-400">–</span>
-                  <input
-                    name="max_price"
-                    type="number"
-                    min="0"
-                    placeholder="Max"
-                    defaultValue={maxPrice ?? ""}
-                    className="w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:ring-1 focus:ring-zinc-300"
-                  />
-                  <button
-                    type="submit"
-                    className="shrink-0 rounded-xl bg-black px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
-                  >
-                    Go
-                  </button>
-                </form>
-                {(minPrice !== null || maxPrice !== null) ? (
-                  <Link
-                    href={buildExploreHref({ ...activeFilters, min_price: "", max_price: "", page: 1 })}
-                    className="text-xs text-zinc-500 hover:text-zinc-700 underline"
-                  >
-                    Clear price range
-                  </Link>
-                ) : null}
+                <PriceRangeSlider
+                  currentMin={minPrice}
+                  currentMax={maxPrice}
+                  baseHref={buildExploreHref({ ...activeFilters, min_price: "", max_price: "", page: 1 })}
+                />
               </div>
 
               <div className="space-y-2">
@@ -598,6 +665,13 @@ export default async function ExplorePage({
 
               {onlyNegotiable ? (
                 <ActiveChip label="Negotiable" href={buildExploreHref({ ...activeFilters, negotiable: "", page: 1 })} />
+              ) : null}
+
+              {conditionFilter ? (
+                <ActiveChip
+                  label={LISTING_CONDITION_LABELS[conditionFilter]}
+                  href={buildExploreHref({ ...activeFilters, condition: "", page: 1 })}
+                />
               ) : null}
 
               {minPrice !== null || maxPrice !== null ? (
@@ -745,41 +819,34 @@ export default async function ExplorePage({
                 />
               </div>
 
+              {/* Condition */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-700">Condition</p>
+                <div className="flex flex-wrap gap-2">
+                  <Pill
+                    href={buildExploreHref({ ...activeFilters, condition: "", page: 1 })}
+                    active={!conditionFilter}
+                    label="Any"
+                  />
+                  {(Object.entries(LISTING_CONDITION_LABELS) as [ListingCondition, string][]).map(([value, label]) => (
+                    <Pill
+                      key={value}
+                      href={buildExploreHref({ ...activeFilters, condition: conditionFilter === value ? "" : value, page: 1 })}
+                      active={conditionFilter === value}
+                      label={label}
+                    />
+                  ))}
+                </div>
+              </div>
+
               {/* Price range */}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-zinc-700">Price range (₦)</p>
-                <form method="GET" action="/explore" className="flex items-center gap-2">
-                  {type !== "all" ? <input type="hidden" name="type" value={type} /> : null}
-                  {category !== "all" ? <input type="hidden" name="category" value={category} /> : null}
-                  {sort !== "smart" ? <input type="hidden" name="sort" value={sort} /> : null}
-                  {includeSold ? <input type="hidden" name="sold" value="1" /> : null}
-                  {includeInactive ? <input type="hidden" name="inactive" value="1" /> : null}
-                  {onlyNegotiable ? <input type="hidden" name="negotiable" value="1" /> : null}
-                  {q ? <input type="hidden" name="q" value={q} /> : null}
-                  <input
-                    name="min_price"
-                    type="number"
-                    min="0"
-                    placeholder="Min"
-                    defaultValue={minPrice ?? ""}
-                    className="w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
-                  />
-                  <span className="shrink-0 text-xs text-zinc-400">–</span>
-                  <input
-                    name="max_price"
-                    type="number"
-                    min="0"
-                    placeholder="Max"
-                    defaultValue={maxPrice ?? ""}
-                    className="w-full rounded-xl border bg-white px-3 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
-                  />
-                  <button
-                    type="submit"
-                    className="shrink-0 rounded-xl bg-black px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
-                  >
-                    Go
-                  </button>
-                </form>
+                <PriceRangeSlider
+                  currentMin={minPrice}
+                  currentMax={maxPrice}
+                  baseHref={buildExploreHref({ ...activeFilters, min_price: "", max_price: "", page: 1 })}
+                />
               </div>
 
               {/* Status toggles */}
@@ -848,6 +915,13 @@ export default async function ExplorePage({
 
             {onlyNegotiable ? (
               <ActiveChip label="Negotiable" href={buildExploreHref({ ...activeFilters, negotiable: "", page: 1 })} />
+            ) : null}
+
+            {conditionFilter ? (
+              <ActiveChip
+                label={LISTING_CONDITION_LABELS[conditionFilter]}
+                href={buildExploreHref({ ...activeFilters, condition: "", page: 1 })}
+              />
             ) : null}
 
             {minPrice !== null || maxPrice !== null ? (
@@ -1091,5 +1165,41 @@ function ListingCard({ listing }: { listing: ListingRow }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+// ─── Explore Tab Bar ──────────────────────────────────────────────────────────
+
+const EXPLORE_TABS: { key: ExploreTab; label: string; emoji: string; desc: string }[] = [
+  { key: "listings", label: "Listings", emoji: "🏷️", desc: "Products & services" },
+  { key: "vendors", label: "Vendors", emoji: "🏪", desc: "Campus shops" },
+  { key: "delivery", label: "Delivery", emoji: "🛵", desc: "Delivery riders" },
+  { key: "transport", label: "Transport", emoji: "🚗", desc: "Cars & keke" },
+];
+
+function ExploreTabs({ active }: { active: ExploreTab }) {
+  return (
+    <div className="relative -mx-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] md:mx-0 md:px-0">
+      <div className="flex w-max gap-2 md:w-auto">
+        {EXPLORE_TABS.map((tab) => {
+          const isActive = active === tab.key;
+          return (
+            <Link
+              key={tab.key}
+              href={tab.key === "listings" ? "/explore" : `/explore?tab=${tab.key}`}
+              className={[
+                "flex items-center gap-2 whitespace-nowrap rounded-2xl border px-4 py-2.5 text-sm font-medium no-underline transition-colors",
+                isActive
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+              ].join(" ")}
+            >
+              <span className="text-base leading-none">{tab.emoji}</span>
+              <span>{tab.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }

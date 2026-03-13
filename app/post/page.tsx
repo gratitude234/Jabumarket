@@ -34,6 +34,15 @@ const CATEGORIES = [
 
 type ListingType = "product" | "service";
 
+type ListingCondition = "new" | "fairly_used" | "used" | "for_parts";
+
+const CONDITIONS: { value: ListingCondition; label: string; hint: string }[] = [
+  { value: "new",         label: "New",         hint: "Unopened or unused" },
+  { value: "fairly_used", label: "Fairly used",  hint: "Light use, works perfectly" },
+  { value: "used",        label: "Used",         hint: "Visible wear, fully working" },
+  { value: "for_parts",   label: "For parts",    hint: "Faulty or incomplete" },
+];
+
 const DRAFT_KEY = "jm_post_draft_v1";
 const MAX_IMAGE_MB = 5;
 const MIN_TITLE = 8;
@@ -180,12 +189,22 @@ export default function PostPage() {
 
   const [listingType, setListingType] = useState<ListingType>("product");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Phones");
+  const [condition, setCondition] = useState<ListingCondition | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priceDigits, setPriceDigits] = useState<string>("");
   const [priceLabel, setPriceLabel] = useState<string>("");
   const [location, setLocation] = useState("");
   const [negotiable, setNegotiable] = useState(false);
+
+  // AI price suggestion
+  const [priceSuggesting, setPriceSuggesting] = useState(false);
+  const [priceSuggestion, setPriceSuggestion] = useState<{
+    label: string;
+    reasoning: string;
+    min: number;
+    max: number;
+  } | null>(null);
 
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -327,6 +346,75 @@ export default function PostPage() {
       next.splice(to, 0, item);
       return next;
     });
+  }
+
+  // ── Quality score ──────────────────────────────────────────────────────────
+  const qualityScore = useMemo(() => {
+    let score = 0;
+    // Photos: up to 30 pts
+    if (imageFiles.length >= 1) score += 20;
+    if (imageFiles.length >= 2) score += 10;
+    // Title: up to 20 pts
+    const tLen = title.trim().length;
+    if (tLen >= MIN_TITLE) score += 10;
+    if (tLen >= 20) score += 10;
+    // Description: up to 25 pts
+    const dLen = description.trim().length;
+    if (dLen >= 20) score += 10;
+    if (dLen >= 60) score += 15;
+    // Price set: 10 pts
+    if (priceDigits.trim() || priceLabel.trim()) score += 10;
+    // Location: 10 pts
+    if (location.trim()) score += 10;
+    // Condition (products only): 5 pts
+    if (listingType === "product" && condition) score += 5;
+    return Math.min(100, score);
+  }, [imageFiles, title, description, priceDigits, priceLabel, location, listingType, condition]);
+
+  const qualityTier =
+    qualityScore >= 75
+      ? ("great" as const)
+      : qualityScore >= 45
+        ? ("good" as const)
+        : ("needs_work" as const);
+
+  const qualityMeta = {
+    great:      { label: "Great listing!", color: "text-emerald-700", bg: "bg-emerald-500", tip: "Buyers love this level of detail." },
+    good:       { label: "Good listing",   color: "text-amber-700",   bg: "bg-amber-400",  tip: "Add more detail to attract more buyers." },
+    needs_work: { label: "Needs work",     color: "text-red-700",     bg: "bg-red-400",    tip: listingType === "product" && !condition ? "Add condition, a price and a description." : "Add a description, price and location." },
+  };
+
+  // ── AI price suggestion ────────────────────────────────────────────────────
+  async function suggestPrice() {
+    if (priceSuggesting) return;
+    if (!title.trim() || !category) return;
+    setPriceSuggesting(true);
+    setPriceSuggestion(null);
+    try {
+      const res = await fetch("/api/ai/price-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          category,
+          condition: condition ?? undefined,
+          description: description.trim() || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Request failed");
+      const json = await res.json();
+      if (json.suggestion) setPriceSuggestion(json.suggestion);
+    } catch {
+      // silently fail — pricing suggestion is non-critical
+    } finally {
+      setPriceSuggesting(false);
+    }
+  }
+
+  function applyPriceSuggestion(value: number) {
+    setPriceDigits(String(value));
+    setPriceLabel("");
+    setPriceSuggestion(null);
   }
 
   function validate() {
@@ -482,6 +570,7 @@ export default function PostPage() {
         description: description.trim() || null,
         listing_type: listingType,
         category,
+        condition: listingType === "product" ? (condition ?? null) : null,
         price: Number.isFinite(priceInt) ? priceInt : null,
         price_label: priceLabel.trim() || null,
         location: location.trim() || null,
@@ -524,6 +613,7 @@ export default function PostPage() {
 
     setListingType("product");
     setCategory("Phones");
+    setCondition(null);
     setTitle("");
     setDescription("");
     setPriceDigits("");
@@ -531,6 +621,7 @@ export default function PostPage() {
     setLocation("");
     setNegotiable(false);
     setImageFiles([]);
+    setPriceSuggestion(null);
   }
 
   const draftPayload = useMemo(() => {
@@ -538,6 +629,7 @@ export default function PostPage() {
       v: 1,
       listingType,
       category,
+      condition,
       title,
       description,
       priceDigits,
@@ -549,6 +641,7 @@ export default function PostPage() {
   }, [
     listingType,
     category,
+    condition,
     title,
     description,
     priceDigits,
@@ -570,6 +663,7 @@ export default function PostPage() {
         location?: string;
         listingType?: ListingType;
         category?: (typeof CATEGORIES)[number];
+        condition?: ListingCondition | null;
         negotiable?: boolean;
       };
 
@@ -616,6 +710,10 @@ export default function PostPage() {
       (CATEGORIES as readonly string[]).includes(d.category ?? "")
         ? (d.category as (typeof CATEGORIES)[number])
         : "Phones"
+    );
+    const validConditions: ListingCondition[] = ["new", "fairly_used", "used", "for_parts"];
+    setCondition(
+      d.condition && validConditions.includes(d.condition) ? d.condition : null
     );
     setTitle(d.title ?? "");
     setDescription(d.description ?? "");
@@ -980,6 +1078,35 @@ export default function PostPage() {
           </p>
         </div>
 
+        {/* Condition — only shown for products */}
+        {listingType === "product" ? (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-zinc-700">
+              Condition <span className="text-zinc-400">(helps buyers decide)</span>
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {CONDITIONS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setCondition(prev => prev === c.value ? null : c.value)}
+                  className={cn(
+                    "flex flex-col gap-0.5 rounded-2xl border px-3 py-2.5 text-left transition",
+                    condition === c.value
+                      ? "border-black bg-black text-white"
+                      : "bg-white text-zinc-800 hover:bg-zinc-50"
+                  )}
+                >
+                  <span className="text-xs font-semibold">{c.label}</span>
+                  <span className={cn("text-[11px]", condition === c.value ? "text-zinc-300" : "text-zinc-500")}>
+                    {c.hint}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-4">
           <label className="text-xs font-medium text-zinc-700">
             Title <span className="text-red-600">*</span>
@@ -1044,8 +1171,77 @@ export default function PostPage() {
       </section>
 
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-sm font-semibold text-zinc-900">3) Price & location</h2>
-        <p className="mt-0.5 text-xs text-zinc-600">Use a numeric price or a label.</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">3) Price & location</h2>
+            <p className="mt-0.5 text-xs text-zinc-600">Use a numeric price or a label.</p>
+          </div>
+
+          {/* AI pricing hint — only show once title is filled */}
+          {title.trim().length >= MIN_TITLE ? (
+            <button
+              type="button"
+              onClick={suggestPrice}
+              disabled={priceSuggesting}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+            >
+              {priceSuggesting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {priceSuggesting ? "Thinking…" : "Suggest price"}
+            </button>
+          ) : null}
+        </div>
+
+        {/* AI suggestion card */}
+        {priceSuggestion ? (
+          <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-zinc-500" />
+                  <p className="text-xs font-semibold text-zinc-900">
+                    AI suggests: {priceSuggestion.label}
+                  </p>
+                </div>
+                <p className="mt-1 text-xs text-zinc-600">{priceSuggestion.reasoning}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPriceSuggestion(null)}
+                className="shrink-0 text-zinc-400 hover:text-zinc-600"
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => applyPriceSuggestion(priceSuggestion.min)}
+                className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100"
+              >
+                Use ₦{priceSuggestion.min.toLocaleString("en-NG")} (low)
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPriceSuggestion(Math.round((priceSuggestion.min + priceSuggestion.max) / 2))}
+                className="rounded-xl bg-black px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+              >
+                Use ₦{Math.round((priceSuggestion.min + priceSuggestion.max) / 2).toLocaleString("en-NG")} (mid)
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPriceSuggestion(priceSuggestion.max)}
+                className="rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100"
+              >
+                Use ₦{priceSuggestion.max.toLocaleString("en-NG")} (high)
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
@@ -1174,6 +1370,65 @@ export default function PostPage() {
           </span>
         </div>
 
+        {/* Quality score meter */}
+        <div className="mt-3 rounded-2xl border bg-zinc-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className={cn("text-xs font-semibold", qualityMeta[qualityTier].color)}>
+                {qualityMeta[qualityTier].label}
+              </p>
+              <p className="mt-0.5 text-[11px] text-zinc-500">{qualityMeta[qualityTier].tip}</p>
+            </div>
+            <span className={cn(
+              "shrink-0 rounded-full px-2.5 py-1 text-xs font-bold",
+              qualityTier === "great"      ? "bg-emerald-100 text-emerald-800" :
+              qualityTier === "good"       ? "bg-amber-100 text-amber-800" :
+                                             "bg-red-100 text-red-800"
+            )}>
+              {qualityScore}/100
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                qualityTier === "great" ? "bg-emerald-500" :
+                qualityTier === "good"  ? "bg-amber-400" :
+                                          "bg-red-400"
+              )}
+              style={{ width: `${qualityScore}%` }}
+            />
+          </div>
+          {/* Checklist hints */}
+          <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1">
+            {[
+              { done: imageFiles.length > 0,          label: "Photo" },
+              { done: title.trim().length >= MIN_TITLE, label: "Title" },
+              { done: description.trim().length >= 20,  label: "Description" },
+              { done: !!(priceDigits.trim() || priceLabel.trim()), label: "Price" },
+              { done: !!location.trim(),               label: "Location" },
+              ...(listingType === "product"
+                ? [{ done: !!condition, label: "Condition" }]
+                : []),
+            ].map((item) => (
+              <span
+                key={item.label}
+                className={cn(
+                  "flex items-center gap-1 text-[11px]",
+                  item.done ? "text-emerald-700" : "text-zinc-400"
+                )}
+              >
+                <span className={cn(
+                  "inline-block h-1.5 w-1.5 rounded-full",
+                  item.done ? "bg-emerald-500" : "bg-zinc-300"
+                )} />
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-3 overflow-hidden rounded-3xl border bg-white">
           <div className="relative aspect-[4/3] bg-zinc-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1197,13 +1452,24 @@ export default function PostPage() {
           </div>
 
           <div className="space-y-1 p-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
                 {listingType === "product" ? "Product" : "Service"}
               </span>
               <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
                 {category}
               </span>
+              {condition ? (
+                <span className={cn(
+                  "rounded-full px-2 py-1 text-xs font-semibold",
+                  condition === "new"         ? "bg-emerald-100 text-emerald-800" :
+                  condition === "fairly_used" ? "bg-blue-100 text-blue-800" :
+                  condition === "used"        ? "bg-amber-100 text-amber-800" :
+                                               "bg-red-100 text-red-800"
+                )}>
+                  {CONDITIONS.find(c => c.value === condition)?.label}
+                </span>
+              ) : null}
             </div>
             <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
               {title.trim() || "Your title will appear here"}

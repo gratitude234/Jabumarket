@@ -3,12 +3,16 @@
 
 import Link from "next/link";
 import { MessageCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function InboxNavIcon({ className }: { className?: string }) {
   const [count, setCount] = useState(0);
   const [ready, setReady] = useState(false);
+  const pathname = usePathname();
+  // Stores the refresh fn so it can be called from the pathname-change effect below.
+  const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +29,7 @@ export default function InboxNavIcon({ className }: { className?: string }) {
         .maybeSingle();
       const vid = (vendorData as any)?.id ?? null;
 
+      // refresh() only fetches counts — it does NOT re-subscribe.
       async function refresh() {
         if (cancelled) return;
         const [buyerRes, vendorRes] = await Promise.all([
@@ -40,8 +45,11 @@ export default function InboxNavIcon({ className }: { className?: string }) {
         setReady(true);
       }
 
+      // Expose refresh so the pathname effect can trigger it.
+      refreshRef.current = refresh;
       await refresh();
 
+      // Subscribe once — calls refresh() (data-only) on each change, never re-subscribes.
       const channel = supabase
         .channel(`topnav:inbox:${user.id}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refresh)
@@ -54,8 +62,15 @@ export default function InboxNavIcon({ className }: { className?: string }) {
     return () => {
       cancelled = true;
       cleanupChannel?.();
+      refreshRef.current = null;
     };
   }, []);
+
+  // Re-fetch on every navigation so badge clears immediately after reading a conversation,
+  // without depending solely on realtime events being delivered.
+  useEffect(() => {
+    refreshRef.current?.();
+  }, [pathname]);
 
   const icon = (
     <span className="relative inline-flex items-center justify-center">
