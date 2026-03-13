@@ -220,6 +220,7 @@ export default function PostPage() {
   const draftRef = useRef<{
     listingType?: ListingType;
     category?: (typeof CATEGORIES)[number];
+    condition?: ListingCondition | null;
     title?: string;
     description?: string;
     priceDigits?: string;
