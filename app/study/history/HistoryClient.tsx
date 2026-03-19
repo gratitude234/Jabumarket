@@ -171,6 +171,17 @@ type StatsData = {
   trendPct: number | null;
 };
 
+type TrendPoint = {
+  submittedAt: string;
+  pct: number;
+  courseCode: string;
+};
+
+type ActivityDay = {
+  date: string; // "YYYY-MM-DD"
+  active: boolean;
+};
+
 // ─── Stats Banner ─────────────────────────────────────────────────────────────
 
 function StatsBanner({ stats, loading }: { stats: StatsData | null; loading: boolean }) {
@@ -229,6 +240,227 @@ function StatsBanner({ stats, loading }: { stats: StatsData | null; loading: boo
           {trendUp ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
           {trendUp ? "+" : ""}{stats.trendPct}% average score vs your earlier attempts
         </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Score Trend Chart ────────────────────────────────────────────────────────
+
+const CHART_W = 300;
+const CHART_H = 72;
+const CHART_PAD_X = 8;
+const CHART_PAD_Y = 8;
+
+function ScoreTrendChart({ points }: { points: TrendPoint[] }) {
+  if (points.length < 2) {
+    return (
+      <div className="flex h-[72px] items-center justify-center text-xs font-semibold text-muted-foreground">
+        Need at least 2 attempts to plot a trend.
+      </div>
+    );
+  }
+
+  const innerW = CHART_W - CHART_PAD_X * 2;
+  const innerH = CHART_H - CHART_PAD_Y * 2;
+
+  const coords = points.map((p, i) => {
+    const x = CHART_PAD_X + (i / (points.length - 1)) * innerW;
+    const y = CHART_PAD_Y + (1 - p.pct / 100) * innerH;
+    return { x, y, p };
+  });
+
+  const linePath = coords
+    .map((c, i) => `${i === 0 ? "M" : "L"} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
+    .join(" ");
+
+  // Fill: close the path along the bottom
+  const fillPath =
+    linePath +
+    ` L ${coords[coords.length - 1].x.toFixed(1)} ${(CHART_H - CHART_PAD_Y).toFixed(1)}` +
+    ` L ${coords[0].x.toFixed(1)} ${(CHART_H - CHART_PAD_Y).toFixed(1)} Z`;
+
+  // Threshold lines at 50% and 70%
+  const y50 = CHART_PAD_Y + (1 - 0.5) * innerH;
+  const y70 = CHART_PAD_Y + (1 - 0.7) * innerH;
+
+  const lastPct = points[points.length - 1].pct;
+  const lineColor = pctToColor(lastPct);
+
+  return (
+    <svg
+      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+      width="100%"
+      height={CHART_H}
+      aria-label="Score trend chart"
+      overflow="visible"
+    >
+      {/* Grid lines */}
+      <line x1={CHART_PAD_X} x2={CHART_W - CHART_PAD_X} y1={y70} y2={y70}
+        stroke="currentColor" strokeOpacity={0.08} strokeWidth={1} strokeDasharray="4 3" />
+      <line x1={CHART_PAD_X} x2={CHART_W - CHART_PAD_X} y1={y50} y2={y50}
+        stroke="currentColor" strokeOpacity={0.08} strokeWidth={1} strokeDasharray="4 3" />
+
+      {/* Label 70% and 50% */}
+      <text x={CHART_PAD_X} y={y70 - 2} fontSize={7} fill="currentColor" fillOpacity={0.35} fontWeight={600}>70%</text>
+      <text x={CHART_PAD_X} y={y50 - 2} fontSize={7} fill="currentColor" fillOpacity={0.35} fontWeight={600}>50%</text>
+
+      {/* Fill under line */}
+      <path d={fillPath} fill={lineColor} fillOpacity={0.08} />
+
+      {/* Line */}
+      <path d={linePath} fill="none" stroke={lineColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* Dots */}
+      {coords.map(({ x, y, p }, i) => (
+        <circle key={i} cx={x} cy={y} r={3.5}
+          fill="white" stroke={pctToColor(p.pct)} strokeWidth={2} />
+      ))}
+    </svg>
+  );
+}
+
+// ─── Activity Grid (30 days) ──────────────────────────────────────────────────
+
+function ActivityGrid({ days }: { days: ActivityDay[] }) {
+  // Build a full 30-day window from today backwards
+  const today = new Date();
+  const grid: { date: string; active: boolean }[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 86_400_000);
+    const key = d.toISOString().slice(0, 10);
+    const found = days.find((x) => x.date === key);
+    grid.push({ date: key, active: found?.active ?? false });
+  }
+
+  const activeCount = grid.filter((d) => d.active).length;
+
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
+        {activeCount} active day{activeCount !== 1 ? "s" : ""} in the last 30 days
+      </p>
+      <div className="flex flex-wrap gap-1">
+        {grid.map(({ date, active }) => (
+          <div
+            key={date}
+            title={date}
+            className={cn(
+              "h-4 w-4 rounded-[3px] shrink-0",
+              active
+                ? "bg-emerald-500 dark:bg-emerald-400"
+                : "bg-muted"
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Progress Section (chart + activity) ─────────────────────────────────────
+
+type ProgressTab = "trend" | "activity";
+
+function ProgressSection({
+  trendPoints,
+  activityDays,
+  loading,
+  courseCodes,
+}: {
+  trendPoints: TrendPoint[];
+  activityDays: ActivityDay[];
+  loading: boolean;
+  courseCodes: string[];
+}) {
+  const [tab, setTab] = useState<ProgressTab>("trend");
+  const [activeCourse, setActiveCourse] = useState<string | null>(null);
+
+  const filtered = activeCourse
+    ? trendPoints.filter((p) => p.courseCode === activeCourse)
+    : trendPoints;
+
+  if (loading) {
+    return (
+      <Card className="animate-pulse rounded-3xl">
+        <div className="mb-3 h-4 w-32 rounded bg-muted" />
+        <div className="h-[72px] rounded-2xl bg-muted" />
+      </Card>
+    );
+  }
+
+  if (trendPoints.length === 0 && activityDays.length === 0) return null;
+
+  return (
+    <Card className="rounded-3xl space-y-3">
+      {/* Tab row */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-extrabold text-foreground">Progress</p>
+        <div className="flex rounded-xl border border-border bg-background p-0.5 text-xs font-extrabold">
+          {(["trend", "activity"] as ProgressTab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "rounded-[9px] px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                tab === t
+                  ? "bg-secondary text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t === "trend" ? "Score trend" : "Activity"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "trend" ? (
+        <div className="space-y-3">
+          {/* Course filter pills */}
+          {courseCodes.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setActiveCourse(null)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-extrabold transition",
+                  !activeCourse
+                    ? "border-border bg-secondary text-foreground"
+                    : "border-border/60 bg-background text-muted-foreground hover:text-foreground"
+                )}
+              >
+                All
+              </button>
+              {courseCodes.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setActiveCourse(activeCourse === code ? null : code)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-extrabold transition",
+                    activeCourse === code
+                      ? "border-border bg-secondary text-foreground"
+                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {code}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <ScoreTrendChart points={filtered} />
+
+          {filtered.length >= 2 && (
+            <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+              <span>{new Date(filtered[0].submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              <span>{new Date(filtered[filtered.length - 1].submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <ActivityGrid days={activityDays} />
       )}
     </Card>
   );
@@ -367,6 +599,8 @@ export default function HistoryClient() {
 
   const [stats, setStats] = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
+  const [activityDays, setActivityDays] = useState<ActivityDay[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -431,6 +665,30 @@ export default function HistoryClient() {
           .order("submitted_at", { ascending: false })
           .limit(200);
 
+        // Score trend: last 30 graded attempts in chronological order
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000)
+          .toISOString()
+          .slice(0, 10);
+
+        const [trendRes, actRes] = await Promise.all([
+          supabase
+            .from(TABLE_ATTEMPTS)
+            .select(`submitted_at,score,total_questions,${TABLE_SETS}(course_code)`)
+            .eq("user_id", uid)
+            .eq("status", "submitted")
+            .not("score", "is", null)
+            .not("total_questions", "is", null)
+            .gt("total_questions", 0)
+            .order("submitted_at", { ascending: true })
+            .limit(40),
+          supabase
+            .from("study_daily_activity")
+            .select("activity_date,did_practice")
+            .eq("user_id", uid)
+            .gte("activity_date", thirtyDaysAgo)
+            .order("activity_date", { ascending: true }),
+        ]);
+
         if (cancelled) return;
 
         const rows = (data ?? []).filter(Boolean) as {
@@ -472,6 +730,25 @@ export default function HistoryClient() {
         }
 
         setStats({ totalAttempts: rows.length, avgScore, totalTimeSeconds, trendPct });
+
+        // Process trend points
+        const rawTrend = (trendRes.data ?? []) as any[];
+        const parsedTrend: TrendPoint[] = rawTrend
+          .filter((r) => r.submitted_at && typeof r.score === "number" && r.total_questions > 0)
+          .map((r) => ({
+            submittedAt: r.submitted_at as string,
+            pct: Math.round((r.score / r.total_questions) * 100),
+            courseCode: (r[TABLE_SETS]?.course_code ?? "").toString().trim().toUpperCase(),
+          }));
+        if (!cancelled) setTrendPoints(parsedTrend);
+
+        // Process activity days
+        const rawAct = (actRes.data ?? []) as any[];
+        const parsedAct: ActivityDay[] = rawAct.map((r) => ({
+          date: r.activity_date as string,
+          active: Boolean(r.did_practice),
+        }));
+        if (!cancelled) setActivityDays(parsedAct);
       } catch {
         // Non-blocking; list still loads
       } finally {
@@ -679,6 +956,14 @@ export default function HistoryClient() {
 
       {/* Stats banner */}
       <StatsBanner stats={stats} loading={statsLoading} />
+
+      {/* Score trend + activity */}
+      <ProgressSection
+        trendPoints={trendPoints}
+        activityDays={activityDays}
+        loading={statsLoading}
+        courseCodes={[...new Set(trendPoints.map((p) => p.courseCode).filter(Boolean))].sort()}
+      />
 
       {/* Sticky search + filters */}
       <div className="sticky top-16 z-30">
