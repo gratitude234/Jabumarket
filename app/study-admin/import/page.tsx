@@ -394,10 +394,10 @@ function buildSQL(meta: MetaState, questions: Question[]) {
 // ─── Main App ──────────────────────────────────────────────────────────────────
 
 export default function MCQImporter() {
-  const [step, setStep] = useState("paste");
+  const [step, setStep] = useState<Step>("paste");
   const [text, setText] = useState("");
   const [meta, setMeta] = useState({ title: "", course_code: "", level: "", semester: "", difficulty: "", time_limit: "", description: "" });
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [sql, setSQL] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
