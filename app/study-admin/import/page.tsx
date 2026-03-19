@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Card, PageHeader } from "@/app/study/_components/StudyUI";
 
 const STEPS = ["paste", "meta", "preview", "sql"];
@@ -23,7 +23,7 @@ function genUUID() {
   });
 }
 
-function StepIndicator({ current }) {
+function StepIndicator({ current }: { current: string }) {
   return (
     <div className="flex gap-0 mb-8">
       {STEPS.map((s, i) => {
@@ -55,7 +55,7 @@ function StepIndicator({ current }) {
   );
 }
 
-function Btn({ children, onClick, variant = "primary", disabled }) {
+function Btn({ children, onClick, variant = "primary", disabled }: { children: React.ReactNode; onClick?: () => void; variant?: "primary" | "ghost" | "danger"; disabled?: boolean }) {
   const base = "px-4 py-3 rounded-2xl text-sm font-semibold transition-all disabled:opacity-45 disabled:cursor-not-allowed";
   const variants = {
     primary: "bg-black text-white hover:bg-zinc-800",
@@ -69,7 +69,7 @@ function Btn({ children, onClick, variant = "primary", disabled }) {
   );
 }
 
-function Label({ children }) {
+function Label({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[11px] font-semibold text-zinc-500 tracking-widest uppercase mb-1.5">
       {children}
@@ -77,7 +77,7 @@ function Label({ children }) {
   );
 }
 
-function Input({ value, onChange, placeholder, type = "text" }) {
+function Input({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
   return (
     <input
       type={type}
@@ -89,7 +89,7 @@ function Input({ value, onChange, placeholder, type = "text" }) {
   );
 }
 
-function Select({ value, onChange, options, placeholder }) {
+function Select({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: string[]; placeholder?: string }) {
   return (
     <select
       value={value}
@@ -104,7 +104,7 @@ function Select({ value, onChange, options, placeholder }) {
 
 // ─── Step 1: Paste ─────────────────────────────────────────────────────────────
 
-function StepPaste({ text, setText, onNext }) {
+function StepPaste({ text, setText, onNext }: { text: string; setText: (v: string) => void; onNext: () => void }) {
   return (
     <div>
       <h2 className="text-lg font-bold text-zinc-900 mb-1.5">Paste your document text</h2>
@@ -129,8 +129,9 @@ function StepPaste({ text, setText, onNext }) {
 
 // ─── Step 2: Meta ──────────────────────────────────────────────────────────────
 
-function StepMeta({ meta, setMeta, onNext, onBack }) {
-  const set = (k, v) => setMeta(m => ({ ...m, [k]: v }));
+type MetaState = { title: string; course_code: string; level: string; semester: string; difficulty: string; time_limit: string; description: string };
+function StepMeta({ meta, setMeta, onNext, onBack }: { meta: MetaState; setMeta: React.Dispatch<React.SetStateAction<MetaState>>; onNext: () => void; onBack: () => void }) {
+  const set = (k: keyof MetaState, v: string) => setMeta(m => ({ ...m, [k]: v }));
   const valid = meta.title.trim() && meta.course_code.trim();
   return (
     <div>
@@ -178,9 +179,11 @@ function StepMeta({ meta, setMeta, onNext, onBack }) {
 
 // ─── Step 3: Preview ───────────────────────────────────────────────────────────
 
-function QuestionCard({ q, idx, onChange, onDelete }) {
-  const setField = (k, v) => onChange({ ...q, [k]: v });
-  const setOption = (oi, k, v) => {
+type QuestionOption = { text: string; is_correct: boolean };
+type Question = { prompt: string; options: QuestionOption[]; explanation?: string };
+function QuestionCard({ q, idx, onChange, onDelete }: { q: Question; idx: number; onChange: (q: Question) => void; onDelete: () => void }) {
+  const setField = (k: keyof Question, v: string) => onChange({ ...q, [k]: v });
+  const setOption = (oi: number, k: keyof QuestionOption, v: string | boolean) => {
     const opts = q.options.map((o, i) => i === oi ? { ...o, [k]: v } : o);
     onChange({ ...q, options: opts });
   };
@@ -246,7 +249,7 @@ function QuestionCard({ q, idx, onChange, onDelete }) {
   );
 }
 
-function StepPreview({ questions, setQuestions, onNext, onBack, parsing }) {
+function StepPreview({ questions, setQuestions, onNext, onBack, parsing }: { questions: Question[]; setQuestions: React.Dispatch<React.SetStateAction<Question[]>>; onNext: () => void; onBack: () => void; parsing: boolean }) {
   const update = useCallback((i, q) => {
     setQuestions(qs => qs.map((x, j) => j === i ? q : x));
   }, [setQuestions]);
@@ -291,7 +294,7 @@ function StepPreview({ questions, setQuestions, onNext, onBack, parsing }) {
 
 // ─── Step 4: SQL ───────────────────────────────────────────────────────────────
 
-function StepSQL({ sql, onBack }) {
+function StepSQL({ sql, onBack }: { sql: string; onBack: () => void }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(sql).then(() => {
@@ -333,7 +336,7 @@ function StepSQL({ sql, onBack }) {
 
 // ─── SQL Generator ─────────────────────────────────────────────────────────────
 
-function buildSQL(meta, questions) {
+function buildSQL(meta: MetaState, questions: Question[]) {
   const setId = genUUID();
   const now = new Date().toISOString();
   const esc = (s) => (s || "").replace(/'/g, "''");
