@@ -7,16 +7,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
+  BookOpen,
   Building2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Loader2,
+  MessageCircleQuestion,
   School,
   Layers,
   Sparkles,
   X,
   Search,
+  Zap,
 } from "lucide-react";
 import { Card } from "../_components/StudyUI";
 import { cn, normalizeStr as normalize, currentAcademicSessionFallback } from "@/lib/utils";
@@ -69,7 +72,7 @@ type DeptRow = {
   sort_order?: number | null;
 };
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 
 
@@ -327,6 +330,10 @@ export default function OnboardingClient() {
   );
 
   const totalSteps = 3;
+
+  // Step 4 (results screen) state
+  const [step4Loading, setStep4Loading] = useState(false);
+  const [step4Data, setStep4Data] = useState<{ materials: number | null; quizSets: number | null; questions: number | null } | null>(null);
 
   const facultyItems = useMemo(
     () => faculties.map((f) => ({ id: f.id, label: f.name })),
@@ -612,9 +619,62 @@ export default function OnboardingClient() {
       const { error } = await supabase.from("study_preferences").upsert(prefsPayload);
       if (error) throw error;
 
-      setBanner({ tone: "success", title: "Saved", description: "Taking you to Study…" });
+      // Transition to results screen (step 4) instead of immediate redirect
+      setStep(4);
+      setStep4Loading(true);
 
-      router.replace(next);
+      try {
+        // Fetch course IDs for the user's department+level to count materials
+        let courseIds: string[] = [];
+        if (departmentId && typeof level === "number") {
+          const { data: courseRows } = await supabase
+            .from("study_courses")
+            .select("id")
+            .eq("department_id", departmentId)
+            .eq("level", level)
+            .eq("status", "approved");
+          courseIds = (courseRows ?? []).map((r: { id: string }) => r.id);
+        }
+
+        const [matsResult, setsResult, qsResult] = await Promise.allSettled([
+          courseIds.length > 0
+            ? supabase
+                .from("study_materials")
+                .select("id", { count: "exact", head: true })
+                .eq("approved", true)
+                .in("course_id", courseIds)
+            : supabase
+                .from("study_materials")
+                .select("id", { count: "exact", head: true })
+                .eq("approved", true)
+                .limit(0),
+          typeof level === "number"
+            ? supabase
+                .from("study_quiz_sets")
+                .select("id", { count: "exact", head: true })
+                .eq("published", true)
+                .eq("level", level)
+            : Promise.resolve({ count: 0, error: null }),
+          typeof level === "number"
+            ? supabase
+                .from("study_questions")
+                .select("id", { count: "exact", head: true })
+                .eq("solved", false)
+                .eq("level", String(level))
+            : Promise.resolve({ count: 0, error: null }),
+        ]);
+
+        setStep4Data({
+          materials: matsResult.status === "fulfilled" ? ((matsResult.value as { count: number | null }).count ?? null) : null,
+          quizSets: setsResult.status === "fulfilled" ? ((setsResult.value as { count: number | null }).count ?? null) : null,
+          questions: qsResult.status === "fulfilled" ? ((qsResult.value as { count: number | null }).count ?? null) : null,
+        });
+      } catch {
+        setStep4Data({ materials: null, quizSets: null, questions: null });
+      } finally {
+        setStep4Loading(false);
+      }
+
       router.refresh();
     } catch (e: any) {
       setBanner({
@@ -657,17 +717,19 @@ export default function OnboardingClient() {
             </p>
           </div>
 
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            <ProgressPill step={step} total={totalSteps} />
-            <button
-              type="button"
-              onClick={skip}
-              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              Skip
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
+          {step !== 4 && (
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <ProgressPill step={step} total={totalSteps} />
+              <button
+                type="button"
+                onClick={skip}
+                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Skip
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -970,6 +1032,74 @@ export default function OnboardingClient() {
                 Continue without saving
               </Link>
             </div>
+          </Card>
+        ) : null}
+
+        {/* STEP 4 — Results screen */}
+        {step === 4 ? (
+          <Card className="rounded-3xl">
+            {step4Loading ? (
+              <div className="space-y-3">
+                <div className="h-8 w-32 animate-pulse rounded-full bg-secondary" />
+                <div className="h-5 w-48 animate-pulse rounded-full bg-secondary" />
+                <div className="flex gap-2">
+                  <div className="h-8 w-28 animate-pulse rounded-full bg-secondary" />
+                  <div className="h-8 w-28 animate-pulse rounded-full bg-secondary" />
+                  <div className="h-8 w-28 animate-pulse rounded-full bg-secondary" />
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-2xl font-extrabold text-foreground">You&apos;re in.</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {reviewDept && `${reviewDept} · `}{typeof level === "number" ? `${level}L` : ""}{semester && ` · ${SEMESTERS.find((s) => s.value === semester)?.label ?? ""} Semester`}
+                </p>
+
+                {/* Stat chips */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground">
+                    {step4Data?.materials != null ? step4Data.materials : "—"} materials available
+                  </span>
+                  <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground">
+                    {step4Data?.quizSets != null ? step4Data.quizSets : "—"} practice sets
+                  </span>
+                  <span className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground">
+                    {step4Data?.questions != null ? step4Data.questions : "—"} open questions
+                  </span>
+                </div>
+
+                {/* CTA cards */}
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  <Link
+                    href="/study/materials"
+                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
+                  >
+                    <BookOpen className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-extrabold text-foreground">Browse materials</p>
+                  </Link>
+                  <Link
+                    href="/study/practice"
+                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
+                  >
+                    <Zap className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-extrabold text-foreground">Start practising</p>
+                  </Link>
+                  <Link
+                    href="/study/questions/ask"
+                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
+                  >
+                    <MessageCircleQuestion className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-extrabold text-foreground">Ask a question</p>
+                  </Link>
+                </div>
+
+                <div className="mt-6 text-center">
+                  <Link href="/study" className="text-sm font-semibold text-muted-foreground hover:text-foreground">
+                    Go to Study Hub →
+                  </Link>
+                </div>
+              </>
+            )}
           </Card>
         ) : null}
       </div>

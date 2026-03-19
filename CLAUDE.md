@@ -79,3 +79,11 @@ shadcn/ui components live in `components/ui/`. Tailwind CSS v4 with `tw-animate-
 ### Key Type Definitions
 
 All shared types are in `lib/types.ts`: `ListingRow`, `VendorRow`, `QuizSet`, `QuizQuestion`, `QuizOption`, `ReviewTab`, `CourierRow`, etc.
+
+### API Response Convention
+
+Route Handlers return `{ ok: true, ...data }` on success and `{ ok: false, code, message }` on error. Error helper: `jsonError(message, status, code)`.
+
+### Notification Pattern
+
+`lib/studyNotify.ts` sends fire-and-forget notifications (errors swallowed so failures don't break the main action). Self-notifications are skipped. Uses service-role client.

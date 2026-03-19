@@ -148,16 +148,6 @@ function StudyHomeInner({
     return () => { cancelled = true; };
   }, [loading, prefs]);
 
-  // Auto-dismiss semester banner after 8 s
-  useEffect(() => {
-    if (!semesterPrompt.show) return;
-    const t = setTimeout(
-      () => setSemesterPrompt((p) => ({ ...p, show: false })),
-      8000
-    );
-    return () => clearTimeout(t);
-  }, [semesterPrompt.show]);
-
   // ── Handlers ──────────────────────────────────────────────────────────────
   function clearFilters() { setChips({}); }
 

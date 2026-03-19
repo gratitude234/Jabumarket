@@ -41,7 +41,9 @@ export type VendorVerificationStatus =
   | "under_review"
   | "verified"
   | "rejected"
-  | "suspended";
+  | "suspended"
+  | "pending"
+  | "approved";
 
 // Vendors can be joined in different places with different column sets,
 // so most fields are optional here for flexibility.
@@ -66,6 +68,13 @@ export type VendorRow = {
   reviewed_by?: string | null;
   suspended_at?: string | null;
   suspension_reason?: string | null;
+
+  // Food vendor fields
+  description?: string | null;
+  avatar_url?: string | null;
+  accepts_orders?: boolean | null;
+  opens_at?: string | null;
+  closes_at?: string | null;
 };
 
 export type VendorVerificationRequestRow = {

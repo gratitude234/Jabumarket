@@ -4,6 +4,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   ArrowRight,
+  BookOpen,
+  FileText,
+  MessageCircleQuestion,
   Search,
   Sparkles,
   ShieldCheck,
@@ -19,6 +22,8 @@ import {
   BadgeCheck,
   MapPin,
   Image as ImageIcon,
+  Star,
+  Zap,
 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ListingImage from "@/components/ListingImage";
@@ -80,7 +85,7 @@ const categories = [
   { name: "Laptops", icon: Laptop, href: "/explore?category=Laptops" },
   { name: "Fashion", icon: Shirt, href: "/explore?category=Fashion" },
   { name: "Provisions", icon: ShoppingBasket, href: "/explore?category=Provisions" },
-  { name: "Food", icon: UtensilsCrossed, href: "/explore?category=Food" },
+  { name: "Food", icon: UtensilsCrossed, href: "/food" },
   { name: "Beauty", icon: Sparkles, href: "/explore?category=Beauty" },
   { name: "Services", icon: Wrench, href: "/explore?category=Services&type=service" },
 ];
@@ -202,15 +207,47 @@ export default async function HomePage() {
       .limit(6),
     supabase
       .from("vendors")
-      .select("id, name, location, verified, verification_status, vendor_type")
-      // show vendors verified by either legacy boolean OR new verification_status
+      .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
       .or("verified.eq.true,verification_status.eq.verified")
+      // Quality-weighted: vendors with avatar first (signal of completeness),
+      // then by name so the list is stable and not purely newest-registered.
+      .not("name", "is", null)
+      .order("avatar_url", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
-      .limit(6),
+      .limit(18), // fetch 18, re-rank client-side below
   ]);
 
   const listings = ((latestListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
-  const vendors = ((featuredVendorsRes.data ?? []) as VendorPreview[]).filter(Boolean);
+  const rawVendors = ((featuredVendorsRes.data ?? []) as (VendorPreview & { avatar_url?: string | null })[]).filter(Boolean);
+
+  // Fetch rating summaries for homepage vendors in parallel
+  const homepageVendorIds = rawVendors.map((v) => v.id);
+  const { data: homepageReviews } = homepageVendorIds.length > 0
+    ? await supabase
+        .from("vendor_reviews")
+        .select("vendor_id, rating")
+        .in("vendor_id", homepageVendorIds)
+    : { data: [] };
+
+  // Build rating map
+  const homeRatingMap: Record<string, { avg: number; count: number }> = {};
+  for (const r of homepageReviews ?? []) {
+    const e = homeRatingMap[r.vendor_id];
+    homeRatingMap[r.vendor_id] = e
+      ? { avg: (e.avg * e.count + r.rating) / (e.count + 1), count: e.count + 1 }
+      : { avg: r.rating, count: 1 };
+  }
+
+  // Quality score: has reviews (2pts) + has avatar (1pt) — pick top 6
+  const vendors = rawVendors
+    .map((v) => ({
+      ...v,
+      _score:
+        (homeRatingMap[v.id] ? 2 : 0) +
+        (v.avatar_url ? 1 : 0),
+    }))
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 6);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-10 px-4 pb-28 pt-5 sm:pb-10 sm:pt-8">
@@ -563,14 +600,30 @@ export default async function HomePage() {
           <ScrollRow>
             {vendors.map((v) => {
               const verified = isVendorVerified(v);
+              const rating = homeRatingMap[v.id];
+              const avatarUrl = (v as any).avatar_url as string | null | undefined;
+
               return (
                 <Link
                   key={v.id}
                   href={`/vendors/${v.id}`}
                   className="group min-w-[280px] rounded-3xl border bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex items-start gap-3">
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-500">
+                        {(v.name ?? "V")[0].toUpperCase()}
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-zinc-900">
                         {v.name ?? "Unnamed vendor"}
                       </div>
@@ -580,7 +633,7 @@ export default async function HomePage() {
                         <span className="truncate">{v.location ?? "Location not set"}</span>
                       </div>
 
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         {v.vendor_type ? <Tag>{v.vendor_type}</Tag> : null}
 
                         {verified ? (
@@ -589,18 +642,79 @@ export default async function HomePage() {
                             Verified
                           </span>
                         ) : null}
+
+                        {rating && (
+                          <span className="inline-flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                            <span className="text-xs font-semibold text-zinc-900">
+                              {rating.avg.toFixed(1)}
+                            </span>
+                            <span className="text-xs text-zinc-400">({rating.count})</span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                    <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-400" />
                   </div>
-
-                  <div className="mt-4 text-xs text-zinc-500">Tap to view profile</div>
                 </Link>
               );
             })}
           </ScrollRow>
         )}
+      </section>
+
+      {/* STUDY HUB */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Study Hub"
+          subtitle="Materials, practice sets, Q&A and more."
+          href="/study"
+          cta="Open Study Hub"
+          icon={<BookOpen className="h-4 w-4 text-zinc-800" />}
+        />
+
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            {
+              href: "/study/materials",
+              icon: <FileText className="h-5 w-5 text-zinc-700" />,
+              title: "Course Materials",
+              desc: "Lecture notes, past questions, and resources uploaded by course reps.",
+            },
+            {
+              href: "/study/practice",
+              icon: <Zap className="h-5 w-5 text-zinc-700" />,
+              title: "MCQ Practice",
+              desc: "Timed quiz sets with AI-powered explanations and weak-area tracking.",
+            },
+            {
+              href: "/study/questions",
+              icon: <MessageCircleQuestion className="h-5 w-5 text-zinc-700" />,
+              title: "Q&A Forum",
+              desc: "Ask questions, get answers from peers, and upvote the best responses.",
+            },
+            {
+              href: "/study/ai-plan",
+              icon: <Sparkles className="h-5 w-5 text-zinc-700" />,
+              title: "AI Study Plan",
+              desc: "Generate a personalised weekly study schedule powered by Gemini.",
+            },
+          ].map((card) => (
+            <Link
+              key={card.href}
+              href={card.href}
+              className="group rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50"
+            >
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-zinc-100">{card.icon}</div>
+              <div className="mt-3 text-sm font-semibold text-zinc-900">{card.title}</div>
+              <div className="mt-1 text-xs text-zinc-600 leading-relaxed">{card.desc}</div>
+              <div className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-700">
+                Open <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
       </section>
 
       {/* SAFETY + DELIVERY/TRANSPORT */}

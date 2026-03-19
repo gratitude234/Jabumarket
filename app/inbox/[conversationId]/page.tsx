@@ -12,7 +12,11 @@ import {
   Send,
   ShoppingBag,
   Store,
+  UtensilsCrossed,
 } from "lucide-react";
+import type { OrderPayload } from "@/types/meal-builder";
+import OrderBubble from "@/components/chat/OrderBubble";
+import MealBuilder from "@/components/chat/MealBuilder";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,18 +25,21 @@ type Message = {
   conversation_id: string;
   sender_id: string;
   body: string;
+  type: "text" | "order";
+  order_payload: OrderPayload | null;
   created_at: string;
 };
 
 type ConversationMeta = {
   id: string;
-  listing_id: string;
+  listing_id: string | null;
+  order_id: string | null;
   buyer_id: string;
   vendor_id: string;
   buyer_unread: number;
   vendor_unread: number;
   listing: { id: string; title: string | null; image_url: string | null; status: string | null } | null;
-  vendor: { id: string; name: string | null; user_id: string | null } | null;
+  vendor: { id: string; name: string | null; user_id: string | null; vendor_type: string | null; accepts_orders: boolean | null } | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +88,8 @@ export default function ConversationPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [orderStatus, setOrderStatus] = useState<string | null>(null);
+  const [showMealBuilder, setShowMealBuilder] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +107,12 @@ export default function ConversationPage() {
   const isVendorSide = vendorId !== null && meta?.vendor_id === vendorId;
   const otherPartyName = isVendorSide ? "Buyer" : (vendor?.name ?? "Seller");
 
+  // Can show the meal builder button?
+  const canShowMealButton =
+    !isVendorSide &&
+    vendor?.vendor_type === "food" &&
+    vendor?.accepts_orders !== false;
+
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     bottomRef.current?.scrollIntoView({ behavior });
   }
@@ -105,7 +120,7 @@ export default function ConversationPage() {
   async function loadMessages() {
     const { data } = await supabase
       .from("messages")
-      .select("id, conversation_id, sender_id, body, created_at")
+      .select("id, conversation_id, sender_id, body, type, order_payload, created_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
     setMessages((data as Message[]) ?? []);
@@ -151,9 +166,9 @@ export default function ConversationPage() {
       const { data: convData, error } = await supabase
         .from("conversations")
         .select(`
-          id, listing_id, buyer_id, vendor_id, buyer_unread, vendor_unread,
+          id, listing_id, order_id, buyer_id, vendor_id, buyer_unread, vendor_unread,
           listing:listings(id, title, image_url, status),
-          vendor:vendors(id, name, user_id)
+          vendor:vendors(id, name, user_id, vendor_type, accepts_orders)
         `)
         .eq("id", conversationId)
         .maybeSingle();
@@ -169,6 +184,17 @@ export default function ConversationPage() {
 
       setMeta(conv);
       metaRef.current = conv;
+
+      // Load order status if this conversation has an order
+      if (conv.order_id) {
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select("status")
+          .eq("id", conv.order_id)
+          .single();
+        if (orderData) setOrderStatus(orderData.status);
+      }
+
       await loadMessages();
       setLoading(false);
     })();
@@ -205,6 +231,23 @@ export default function ConversationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
+  // Real-time order status updates
+  useEffect(() => {
+    if (!meta?.order_id) return;
+    const channel = supabase
+      .channel(`order-status:${meta.order_id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${meta.order_id}` },
+        (payload) => {
+          const updated = payload.new as { status: string };
+          if (updated.status) setOrderStatus(updated.status);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [meta?.order_id]);
+
   // Auto-scroll on new messages
   useEffect(() => {
     scrollToBottom(messages.length <= 1 ? "instant" : "smooth");
@@ -224,6 +267,8 @@ export default function ConversationPage() {
       conversation_id: conversationId,
       sender_id: userId,
       body: text,
+      type: "text",
+      order_payload: null,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -232,7 +277,7 @@ export default function ConversationPage() {
       const { data: inserted, error } = await supabase
         .from("messages")
         .insert({ conversation_id: conversationId, sender_id: userId, body: text })
-        .select("id, conversation_id, sender_id, body, created_at")
+        .select("id, conversation_id, sender_id, body, type, order_payload, created_at")
         .single();
 
       if (error) throw error;
@@ -422,25 +467,36 @@ export default function ConversationPage() {
                       }
                     </span>
                   )}
-                  <div
-                    className={[
-                      "max-w-[78%] rounded-2xl px-4 py-2.5 text-sm",
-                      isMine
-                        ? "rounded-br-md bg-zinc-900 text-white"
-                        : "rounded-bl-md bg-white border text-zinc-900",
-                      isOptimistic ? "opacity-70" : "",
-                    ].filter(Boolean).join(" ")}
-                  >
-                    <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
-                    <div className={`mt-1 flex items-center gap-1 ${isMine ? "justify-end" : "justify-start"}`}>
-                      <span className={`text-[10px] ${isMine ? "text-white/60" : "text-zinc-400"}`}>
-                        {formatTime(msg.created_at)}
-                      </span>
-                      {isMine && !isOptimistic && (
-                        <CheckCheck className="h-3 w-3 text-white/60" />
-                      )}
+
+                  {/* Order bubble or text bubble */}
+                  {msg.type === "order" && msg.order_payload ? (
+                    <OrderBubble
+                      payload={msg.order_payload}
+                      isSender={isMine}
+                      status={orderStatus ?? undefined}
+                      createdAt={msg.created_at}
+                    />
+                  ) : (
+                    <div
+                      className={[
+                        "max-w-[78%] rounded-2xl px-4 py-2.5 text-sm",
+                        isMine
+                          ? "rounded-br-md bg-zinc-900 text-white"
+                          : "rounded-bl-md bg-white border text-zinc-900",
+                        isOptimistic ? "opacity-70" : "",
+                      ].filter(Boolean).join(" ")}
+                    >
+                      <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
+                      <div className={`mt-1 flex items-center gap-1 ${isMine ? "justify-end" : "justify-start"}`}>
+                        <span className={`text-[10px] ${isMine ? "text-white/60" : "text-zinc-400"}`}>
+                          {formatTime(msg.created_at)}
+                        </span>
+                        {isMine && !isOptimistic && (
+                          <CheckCheck className="h-3 w-3 text-white/60" />
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             );
@@ -449,9 +505,32 @@ export default function ConversationPage() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Meal Builder overlay */}
+      {showMealBuilder && vendor && (
+        <div className="border-t bg-zinc-50 px-4 py-3">
+          <MealBuilder
+            vendorId={meta!.vendor_id}
+            onClose={() => setShowMealBuilder(false)}
+            onOrderSent={() => setShowMealBuilder(false)}
+          />
+        </div>
+      )}
+
       {/* Input bar */}
       <div className="border-t bg-white px-4 py-3">
         <div className="flex items-end gap-2">
+          {/* Build Meal button */}
+          {canShowMealButton && (
+            <button
+              type="button"
+              onClick={() => setShowMealBuilder(!showMealBuilder)}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+              aria-label="Build a meal"
+              title="Build a meal"
+            >
+              <UtensilsCrossed className="h-4 w-4" />
+            </button>
+          )}
           <textarea
             ref={inputRef}
             value={body}

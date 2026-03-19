@@ -25,6 +25,7 @@ import {
   Plus,
   Search,
   ChevronDown,
+  Users,
 } from "lucide-react";
 
 import { Card, EmptyState, PageHeader } from "../../_components/StudyUI";
@@ -128,10 +129,11 @@ export default function UploadMaterialsPage() {
 
   // auth + status
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const [me, setMe] = useState<RepMeResponse | null>(null);
 
-  // scope
-  const approved = me?.ok && me.status === "approved" && !!me.scope?.department_id && !!me.role;
+  // Rep info (bonus — reps still see their scope badge)
+  const isRep = me?.ok && me.status === "approved" && !!me.scope?.department_id && !!me.role;
   const role: Role | null = (me?.role as Role) ?? null;
   const departmentId = me?.scope?.department_id ?? null;
   const allowedLevels = me?.scope?.levels ?? null;
@@ -181,14 +183,14 @@ export default function UploadMaterialsPage() {
   }, [materialType]);
 
   const scopeBadge = useMemo(() => {
-    if (!approved) return null;
+    if (!isRep) return null;
     const deptText = "Dept scoped";
     if (role === "dept_librarian") return `${deptText} • All levels`;
     const levelsText = Array.isArray(allowedLevels) && allowedLevels.length ? allowedLevels.map(LEVEL_LABEL).join(", ") : "—";
     return `${deptText} • ${levelsText}`;
-  }, [approved, role, allowedLevels]);
+  }, [isRep, role, allowedLevels]);
 
-  // Load me status
+  // Load auth + rep status (rep info is bonus — all students can upload)
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -201,20 +203,12 @@ export default function UploadMaterialsPage() {
           router.replace("/login?next=%2Fstudy%2Fmaterials%2Fupload");
           return;
         }
+        if (mounted) setUserId(auth.user.id);
 
+        // Fetch rep status in background (for scope badge only — not a gate)
         const meRes: RepMeResponse = await fetch("/api/study/rep-applications/me").then((r) => r.json());
         if (!mounted) return;
-
         setMe(meRes);
-
-        if (!meRes?.ok) {
-          setBanner({ type: "error", text: "Unable to check your upload access. Please refresh." });
-        } else if (meRes.status === "pending") {
-          setBanner({ type: "info", text: "Your access request is pending review." });
-        } else if (meRes.status === "rejected") {
-          const reason = meRes.application?.decision_reason || meRes.application?.note;
-          setBanner({ type: "error", text: reason ? `Request rejected: ${reason}` : "Your access request was rejected." });
-        }
       } catch (e: any) {
         if (!mounted) return;
         setBanner({ type: "error", text: e?.message || "Failed to load." });
@@ -222,9 +216,7 @@ export default function UploadMaterialsPage() {
         if (mounted) setLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [router]);
 
   // Remember recent course picks (for faster uploads)
@@ -238,30 +230,28 @@ export default function UploadMaterialsPage() {
     } catch {}
   }, []);
 
-  // Load courses (role-aware, department + levels)
+  // Load courses — all students see all courses; reps see their dept scoped first
   useEffect(() => {
     let mounted = true;
 
     (async () => {
-      if (!approved || !departmentId) return;
+      if (!userId) return;
 
       setCoursesLoading(true);
       try {
         let query = supabase
           .from("study_courses")
           .select("id, faculty_id, department_id, level, course_code, course_title, semester")
-          .eq("department_id", departmentId)
           .order("level")
           .order("course_code");
 
-        if (role === "course_rep") {
-          const lvls = Array.isArray(allowedLevels) ? allowedLevels : [];
-          if (!lvls.length) {
-            setCourses([]);
-            setBanner({ type: "error", text: "Your rep account has no levels set. Contact admin." });
-            return;
+        // Reps: pre-filter to their dept + levels for convenience (they can still search wider)
+        if (isRep && departmentId) {
+          query = query.eq("department_id", departmentId);
+          if (role === "course_rep") {
+            const lvls = Array.isArray(allowedLevels) ? allowedLevels : [];
+            if (lvls.length) query = query.in("level", lvls);
           }
-          query = query.in("level", lvls);
         }
 
         const { data, error } = await query;
@@ -277,10 +267,8 @@ export default function UploadMaterialsPage() {
       }
     })();
 
-    return () => {
-      mounted = false;
-    };
-  }, [approved, departmentId, role, allowedLevels]);
+    return () => { mounted = false; };
+  }, [userId, isRep, departmentId, role, allowedLevels]);
 
   // Hash file when chosen
   useEffect(() => {
@@ -342,7 +330,7 @@ export default function UploadMaterialsPage() {
   }
 
   const canSubmit = useMemo(() => {
-    if (!approved) return false;
+    if (!userId) return false;
     if (!selectedCourse) return false;
     if (!materialType) return false;
     if (!file) return false;
@@ -352,15 +340,14 @@ export default function UploadMaterialsPage() {
       if (!pqSession || !pqSession.includes("/")) return false;
     }
     return true;
-  }, [approved, selectedCourse, materialType, file, pqYear, pqSession]);
+  }, [userId, selectedCourse, materialType, file, pqYear, pqSession]);
 
   function openCreateCourse(prefill?: { code?: string }) {
     const guess = normalizeCourseCode(prefill?.code ?? q.trim());
     if (guess) setReqCode(guess);
 
-    // default level + semester
     const lvls = Array.isArray(allowedLevels) ? allowedLevels : [];
-    setReqLevel(role === "course_rep" ? (lvls?.[0] ?? 100) : 100);
+    setReqLevel(isRep && role === "course_rep" ? (lvls?.[0] ?? 100) : 100);
     setReqSemester(semester);
     setReqTitle("");
     setShowCreateCourse(true);
@@ -391,7 +378,7 @@ export default function UploadMaterialsPage() {
     }
 
     // Course reps: hard guard on allowed levels (UI already restricts, but keep safe)
-    if (role === "course_rep" && Array.isArray(allowedLevels) && allowedLevels.length) {
+    if (isRep && role === "course_rep" && Array.isArray(allowedLevels) && allowedLevels.length) {
       if (!allowedLevels.includes(reqLevel)) {
         setBanner({ type: "error", text: "You can only create courses for your assigned level(s)." });
         return;
@@ -456,7 +443,7 @@ export default function UploadMaterialsPage() {
     setBanner(null);
     setDuplicateNote(null);
 
-    if (!approved || !role || !departmentId) {
+    if (!userId) {
       setBanner({ type: "error", text: "You don’t have upload access yet." });
       return;
     }
@@ -613,7 +600,7 @@ export default function UploadMaterialsPage() {
     <div className="space-y-4 pb-28 md:pb-6">
       <PageHeader
         title="Upload Materials"
-        subtitle="Course Reps upload for specific levels. Departmental Librarians upload for all levels in their department."
+        subtitle="Any student can contribute — uploads go to a review queue before going live."
       />
 
       {/* Top bar */}
@@ -636,19 +623,19 @@ export default function UploadMaterialsPage() {
           </Link>
         </div>
 
-        {approved ? (
+        {isRep ? (
           <div className="hidden items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm sm:flex">
             {role === "dept_librarian" ? <Building2 className="h-4 w-4" /> : <GraduationCap className="h-4 w-4" />}
             <span className="font-medium">{role === "dept_librarian" ? "Departmental Librarian" : "Course Rep"}</span>
             <span className="text-zinc-400">•</span>
             <span className="truncate">{scopeBadge}</span>
           </div>
-        ) : (
+        ) : userId ? (
           <div className="hidden items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm sm:flex">
-            <ShieldCheck className="h-4 w-4" />
-            <span>Access check</span>
+            <Users className="h-4 w-4" />
+            <span>Student upload</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Banner */}
@@ -678,36 +665,22 @@ export default function UploadMaterialsPage() {
       {loading ? (
         <Card className="p-5">
           <div className="flex items-center gap-2 text-sm text-zinc-600">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading your access…
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         </Card>
-      ) : !approved ? (
+      ) : !userId ? (
         <Card className="p-5">
           <EmptyState
             icon={ShieldCheck}
-            title="Upload access required"
-            description={
-              me?.status === "pending"
-                ? "Your request is pending. You’ll be able to upload once approved."
-                : me?.status === "rejected"
-                ? "Your request was rejected. You can apply again."
-                : "Only approved Course Reps and Departmental Librarians can upload materials."
-            }
+            title="Sign in to upload"
+            description="You need to be logged in to contribute materials."
             action={
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Link
-                  href="/study/apply-rep"
-                  className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-                >
-                  Apply for access
-                </Link>
-                <Link
-                  href="/study/materials"
-                  className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-800"
-                >
-                  Browse materials
-                </Link>
-              </div>
+              <Link
+                href="/login?next=%2Fstudy%2Fmaterials%2Fupload"
+                className="inline-flex items-center justify-center rounded-2xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
+              >
+                Sign in
+              </Link>
             }
           />
         </Card>
@@ -722,7 +695,7 @@ export default function UploadMaterialsPage() {
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-zinc-900">1) Select course</div>
                 <div className="mt-1 text-xs text-zinc-600">
-                  You can only see courses within your department and scope.
+                  Search all courses. Can't find yours? Create it below.
                 </div>
               </div>
               {coursesLoading ? <Loader2 className="h-4 w-4 animate-spin text-zinc-500" /> : null}
@@ -1055,9 +1028,9 @@ export default function UploadMaterialsPage() {
                   <div className="min-w-0">
                     <div className="text-base font-semibold text-zinc-900">Create a course</div>
                     <div className="mt-0.5 text-xs text-zinc-600">
-                      {role === "course_rep"
+                      {isRep && role === "course_rep"
                         ? "Only within your department and assigned level(s)."
-                        : "Only within your department (all levels)."}
+                        : "Course will be visible to all students once created."}
                     </div>
                   </div>
                   <button
@@ -1115,7 +1088,7 @@ export default function UploadMaterialsPage() {
 
                     <div className="sm:col-span-2">
                       <label className="text-xs font-medium text-zinc-700">Level</label>
-                      {role === "course_rep" && Array.isArray(allowedLevels) && allowedLevels.length === 1 ? (
+                      {isRep && role === "course_rep" && Array.isArray(allowedLevels) && allowedLevels.length === 1 ? (
                         <div className="mt-1 flex items-center justify-between rounded-2xl border bg-zinc-50 px-3 py-2 text-sm">
                           <span className="font-medium text-zinc-900">{LEVEL_LABEL(allowedLevels[0])}</span>
                           <span className="text-xs text-zinc-600">Locked</span>
@@ -1129,7 +1102,7 @@ export default function UploadMaterialsPage() {
                           <option value="" disabled>
                             Select level
                           </option>
-                          {(role === "course_rep"
+                          {(isRep && role === "course_rep"
                             ? Array.isArray(allowedLevels)
                               ? allowedLevels
                               : []

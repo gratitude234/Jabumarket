@@ -1,6 +1,6 @@
 // app/me/_components/types.ts
 
-export type TabKey = "profile" | "listings" | "verification" | "account";
+export type TabKey = "profile" | "listings" | "verification" | "account" | "dashboard" | "study";
 
 export type VendorType = "food" | "mall" | "student" | "other";
 
@@ -67,6 +67,7 @@ export type RoleFlags = {
   // Market
   isVendor: boolean;
   isVerifiedVendor: boolean;
+  isFoodVendor: boolean;
 
   // Study
   studyLoading: boolean;

@@ -714,7 +714,7 @@ export default function LibraryClient() {
 
         <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground">
           <BookmarkCheck className="h-4 w-4" />
-          Library
+          Bookmarks
         </span>
       </div>
 
@@ -722,7 +722,7 @@ export default function LibraryClient() {
       <div className="rounded-3xl border border-border bg-background p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-lg font-extrabold tracking-tight text-foreground sm:text-xl">My Library</h1>
+            <h1 className="text-lg font-extrabold tracking-tight text-foreground sm:text-xl">Bookmarks</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Everything you saved — materials, practice sets, and questions.
             </p>

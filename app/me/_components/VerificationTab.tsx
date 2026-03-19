@@ -259,7 +259,7 @@ export default function VerificationTab({
       <div className="rounded-2xl border p-3">
         <div className="text-sm font-semibold text-zinc-900">Verification</div>
         <p className="mt-1 text-sm text-zinc-700">Verification is for vendors. Create a vendor profile to request verification.</p>
-        <Link href="/post" className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800">
+        <Link href="/vendor/create" className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800">
           Become a vendor
         </Link>
       </div>
@@ -311,6 +311,14 @@ export default function VerificationTab({
 
   return (
     <div className="space-y-3">
+      {/* Explanatory header for normal vendors */}
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 flex items-start gap-2">
+        <span className="text-base leading-none mt-0.5">✓</span>
+        <p className="text-sm text-zinc-700">
+          <span className="font-semibold">Verified vendors</span> get a ✓ badge on all listings and rank higher in search results.
+        </p>
+      </div>
+
       {banner ? (
         <div
           className={cn(

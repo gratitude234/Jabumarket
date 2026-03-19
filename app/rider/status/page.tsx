@@ -15,6 +15,7 @@ type RiderStatus = {
   zone: string | null;
   is_available: boolean;
   verified: boolean;
+  pin_hash: string | null;
 };
 
 function normalizePhone(input: string) {
@@ -28,6 +29,14 @@ export default function RiderStatusPage() {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // PIN state
+  const [pinVerified, setPinVerified] = useState(false);
+  const [pinStep, setPinStep] = useState<'idle' | 'setup' | 'verify'>('idle');
+  const [pinInput, setPinInput] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [pinWorking, setPinWorking] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const digits = normalizePhone(phone);
   const canLookup = digits.length >= 10;
@@ -43,7 +52,7 @@ export default function RiderStatusPage() {
       // Try phone or whatsapp match
       const { data, error } = await supabase
         .from("riders")
-        .select("id, name, phone, zone, is_available, verified")
+        .select("id, name, phone, zone, is_available, verified, pin_hash")
         .or(`phone.eq.${digits},whatsapp.eq.${digits}`)
         .maybeSingle();
 
@@ -57,11 +66,78 @@ export default function RiderStatusPage() {
       }
 
       setRider(data as RiderStatus);
+      startPinFlow(data as RiderStatus);
     } catch (err: any) {
       setLookupError(err?.message ?? "Lookup failed. Please try again.");
     } finally {
       setLooking(false);
     }
+  }
+
+  async function hashPin(pin: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pin);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function setupPin() {
+    if (pinInput.length !== 4) { setPinError('PIN must be 4 digits'); return; }
+    if (pinInput !== pinConfirm) { setPinError('PINs do not match'); return; }
+    if (!rider) return;
+    setPinWorking(true);
+    setPinError(null);
+    try {
+      const hash = await hashPin(pinInput);
+      const res = await fetch('/api/rider/pin/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rider_id: rider.id, pin_hash: hash }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.message ?? 'Failed to set PIN');
+      setRider({ ...rider, pin_hash: hash });
+      setPinVerified(true);
+      setPinStep('idle');
+      setPinInput('');
+      setPinConfirm('');
+    } catch (e: any) {
+      setPinError(e.message ?? 'Failed');
+    } finally {
+      setPinWorking(false);
+    }
+  }
+
+  async function verifyPin() {
+    if (pinInput.length !== 4) { setPinError('Enter your 4-digit PIN'); return; }
+    if (!rider) return;
+    setPinWorking(true);
+    setPinError(null);
+    try {
+      const hash = await hashPin(pinInput);
+      const res = await fetch('/api/rider/pin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rider_id: rider.id, pin_hash: hash }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error('Incorrect PIN. Try again.');
+      setPinVerified(true);
+      setPinStep('idle');
+      setPinInput('');
+    } catch (e: any) {
+      setPinError(e.message ?? 'Incorrect PIN');
+    } finally {
+      setPinWorking(false);
+    }
+  }
+
+  // Trigger PIN step after lookup
+  function startPinFlow(r: RiderStatus) {
+    setPinStep(r.pin_hash ? 'verify' : 'setup');
+    setPinInput('');
+    setPinConfirm('');
+    setPinError(null);
   }
 
   async function toggleAvailability() {
@@ -162,8 +238,64 @@ export default function RiderStatusPage() {
         </div>
       </div>
 
+      {/* PIN step — shown after lookup, before availability controls */}
+      {rider && !pinVerified && (
+        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
+          <p className="text-sm font-bold text-zinc-900">
+            {pinStep === 'setup' ? 'Set up a PIN' : 'Enter your PIN'}
+          </p>
+          <p className="text-xs text-zinc-500">
+            {pinStep === 'setup'
+              ? 'Create a 4-digit PIN to secure your rider profile.'
+              : 'Enter your 4-digit PIN to continue.'}
+          </p>
+
+          <input
+            type="number"
+            inputMode="numeric"
+            maxLength={4}
+            value={pinInput}
+            onChange={(e) => { setPinInput(e.target.value.slice(0, 4)); setPinError(null); }}
+            placeholder={pinStep === 'setup' ? 'Choose a 4-digit PIN' : 'Enter PIN'}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm tracking-widest text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+
+          {pinStep === 'setup' && (
+            <input
+              type="number"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinConfirm}
+              onChange={(e) => { setPinConfirm(e.target.value.slice(0, 4)); setPinError(null); }}
+              placeholder="Confirm PIN"
+              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm tracking-widest text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            />
+          )}
+
+          {pinError && (
+            <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{pinError}</p>
+          )}
+
+          <button
+            type="button"
+            disabled={pinWorking}
+            onClick={pinStep === 'setup' ? setupPin : verifyPin}
+            className={cn(
+              "w-full rounded-2xl py-3 text-sm font-semibold transition",
+              pinWorking ? "bg-zinc-100 text-zinc-400 cursor-not-allowed" : "bg-zinc-900 text-white hover:bg-zinc-700"
+            )}
+          >
+            {pinWorking ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> {pinStep === 'setup' ? 'Setting up…' : 'Verifying…'}
+              </span>
+            ) : pinStep === 'setup' ? 'Set PIN' : 'Verify PIN'}
+          </button>
+        </div>
+      )}
+
       {/* Rider found */}
-      {rider && (
+      {rider && pinVerified && (
         <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
 
           {/* Identity */}
@@ -245,6 +377,14 @@ export default function RiderStatusPage() {
           <p className="text-center text-[11px] text-zinc-400">
             Your status updates immediately on the delivery page.
           </p>
+
+          <Link
+            href="/rider/my-deliveries"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 py-3 text-sm font-semibold text-zinc-700 no-underline hover:bg-zinc-100"
+          >
+            <Truck className="h-4 w-4" />
+            View my deliveries →
+          </Link>
         </div>
       )}
 

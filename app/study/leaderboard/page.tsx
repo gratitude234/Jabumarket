@@ -132,6 +132,7 @@ async function fetchLeaderboard(scope: Scope): Promise<{
   currentUserId: string | null;
   userPrefs: UserPrefs | null;
   scopeLabel: string;
+  outsideTopNRow: { row: LeaderRow; rank: number } | null;
 }> {
   const supabase = await createSupabaseServerClient();
 
@@ -195,16 +196,37 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     const viewMissing =
       leaderboardResult.error.code === "42P01" ||
       leaderboardResult.error.message.toLowerCase().includes("study_leaderboard_v");
-    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel };
+    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel, outsideTopNRow: null };
     throw new Error(leaderboardResult.error.message);
   }
 
+  const rows = (leaderboardResult.data as LeaderRow[]) ?? [];
+
+  // If the current user is not in the top N, fetch their row and rank
+  let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
+  if (currentUserId && !rows.some((r) => r.user_id === currentUserId)) {
+    const { data: myData } = await supabase
+      .from("study_leaderboard_v")
+      .select("user_id,email,questions,question_upvotes,answers,accepted,practice_points,practice_days,points")
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+    if (myData) {
+      const myRow = myData as LeaderRow;
+      const { count } = await supabase
+        .from("study_leaderboard_v")
+        .select("*", { count: "exact", head: true })
+        .gt("points", myRow.points);
+      outsideTopNRow = { row: myRow, rank: (count ?? 0) + 1 };
+    }
+  }
+
   return {
-    rows: (leaderboardResult.data as LeaderRow[]) ?? [],
+    rows,
     viewMissing: false,
     currentUserId,
     userPrefs,
     scopeLabel,
+    outsideTopNRow,
   };
 }
 
@@ -309,7 +331,7 @@ function PodiumCard({
     <div
       className={cn(
         "rounded-3xl border bg-card p-4 shadow-sm",
-        isCurrentUser ? "border-foreground ring-2 ring-foreground/20" : "border-border"
+        isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -317,7 +339,7 @@ function PodiumCard({
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold text-muted-foreground">#{rank}</p>
             {isCurrentUser && (
-              <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-bold text-background">
+              <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
                 You
               </span>
             )}
@@ -378,7 +400,7 @@ function RankRow({
     <details
       className={cn(
         "group rounded-2xl border bg-card transition-colors",
-        isCurrentUser ? "border-foreground ring-1 ring-foreground/20" : "border-border"
+        isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
       )}
     >
       <summary
@@ -397,7 +419,7 @@ function RankRow({
                 #{rank} · {alias}
               </p>
               {isCurrentUser && (
-                <span className="shrink-0 rounded-full bg-foreground px-2 py-0.5 text-[10px] font-bold text-background">
+                <span className="shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
                   You
                 </span>
               )}
@@ -441,6 +463,7 @@ export default async function LeaderboardPage({
   let currentUserId: string | null = null;
   let userPrefs: UserPrefs | null = null;
   let scopeLabel = "All of JABU";
+  let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
 
   try {
     const result = await fetchLeaderboard(scope);
@@ -449,6 +472,7 @@ export default async function LeaderboardPage({
     currentUserId = result.currentUserId;
     userPrefs = result.userPrefs;
     scopeLabel = result.scopeLabel;
+    outsideTopNRow = result.outsideTopNRow;
   } catch (e: any) {
     fetchError = e?.message ?? "Failed to load leaderboard";
   }
@@ -540,6 +564,15 @@ export default async function LeaderboardPage({
       {/* Scope tab bar */}
       <ScopeTabs scope={scope} userPrefs={userPrefs} />
 
+      {/* User rank summary line */}
+      {currentUserId && !fetchError && !viewMissing ? (
+        <p className="text-sm text-muted-foreground">
+          {myRow || outsideTopNRow
+            ? `Your rank: #${myRank ?? outsideTopNRow?.rank} · ${(myRow ?? outsideTopNRow?.row)?.points.toLocaleString("en-NG")} points`
+            : "You haven't earned any points yet — answer a question to get started."}
+        </p>
+      ) : null}
+
       {/* No prefs hint for dept/level scope */}
       {noPrefsForScope && (
         <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 px-4 py-3 text-sm dark:border-amber-800/40 dark:bg-amber-950/30">
@@ -630,6 +663,26 @@ export default async function LeaderboardPage({
                 isCurrentUser={r.user_id === currentUserId}
               />
             ))}
+          </div>
+          {/* Pinned user row — shown when user is outside the top 50 */}
+          {outsideTopNRow && (
+            <div className="mt-2 border-t-2 border-dashed border-border pt-3">
+              <RankRow
+                row={outsideTopNRow.row}
+                rank={outsideTopNRow.rank}
+                isCurrentUser
+              />
+            </div>
+          )}
+        </div>
+      ) : outsideTopNRow ? (
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="border-t-2 border-dashed border-border pt-3">
+            <RankRow
+              row={outsideTopNRow.row}
+              rank={outsideTopNRow.rank}
+              isCurrentUser
+            />
           </div>
         </div>
       ) : null}

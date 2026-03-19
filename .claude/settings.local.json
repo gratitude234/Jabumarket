@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/hp/jabumarket-frontend -maxdepth 2 -name \".env*\" -o -name \"*.env*\" 2>/dev/null | head -20)",
+      "Bash(ls -la /c/Users/hp/jabumarket-frontend/ | grep -E \"^-.*\\\\.\\(json|md|ts|js\\)$\")",
+      "Bash(ls -la /c/Users/hp/jabumarket-frontend/app/study/practice/[setId]/ 2>/dev/null)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\app\\\\api\\\\orders\\\\create\" && mkdir -p \"C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\app\\\\api\\\\orders\\\\[orderId]\\\\status\" && mkdir -p \"C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\app\\\\food\" && mkdir -p \"C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\app\\\\vendor\\\\orders\")",
+      "Bash(npx tsc:*)",
+      "Bash(mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/vendor/menu\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/vendor/menu/[itemId]\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/vendor/setup\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/vendor/register\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/admin/vendors/[vendorId]/approve\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/api/admin/vendors/[vendorId]/reject\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/vendor/menu\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/vendor/setup\" && mkdir -p \"C:/Users/hp/jabumarket-frontend/app/vendor/register\")",
+      "Bash(find:*)",
+      "Bash(npm run:*)",
+      "Bash(npx next:*)",
+      "Bash(grep -r href=\"\"/market\"\" --include=*.tsx .)",
+      "Bash(grep -r href=\"\"/support\"\" --include=*.tsx .)",
+      "Bash(grep -r explore?category=Food --include=*.tsx .)",
+      "Bash(npx eslint:*)",
+      "Bash(./node_modules/.bin/eslint app/study/leaderboard/page.tsx app/study/ai-plan/page.tsx app/study/onboarding/OnboardingClient.tsx \"app/study/_components/StudyTabs.tsx\" app/study/StudyHomeClient.tsx \"app/study/library/LibraryClient.tsx\" \"app/study/practice/[setId]/PracticeTakeClient.tsx\" \"app/study/_components/StudyUI.tsx\" 2>&1)",
+      "Bash(node:*)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}

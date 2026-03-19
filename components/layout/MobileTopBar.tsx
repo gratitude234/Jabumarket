@@ -19,6 +19,12 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   // ✅ On Home, redirect to /explore ONLY when user is searching
   if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
 
+  // ✅ On Study routes, redirect to /study/materials when searching
+  if (pathname.startsWith("/study")) {
+    if (pathname.startsWith("/study/materials")) return qs ? `/study/materials?${qs}` : "/study/materials";
+    return q ? `/study/materials?q=${encodeURIComponent(q)}` : pathname;
+  }
+
   return qs ? `${pathname}?${qs}` : pathname;
 }
 
@@ -28,7 +34,7 @@ export default function MobileTopBar() {
   const sp = useSearchParams();
 
   const showSearch =
-    pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/vendors");
+    pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/vendors") || pathname.startsWith("/study");
 
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);
@@ -97,7 +103,7 @@ export default function MobileTopBar() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search products & services..."
+                placeholder={pathname.startsWith("/study") ? "Search materials, courses..." : "Search products & services..."}
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
               />
 

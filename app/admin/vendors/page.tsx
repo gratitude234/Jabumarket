@@ -2,7 +2,7 @@
 // app/admin/vendors/page.tsx
 import { cn } from "@/lib/utils";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import {
@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   FileText,
   Eye,
+  Clock,
 } from "lucide-react";
 
 type VendorType = "food" | "mall" | "student" | "other";
@@ -129,6 +130,189 @@ function MiniBadge({ verified }: { verified: boolean }) {
     </span>
   ) : (
     <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-700">Unverified</span>
+  );
+}
+
+// ── Pending food vendor applications section ──────────────────────────────────
+
+type PendingVendor = {
+  id: string;
+  user_id: string | null;
+  name: string | null;
+  location: string | null;
+  description: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  created_at: string | null;
+  verification_status: string | null;
+};
+
+function PendingFoodVendors() {
+  const [vendors, setVendors] = useState<PendingVendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase
+      .from('vendors')
+      .select('id, user_id, name, location, description, phone, whatsapp, created_at, verification_status')
+      .eq('vendor_type', 'food')
+      .eq('verification_status', 'pending')
+      .order('created_at', { ascending: false });
+    setVendors((data ?? []) as PendingVendor[]);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function approve(vendorId: string) {
+    setWorking(vendorId);
+    const res = await fetch(`/api/admin/vendors/${vendorId}/approve`, { method: 'POST' });
+    const json = await res.json();
+    if (json.ok) {
+      setBanner({ type: 'success', text: 'Vendor approved.' });
+      setVendors((prev) => prev.filter((v) => v.id !== vendorId));
+    } else {
+      setBanner({ type: 'error', text: json.message ?? 'Failed to approve.' });
+    }
+    setWorking(null);
+  }
+
+  async function reject(vendorId: string) {
+    const reason = rejectReason.trim();
+    if (!reason) { setBanner({ type: 'error', text: 'Enter a rejection reason.' }); return; }
+    setWorking(vendorId);
+    const res = await fetch(`/api/admin/vendors/${vendorId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      setBanner({ type: 'success', text: 'Vendor rejected.' });
+      setVendors((prev) => prev.filter((v) => v.id !== vendorId));
+      setRejectTarget(null);
+      setRejectReason('');
+    } else {
+      setBanner({ type: 'error', text: json.message ?? 'Failed to reject.' });
+    }
+    setWorking(null);
+  }
+
+  return (
+    <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-base font-semibold text-zinc-900 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Pending Food Vendor Applications
+          </p>
+          <p className="mt-0.5 text-sm text-zinc-500">Food vendors waiting for approval</p>
+        </div>
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+        >
+          <RefreshCcw className="h-3.5 w-3.5" /> Refresh
+        </button>
+      </div>
+
+      {banner && (
+        <div className={cn(
+          'rounded-2xl border p-3 text-sm flex items-start justify-between gap-3',
+          banner.type === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-rose-200 bg-rose-50 text-rose-800'
+        )}>
+          <span>{banner.text}</span>
+          <button type="button" onClick={() => setBanner(null)} className="rounded-xl border bg-white/70 p-1.5 hover:bg-white">
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+        </div>
+      ) : vendors.length === 0 ? (
+        <p className="py-6 text-center text-sm text-zinc-500">No pending applications.</p>
+      ) : (
+        <div className="space-y-3">
+          {vendors.map((v) => (
+            <div key={v.id} className="rounded-3xl border bg-zinc-50 p-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-zinc-900">{v.name ?? 'Unnamed'}</p>
+                  {v.location && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-600">
+                      <MapPin className="h-3.5 w-3.5" /> {v.location}
+                    </p>
+                  )}
+                  {(v.phone ?? v.whatsapp) && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-600">
+                      <Phone className="h-3.5 w-3.5" /> {v.phone ?? v.whatsapp}
+                    </p>
+                  )}
+                  {v.description && (
+                    <p className="mt-1 text-xs text-zinc-500 italic">{v.description}</p>
+                  )}
+                </div>
+                <span className="text-xs text-zinc-400">
+                  {v.created_at ? new Date(v.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : ''}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => approve(v.id)}
+                  disabled={working === v.id}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-zinc-900 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-60"
+                >
+                  {working === v.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRejectTarget(rejectTarget === v.id ? null : v.id)}
+                  disabled={working === v.id}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" /> Reject
+                </button>
+              </div>
+
+              {rejectTarget === v.id && (
+                <div className="rounded-2xl border border-rose-200 bg-white p-3 space-y-2">
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Rejection reason (required)"
+                    rows={2}
+                    className="w-full resize-none rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => reject(v.id)}
+                    disabled={working === v.id}
+                    className="w-full rounded-2xl bg-rose-600 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                  >
+                    Confirm Rejection
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -381,6 +565,9 @@ export default function AdminVendorsPage() {
 
   return (
     <div className="space-y-4 pb-24 md:pb-6">
+      {/* Pending food vendor applications */}
+      <PendingFoodVendors />
+
       <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>

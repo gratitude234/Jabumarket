@@ -318,7 +318,7 @@ function ReviewCard({
 
 // ─── Main exported component ──────────────────────────────────────────────────
 
-export default function VendorReviews({ vendorId }: { vendorId: string }) {
+export default function VendorReviews({ vendorId, autoOpen = false }: { vendorId: string; autoOpen?: boolean }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -326,6 +326,7 @@ export default function VendorReviews({ vendorId }: { vendorId: string }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingReview, setEditingReview] = useState<Review | null>(null);
+  const reviewSectionRef = useRef<HTMLDivElement>(null);
 
   const myReview = reviews.find((r) => r.reviewer_id === userId) ?? null;
 
@@ -375,6 +376,17 @@ export default function VendorReviews({ vendorId }: { vendorId: string }) {
     load();
     return () => { cancelled = true; };
   }, [vendorId]);
+
+  // Auto-open the review form when the component was launched via ?review=1
+  useEffect(() => {
+    if (!autoOpen || loading) return;
+    if (!userId) return; // not logged in — let the UI handle that
+    setShowForm(true);
+    // Smooth-scroll to the review section after a tick
+    setTimeout(() => {
+      reviewSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }, [autoOpen, loading, userId]);
 
   function handleSaved(saved: Review) {
     setReviews((prev) => {
@@ -435,7 +447,7 @@ export default function VendorReviews({ vendorId }: { vendorId: string }) {
   const avgRating = stats?.avg_rating ?? (reviews.length ? reviews.reduce((a, r) => a + r.rating, 0) / reviews.length : 0);
 
   return (
-    <div className="rounded-3xl border bg-white shadow-sm">
+    <div ref={reviewSectionRef} className="rounded-3xl border bg-white shadow-sm">
       {/* Header + summary ──────────────────────────────────────────────────── */}
       <div className="border-b p-5">
         <div className="flex items-center gap-2">

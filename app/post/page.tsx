@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   Loader2,
+  Phone,
   Save,
+  Store,
   X,
   RefreshCcw,
   Sparkles,
@@ -186,6 +188,14 @@ export default function PostPage() {
 
   const [banner, setBanner] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Vendor setup modal — shown inline when user has no vendor profile
+  const [vendorSetupOpen, setVendorSetupOpen] = useState(false);
+  const [setupName, setSetupName] = useState("");
+  const [setupPhone, setSetupPhone] = useState("");
+  const [setupType, setSetupType] = useState<"student" | "mall" | "other">("student");
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   const [listingType, setListingType] = useState<ListingType>("product");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Phones");
@@ -527,14 +537,22 @@ export default function PostPage() {
 
       const { data: vendor, error: vErr } = await supabase
         .from("vendors")
-        .select("id, verified")
+        .select("id, verified, vendor_type")
         .eq("user_id", user.id)
         .single();
 
       if (vErr || !vendor?.id) {
-        setBanner(
-          "You need a vendor profile before posting. Please complete your profile first."
-        );
+        // Show inline setup modal instead of cold-redirecting to /me
+        setPublishing(false);
+        setVendorSetupOpen(true);
+        return;
+      }
+
+      // Food vendors are fully siloed to /food — block marketplace listing creation
+      if ((vendor as any).vendor_type === "food") {
+        setPublishing(false);
+        setBanner(null);
+        router.replace("/vendor/menu");
         return;
       }
 
@@ -604,6 +622,51 @@ export default function PostPage() {
       setBanner(message);
     } finally {
       setPublishing(false);
+    }
+  }
+
+  // Inline vendor setup — creates a minimal vendor profile without leaving /post
+  async function createVendorProfile() {
+    if (!setupName.trim()) {
+      setSetupError("Name is required.");
+      return;
+    }
+    setSetupSaving(true);
+    setSetupError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login?next=/post"); return; }
+
+      const { error } = await supabase.from("vendors").insert({
+        user_id: user.id,
+        name: setupName.trim(),
+        phone: setupPhone.trim() || null,
+        whatsapp: setupPhone.trim() || null,
+        vendor_type: setupType,
+        verified: false,
+        verification_status: "unverified",
+        accepts_orders: false,
+      });
+
+      if (error) {
+        // Handle duplicate — vendor might already exist (race)
+        if (error.code === "23505") {
+          setVendorSetupOpen(false);
+          publish();
+          return;
+        }
+        setSetupError(error.message);
+        return;
+      }
+
+      setVendorSetupOpen(false);
+      // Re-run publish now that the vendor profile exists
+      publish();
+    } catch (e: any) {
+      setSetupError(e?.message ?? "Something went wrong.");
+    } finally {
+      setSetupSaving(false);
     }
   }
 
@@ -806,6 +869,110 @@ export default function PostPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
+      {/* Vendor setup modal — shown when user has no vendor profile yet */}
+      <Modal open={vendorSetupOpen} title="Quick setup — one time only">
+        <p className="text-sm text-zinc-600">
+          Add a few details so buyers know who they're dealing with. You can update these anytime in your profile.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          {/* Vendor name */}
+          <div>
+            <label className="text-xs font-medium text-zinc-700">
+              Your name / shop name <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={setupName}
+              onChange={(e) => setSetupName(e.target.value)}
+              placeholder="e.g. Temi's Gadgets, Adaeze"
+              className="mt-1 w-full rounded-2xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10"
+              autoFocus
+            />
+          </div>
+
+          {/* Phone / WhatsApp */}
+          <div>
+            <label className="text-xs font-medium text-zinc-700">
+              WhatsApp / phone number
+            </label>
+            <div className="mt-1 flex items-center gap-2 rounded-2xl border px-3 py-2.5 focus-within:ring-2 focus-within:ring-black/10">
+              <Phone className="h-4 w-4 shrink-0 text-zinc-400" />
+              <input
+                value={setupPhone}
+                onChange={(e) => setSetupPhone(e.target.value)}
+                placeholder="+2348012345678"
+                inputMode="tel"
+                className="w-full bg-transparent text-sm outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Vendor type */}
+          <div>
+            <label className="text-xs font-medium text-zinc-700">What are you selling?</label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {(
+                [
+                  { value: "student", label: "Student seller" },
+                  { value: "mall",    label: "Mall / shop" },
+                  { value: "other",   label: "Other" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setSetupType(opt.value)}
+                  className={cn(
+                    "rounded-2xl border px-3 py-2 text-sm font-medium transition",
+                    setupType === opt.value
+                      ? "border-black bg-black text-white"
+                      : "bg-white text-zinc-800 hover:bg-zinc-50"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-zinc-500">
+              Selling food? <a href="/vendor/register" className="underline">Register as a food vendor</a> instead.
+            </p>
+          </div>
+
+          {setupError && (
+            <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {setupError}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setVendorSetupOpen(false)}
+            className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={createVendorProfile}
+            disabled={setupSaving || !setupName.trim()}
+            className={cn(
+              "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
+              !setupName.trim()
+                ? "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                : "bg-black text-white hover:bg-zinc-800 disabled:opacity-60"
+            )}
+          >
+            {setupSaving ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+            ) : (
+              <><Store className="h-4 w-4" /> Save & continue posting</>
+            )}
+          </button>
+        </div>
+      </Modal>
+
       <Modal open={showDraftModal} title="Restore your draft?">
         <p className="text-sm text-zinc-700">
           We found an unfinished post. Do you want to restore it? (Photo can’t be
@@ -875,15 +1042,6 @@ export default function PostPage() {
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4" />
               <div className="flex-1">{banner}</div>
-              {banner.toLowerCase().includes("vendor profile") ? (
-                <button
-                  type="button"
-                  onClick={() => router.push("/me")}
-                  className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Fix now <ArrowLeft className="h-4 w-4 rotate-180" />
-                </button>
-              ) : null}
             </div>
           </div>
         ) : null}

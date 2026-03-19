@@ -98,6 +98,16 @@ type LatestAttempt = {
   } | null;
 };
 
+// Per-set attempt summary — injected into QuizSetCard for personal context
+type SetAttemptSummary = {
+  attemptCount: number;         // total submitted attempts on this set
+  bestPct: number | null;       // highest score % across submitted attempts
+  lastPct: number | null;       // most recent submitted score %
+  lastAttemptId: string | null; // id of the most recent submitted attempt
+  inProgressId: string | null;  // id of an in_progress attempt, if any
+  inProgressPct: number | null; // progress through in-progress attempt (answered/total)
+};
+
 function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
   const sp = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
@@ -415,7 +425,53 @@ function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) 
   );
 }
 
-function QuizSetCard({ s, onStart, onPreview }: { s: QuizSetRow; onStart: () => void; onPreview: () => void }) {
+// ─── Score ring ───────────────────────────────────────────────────────────────
+
+function pctToRingColor(pct: number): string {
+  if (pct >= 70) return "#1D9E75";
+  if (pct >= 60) return "#378ADD";
+  if (pct >= 50) return "#BA7517";
+  if (pct >= 45) return "#E8762A";
+  return "#A32D2D";
+}
+
+function ScoreRingSmall({ pct }: { pct: number | null }) {
+  const size = 48;
+  const r = 19;
+  const cx = 24;
+  const circ = 2 * Math.PI * r;
+  const offset = pct != null ? circ * (1 - Math.max(0, Math.min(100, pct)) / 100) : circ;
+  const color = pct != null ? pctToRingColor(pct) : undefined;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+      style={{ flexShrink: 0 }} aria-label={pct != null ? `Best score: ${pct}%` : "Not attempted"}>
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="currentColor" strokeWidth={3} opacity={0.12} />
+      {pct != null && (
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={color} strokeWidth={3}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+          transform={`rotate(-90 ${cx} ${cx})`} />
+      )}
+      <text x={cx} y={cx} textAnchor="middle" dominantBaseline="central"
+        fontSize={10} fontWeight={500} fill="currentColor">
+        {pct != null ? `${pct}%` : "—"}
+      </text>
+    </svg>
+  );
+}
+
+// ─── Quiz set card ─────────────────────────────────────────────────────────────
+
+function QuizSetCard({
+  s,
+  onStart,
+  onPreview,
+  summary,
+}: {
+  s: QuizSetRow;
+  onStart: () => void;
+  onPreview: () => void;
+  summary?: SetAttemptSummary | null;
+}) {
   const title = (s.title ?? "Untitled set").trim() || "Untitled set";
   const code = (s.course_code ?? "").toString().trim().toUpperCase();
   const sem = safeSemesterLabel(s.semester);
@@ -426,44 +482,102 @@ function QuizSetCard({ s, onStart, onPreview }: { s: QuizSetRow; onStart: () => 
       : typeof s.total_questions === "number"
       ? s.total_questions
       : null;
-
   const time =
     typeof s.time_limit_minutes === "number" && Number.isFinite(s.time_limit_minutes)
       ? `${s.time_limit_minutes} min`
       : "";
 
+  const hasInProgress = Boolean(summary?.inProgressId);
+  const hasSubmitted  = (summary?.attemptCount ?? 0) > 0;
+  const bestPct       = summary?.bestPct ?? null;
+  const isMastered    = bestPct != null && bestPct >= 70;
+
   return (
-    <Card className="w-full max-w-full overflow-hidden rounded-3xl p-4">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold text-foreground">{title}</p>
+    <Card className={cn(
+      "w-full max-w-full overflow-hidden rounded-3xl p-4",
+      isMastered && "border-emerald-300/40 dark:border-emerald-700/30"
+    )}>
+      <div className="flex min-w-0 items-start gap-3">
+        {/* Score ring or fallback icon */}
+        <div className="mt-0.5 shrink-0">
+          {hasSubmitted || hasInProgress ? (
+            <ScoreRingSmall pct={bestPct} />
+          ) : (
+            <div className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-background">
+              <BookOpen className="h-5 w-5 text-foreground" />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          {/* Title + mastered badge */}
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <p className="truncate text-base font-semibold text-foreground">{title}</p>
+            {isMastered && (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-300/40 bg-emerald-100/30 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
+                ✓ Mastered
+              </span>
+            )}
+          </div>
+
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
             {s.description ? s.description : "Practice past questions and test yourself."}
           </p>
 
-          <div className="mt-3 flex max-w-full flex-wrap items-center gap-2">
+          {/* Meta pills */}
+          <div className="mt-2.5 flex max-w-full flex-wrap items-center gap-2">
             {code ? pill(code, <Hash className="h-3.5 w-3.5" />) : null}
             {level ? pill(level) : null}
             {sem ? pill(`${sem} sem`, <Clock className="h-3.5 w-3.5" />) : null}
-            {qCount !== null ? pill(`${qCount} questions`) : null}
+            {qCount !== null ? pill(`${qCount} Q`) : null}
             {time ? pill(time) : null}
-            {s.created_at ? pill(formatWhen(s.created_at)) : null}
             {s.difficulty ? <DifficultyBadge difficulty={s.difficulty} /> : null}
           </div>
-        </div>
 
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border bg-background">
-          <BookOpen className="h-5 w-5 text-foreground" />
+          {/* Personal context line */}
+          {hasInProgress && !hasSubmitted ? (
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-100/30 px-2 py-0.5 text-[11px] font-extrabold text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                In progress
+              </span>
+              {summary?.inProgressPct != null && (
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  {summary.inProgressPct}% answered
+                </span>
+              )}
+            </div>
+          ) : hasSubmitted ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {summary!.attemptCount}× attempted
+              </span>
+              {bestPct != null && (
+                <span className="text-[11px] font-extrabold"
+                  style={{ color: pctToRingColor(bestPct) }}>
+                  Best {bestPct}%
+                </span>
+              )}
+              {hasInProgress && (
+                <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-100/30 px-2 py-0.5 text-[11px] font-extrabold text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                  Resume available
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] font-semibold text-muted-foreground">
+              Not attempted yet
+            </p>
+          )}
         </div>
       </div>
 
+      {/* Action buttons */}
       <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
         <PrimaryButton onClick={onStart}>
           <Play className="h-4 w-4" />
-          Start
+          {hasInProgress ? "Continue" : hasSubmitted ? "Retry" : "Start"}
           <ArrowRight className="h-4 w-4" />
         </PrimaryButton>
-
         <SecondaryButton onClick={onPreview}>
           <Info className="h-4 w-4" />
           Preview
@@ -1020,6 +1134,89 @@ export default function PracticeHomeClient() {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // ── Per-set attempt summaries ─────────────────────────────────────────────
+  // Loaded whenever the visible set list changes. Gives each card personal
+  // context: best score, attempt count, in-progress state.
+  const [setAttemptMap, setSetAttemptMap] = useState<Record<string, SetAttemptSummary>>({});
+
+  useEffect(() => {
+    const setIds = sets.map((s) => s.id).filter(Boolean);
+    if (!setIds.length) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth?.user?.id;
+        if (!uid) return;
+
+        // Fetch all attempts for visible sets in one query
+        const { data, error } = await supabase
+          .from("study_practice_attempts")
+          .select("id,set_id,status,score,total_questions")
+          .eq("user_id", uid)
+          .in("set_id", setIds);
+
+        if (cancelled || error || !data) return;
+
+        // Group by set_id and compute summary
+        const map: Record<string, SetAttemptSummary> = {};
+
+        for (const row of data as any[]) {
+          const sid = String(row.set_id);
+          if (!map[sid]) {
+            map[sid] = {
+              attemptCount: 0,
+              bestPct: null,
+              lastPct: null,
+              lastAttemptId: null,
+              inProgressId: null,
+              inProgressPct: null,
+            };
+          }
+
+          const s = map[sid];
+          const isSubmitted = row.status === "submitted";
+          const isInProgress = row.status === "in_progress";
+
+          if (isSubmitted) {
+            s.attemptCount += 1;
+            s.lastAttemptId = s.lastAttemptId ?? String(row.id);
+
+            if (
+              typeof row.score === "number" &&
+              typeof row.total_questions === "number" &&
+              row.total_questions > 0
+            ) {
+              const pct = Math.round((row.score / row.total_questions) * 100);
+              // Track last (first encountered = most recent due to DB ordering)
+              if (s.lastPct === null) s.lastPct = pct;
+              // Track best
+              if (s.bestPct === null || pct > s.bestPct) s.bestPct = pct;
+            }
+          }
+
+          if (isInProgress && !s.inProgressId) {
+            s.inProgressId = String(row.id);
+            if (
+              typeof row.score === "number" &&
+              typeof row.total_questions === "number" &&
+              row.total_questions > 0
+            ) {
+              s.inProgressPct = Math.round((row.score / row.total_questions) * 100);
+            }
+          }
+        }
+
+        if (!cancelled) setSetAttemptMap(map);
+      } catch {
+        // Non-fatal — cards just show without personal context
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [sets]);
 
   async function fetchPage(nextPage: number) {
     const isFirst = nextPage === 1;
@@ -1678,7 +1875,13 @@ export default function PracticeHomeClient() {
               </div>
             ) : (
               visibleSets.map((s) => (
-                <QuizSetCard key={s.id} s={s} onStart={() => startSet(s.id)} onPreview={() => openPreview(s)} />
+                <QuizSetCard
+                  key={s.id}
+                  s={s}
+                  onStart={() => startSet(s.id)}
+                  onPreview={() => openPreview(s)}
+                  summary={setAttemptMap[s.id] ?? null}
+                />
               ))
             )}
           </div>

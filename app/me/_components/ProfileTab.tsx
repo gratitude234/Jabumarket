@@ -2,10 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ChefHat, Settings, ShoppingBag, Store } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Me, RoleFlags, Vendor, VendorType } from "./types";
 import { cn, defaultVendorNameFromEmail, normalizePhone } from "./utils";
 import Field from "./Field";
+
+const STUDY_STATUS_LABELS: Record<string, string> = {
+  not_applied: "Not applied",
+  pending: "Under review",
+  approved: "Active",
+  rejected: "Rejected",
+  course_rep: "Course Representative",
+};
 
 export default function ProfileTab({
   roles,
@@ -13,12 +22,14 @@ export default function ProfileTab({
   vendor,
   onVendorUpdated,
   onMeUpdated,
+  studyOnly = false,
 }: {
   roles: RoleFlags;
   me: Me | null;
   vendor: Vendor | null;
   onVendorUpdated: (v: Vendor) => void;
   onMeUpdated: (m: Me) => void;
+  studyOnly?: boolean;
 }) {
   /* -------------------------- Account identity -------------------------- */
   const [fullName, setFullName] = useState(me?.full_name ?? "");
@@ -119,7 +130,8 @@ export default function ProfileTab({
         whatsapp: vendorForm.whatsapp.trim() || null,
         phone: vendorForm.phone.trim() || null,
         location: vendorForm.location.trim() || null,
-        vendor_type: vendorForm.vendor_type,
+        // Food vendors are siloed to /vendor — never allow setting food type here
+        vendor_type: vendorForm.vendor_type === "food" ? vendor.vendor_type : vendorForm.vendor_type,
       };
 
       const { error } = await supabase.from("vendors").update(payload).eq("id", vendor.id);
@@ -322,6 +334,8 @@ export default function ProfileTab({
     );
   }
 
+  const isFoodVendor = roles.isFoodVendor;
+
   function SelectField({
     label,
     children,
@@ -359,7 +373,7 @@ export default function ProfileTab({
       ) : null}
 
       {/* ── SECTION 1: Account ─────────────────────────────── */}
-      <section>
+      {!studyOnly && <section>
         <SectionLabel>Account</SectionLabel>
         <div className="grid gap-3">
           <Field
@@ -404,10 +418,10 @@ export default function ProfileTab({
             </div>
           )}
         </div>
-      </section>
+      </section>}
 
       {/* ── SECTION 2: Vendor Profile ──────────────────────── */}
-      <section>
+      {!studyOnly && <section>
         <div className="flex items-center gap-3 mb-3">
           <div className="h-px flex-1 bg-zinc-100" />
           <SectionLabel>
@@ -417,118 +431,161 @@ export default function ProfileTab({
         </div>
 
         {roles.isVendor && vendor ? (
-          <div className="grid gap-3">
-            <Field
-              label="Store / Display name"
-              value={vendorForm.name}
-              onChange={(v) => setVendorForm((s) => ({ ...s, name: v }))}
-              onBlur={() => setVendorTouched((t) => ({ ...t, name: true }))}
-              placeholder={defaultVendorNameFromEmail(me?.email)}
-              error={vendorTouched.name ? vendErr.name : undefined}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="WhatsApp"
-                value={vendorForm.whatsapp}
-                onChange={(v) => setVendorForm((s) => ({ ...s, whatsapp: v }))}
-                onBlur={() => setVendorTouched((t) => ({ ...t, whatsapp: true }))}
-                placeholder="+234 801 234 5678"
-                error={vendorTouched.whatsapp ? vendErr.whatsapp : undefined}
-              />
-              <Field
-                label="Phone"
-                value={vendorForm.phone}
-                onChange={(v) => setVendorForm((s) => ({ ...s, phone: v }))}
-                onBlur={() => setVendorTouched((t) => ({ ...t, phone: true }))}
-                placeholder="+234 701 234 5678"
-                error={vendorTouched.phone ? vendErr.phone : undefined}
-              />
-            </div>
-
-            <Field
-              label="Location"
-              value={vendorForm.location}
-              onChange={(v) => setVendorForm((s) => ({ ...s, location: v }))}
-              onBlur={() => setVendorTouched((t) => ({ ...t, location: true }))}
-              placeholder="e.g. JABU Campus / Male Hostels"
-              error={vendorTouched.location ? vendErr.location : undefined}
-            />
-
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-2">Vendor type</p>
+          isFoodVendor ? (
+            /* Food vendor: portal card with quick-links */
+            <div className="rounded-xl border bg-zinc-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-zinc-900">Food Vendor Portal</p>
               <div className="grid grid-cols-2 gap-2">
-                {(["food", "mall", "student", "other"] as VendorType[]).map((t) => {
-                  const active = vendorForm.vendor_type === t;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
-                      className={cn(
-                        "rounded-xl border py-2.5 text-sm font-semibold capitalize transition-colors",
-                        active
-                          ? "bg-zinc-900 text-white border-zinc-900"
-                          : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-                      )}
-                    >
-                      {t}
-                    </button>
-                  );
-                })}
+                <Link
+                  href="/vendor/orders"
+                  className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition-colors"
+                >
+                  <ShoppingBag className="h-4 w-4 text-zinc-400 shrink-0" /> Orders
+                </Link>
+                <Link
+                  href="/vendor/menu"
+                  className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition-colors"
+                >
+                  <ChefHat className="h-4 w-4 text-zinc-400 shrink-0" /> Menu
+                </Link>
+                <Link
+                  href="/vendor/setup"
+                  className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition-colors"
+                >
+                  <Settings className="h-4 w-4 text-zinc-400 shrink-0" /> Settings
+                </Link>
+                <Link
+                  href={`/vendors/${vendor.id}`}
+                  className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition-colors"
+                >
+                  <Store className="h-4 w-4 text-zinc-400 shrink-0" /> Storefront
+                </Link>
               </div>
             </div>
+          ) : (
+            /* Normal vendor: full form fields */
+            <div className="grid gap-3">
+              <Field
+                label="Store / Display name"
+                value={vendorForm.name}
+                onChange={(v) => setVendorForm((s) => ({ ...s, name: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, name: true }))}
+                placeholder={defaultVendorNameFromEmail(me?.email)}
+                error={vendorTouched.name ? vendErr.name : undefined}
+              />
 
-            {vendorDirty && (
-              <div className="sticky bottom-0 -mx-4 border-t bg-white/95 px-4 py-3 backdrop-blur mt-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-zinc-500">
-                    Unsaved changes
-                    {!vendorValidation.canSave && (
-                      <span className="ml-1.5 font-semibold text-rose-600">— fix errors first</span>
-                    )}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelVendor}
-                      className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
-                      disabled={vendorSaving}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveVendor}
-                      disabled={vendorSaving || !vendorValidation.canSave}
-                      className={cn(
-                        "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
-                        vendorSaving || !vendorValidation.canSave
-                          ? "bg-zinc-200 text-zinc-500"
-                          : "bg-zinc-900 text-white hover:bg-zinc-800"
-                      )}
-                    >
-                      {vendorSaving ? "Saving…" : "Save vendor"}
-                    </button>
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="WhatsApp"
+                  value={vendorForm.whatsapp}
+                  onChange={(v) => setVendorForm((s) => ({ ...s, whatsapp: v }))}
+                  onBlur={() => setVendorTouched((t) => ({ ...t, whatsapp: true }))}
+                  placeholder="+234 801 234 5678"
+                  error={vendorTouched.whatsapp ? vendErr.whatsapp : undefined}
+                />
+                <Field
+                  label="Phone"
+                  value={vendorForm.phone}
+                  onChange={(v) => setVendorForm((s) => ({ ...s, phone: v }))}
+                  onBlur={() => setVendorTouched((t) => ({ ...t, phone: true }))}
+                  placeholder="+234 701 234 5678"
+                  error={vendorTouched.phone ? vendErr.phone : undefined}
+                />
+              </div>
+
+              <Field
+                label="Location"
+                value={vendorForm.location}
+                onChange={(v) => setVendorForm((s) => ({ ...s, location: v }))}
+                onBlur={() => setVendorTouched((t) => ({ ...t, location: true }))}
+                placeholder="e.g. JABU Campus / Male Hostels"
+                error={vendorTouched.location ? vendErr.location : undefined}
+              />
+
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-2">Vendor type</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["mall", "student", "other"] as VendorType[]).map((t) => {
+                    const active = vendorForm.vendor_type === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setVendorForm((s) => ({ ...s, vendor_type: t }))}
+                        className={cn(
+                          "rounded-xl border py-2.5 text-sm font-semibold capitalize transition-colors",
+                          active
+                            ? "bg-zinc-900 text-white border-zinc-900"
+                            : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
-          </div>
+
+              {vendorDirty && (
+                <div className="sticky bottom-0 -mx-4 border-t bg-white/95 px-4 py-3 backdrop-blur mt-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-zinc-500">
+                      Unsaved changes
+                      {!vendorValidation.canSave && (
+                        <span className="ml-1.5 font-semibold text-rose-600">— fix errors first</span>
+                      )}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelVendor}
+                        className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                        disabled={vendorSaving}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveVendor}
+                        disabled={vendorSaving || !vendorValidation.canSave}
+                        className={cn(
+                          "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                          vendorSaving || !vendorValidation.canSave
+                            ? "bg-zinc-200 text-zinc-500"
+                            : "bg-zinc-900 text-white hover:bg-zinc-800"
+                        )}
+                      >
+                        {vendorSaving ? "Saving…" : "Save vendor"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!vendorDirty && vendor.id && (
+                <Link
+                  href={`/vendors/${vendor.id}`}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 hover:underline mt-1"
+                >
+                  View your storefront →
+                </Link>
+              )}
+            </div>
+          )
         ) : (
           <div className="rounded-xl bg-zinc-50 border border-dashed border-zinc-200 p-5 text-center">
             <p className="text-2xl mb-2">🏪</p>
             <p className="text-sm font-semibold text-zinc-900">Start selling on JABU Market</p>
             <p className="mt-1 text-xs text-zinc-500">Create a vendor profile to post listings and reach buyers on campus.</p>
             <Link
-              href="/post"
+              href="/vendor/create"
               className="mt-4 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
             >
               Become a vendor →
             </Link>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* ── SECTION 3: Study Profile ───────────────────────── */}
       <section>
@@ -537,6 +594,16 @@ export default function ProfileTab({
           <SectionLabel>Study Preferences</SectionLabel>
           <div className="h-px flex-1 bg-zinc-100" />
         </div>
+
+        {/* Study status pill */}
+        {!roles.studyLoading && roles.studyStatus && roles.studyStatus !== "not_applied" && (
+          <div className="flex items-center gap-2 rounded-xl border bg-zinc-50 px-3 py-2 mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400">Rep status</span>
+            <span className="ml-auto text-xs font-semibold text-zinc-700">
+              {STUDY_STATUS_LABELS[roles.studyStatus] ?? roles.studyStatus}
+            </span>
+          </div>
+        )}
 
         {studyLoading ? (
           <div className="space-y-2">

@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 export function Card({
   children,
@@ -217,6 +218,52 @@ function roleLabel(role: ContributorRole) {
   return "Contributor";
 }
 
+function ContributorImpactStats() {
+  const [stats, setStats] = React.useState<{ uploads: number; downloads: number } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data, error } = await supabase
+          .from("study_materials")
+          .select("id, downloads")
+          .eq("uploader_id", user.id);
+        if (error || !data || cancelled) return;
+        const totalUploads = data.length;
+        const totalDownloads = data.reduce((sum: number, r: { id: string; downloads: number | null }) => sum + (r.downloads ?? 0), 0);
+        if (!cancelled) setStats({ uploads: totalUploads, downloads: totalDownloads });
+      } catch {
+        // silently fail — stats are non-critical
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!stats || (stats.uploads === 0 && stats.downloads === 0)) return null;
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <span className="text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 font-semibold text-foreground">
+          {stats.uploads}
+        </span>{" "}
+        upload{stats.uploads !== 1 ? "s" : ""}
+      </span>
+      <span className="text-xs text-muted-foreground">·</span>
+      <span className="text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 font-semibold text-foreground">
+          {stats.downloads}
+        </span>{" "}
+        download{stats.downloads !== 1 ? "s" : ""}
+      </span>
+    </div>
+  );
+}
+
 export function ContributorStatusHub({
   loading,
   status,
@@ -244,25 +291,28 @@ export function ContributorStatusHub({
     })();
 
     return (
-      <div className={cn("flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3")}>
-        <div className="flex items-center gap-2 min-w-0">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">{scopeLabel}</p>
-            <p className="text-xs text-muted-foreground">You can upload materials for your department</p>
+      <div className={cn("rounded-2xl border border-border bg-card px-4 py-3")}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate">{scopeLabel}</p>
+              <p className="text-xs text-muted-foreground">You can upload materials for your department</p>
+            </div>
           </div>
+          <Link
+            href="/study/materials/upload"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
+              "text-sm font-semibold text-foreground hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            )}
+          >
+            <UploadCloud className="h-4 w-4" />
+            Upload
+          </Link>
         </div>
-        <Link
-          href="/study/materials/upload"
-          className={cn(
-            "inline-flex shrink-0 items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
-            "text-sm font-semibold text-foreground hover:opacity-90",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <UploadCloud className="h-4 w-4" />
-          Upload
-        </Link>
+        <ContributorImpactStats />
       </div>
     );
   }

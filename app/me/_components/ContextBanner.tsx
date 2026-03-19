@@ -95,18 +95,35 @@ export default function ContextBanner({
 
   if (!roles.isVendor) {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
-        <span className="mt-0.5 text-lg leading-none">🏪</span>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-zinc-900">Start selling on JABU Market</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Create a vendor profile to post listings and reach buyers.</p>
+      <div className="space-y-2">
+        {/* Marketplace sell CTA */}
+        <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+          <span className="mt-0.5 text-lg leading-none">🏪</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-zinc-900">Start selling on JABU Market</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Post listings and reach buyers on campus.</p>
+          </div>
+          <Link
+            href="/vendor/create"
+            className="shrink-0 self-center rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+          >
+            Sell now →
+          </Link>
         </div>
-        <Link
-          href="/post"
-          className="shrink-0 self-center rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
-        >
-          Become a vendor →
-        </Link>
+        {/* Food vendor CTA — separate path */}
+        <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+          <span className="mt-0.5 text-lg leading-none">🍽</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-zinc-900">Run a canteen or food stall?</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Take structured orders — no missed WhatsApp messages.</p>
+          </div>
+          <Link
+            href="/vendor/register"
+            className="shrink-0 self-center rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+          >
+            Register →
+          </Link>
+        </div>
       </div>
     );
   }

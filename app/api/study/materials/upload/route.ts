@@ -1,10 +1,9 @@
 // app/api/study/materials/upload/route.ts
 // Creates a pending material row + returns a signed upload token for Supabase Storage.
+// Open to any authenticated student — uploads are queued as approved=false for rep/admin review.
 
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { requireStudyModerator } from "@/lib/studyAdmin/requireStudyModerator";
-import { isWithinScope } from "@/lib/studyAdmin/scope";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +29,12 @@ function safeFilename(name: string) {
 
 export async function POST(req: Request) {
   try {
-    const { userId, scope } = await requireStudyModerator();
+    // Any logged-in student may upload — materials land in the approval queue (approved=false)
+    const supabase = await createSupabaseServerClient();
+    const { data: userData, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !userData?.user) return jsonError("Unauthorized", 401, "NO_SESSION");
+    const userId = userData.user.id;
+    const uploader_email = (userData.user.email as string | undefined) ?? null;
 
     const body = (await req.json().catch(() => null)) as any;
     if (!body) return jsonError("Invalid JSON", 400, "BAD_REQUEST");
@@ -59,7 +63,7 @@ export async function POST(req: Request) {
 
     const admin = createSupabaseAdminClient();
 
-    // 1) Load course and enforce scope on the server
+    // 1) Verify course exists
     const { data: courseRow, error: courseErr } = await admin
       .from("study_courses")
       .select("id, faculty_id, department_id, level, semester, course_code")
@@ -68,13 +72,6 @@ export async function POST(req: Request) {
 
     if (courseErr) return jsonError(courseErr.message || "DB error", 500, "DB_ERROR");
     if (!courseRow?.id) return jsonError("Course not found", 404, "COURSE_NOT_FOUND");
-
-    const ok = isWithinScope(scope, {
-      faculty_id: (courseRow as any)?.faculty_id ?? null,
-      department_id: (courseRow as any)?.department_id ?? null,
-      level: (courseRow as any)?.level ?? null,
-    });
-    if (!ok) return jsonError("Forbidden", 403, "NOT_APPROVED");
 
     // 2) Duplicate check (authoritative)
     if (file_hash) {
@@ -99,9 +96,6 @@ export async function POST(req: Request) {
 
     // 3) Create pending row (approved=false) with file_path that we will upload to.
     // We use the returned id as part of the path to guarantee uniqueness.
-    const supabase = await createSupabaseServerClient();
-    const { data: userData } = await supabase.auth.getUser();
-    const uploader_email = (userData?.user?.email as string | undefined) ?? null;
 
     const { data: inserted, error: insErr } = await admin
       .from("study_materials")
@@ -219,9 +213,6 @@ export async function POST(req: Request) {
     const msg = e?.message || "Error";
 
     if (code === "NO_SESSION") return jsonError("Unauthorized", 401, "NO_SESSION");
-    if (code === "NOT_STUDY_MODERATOR") return jsonError("Forbidden", 403, "NOT_APPROVED");
-    if (code === "REP_SCOPE_MISCONFIGURED") return jsonError(msg, 403, "REP_SCOPE_MISCONFIGURED");
-
     return jsonError(msg, status, code || "SERVER_ERROR");
   }
 }

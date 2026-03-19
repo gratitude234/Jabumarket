@@ -102,14 +102,11 @@ export default function DeliveryRequestsPage() {
 
   async function cancel(id: string) {
     setCancellingId(id);
-    const { error } = await supabase
-      .from("delivery_requests")
-      .update({ status: "cancelled" })
-      .eq("id", id);
-
-    if (!error) {
+    const res = await fetch(`/api/delivery/requests/${id}/cancel`, { method: 'POST' });
+    const json = await res.json();
+    if (json.ok) {
       setRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: "cancelled" } : r))
+        prev.map((r) => (r.id === id ? { ...r, status: 'cancelled' } : r))
       );
     }
     setCancellingId(null);

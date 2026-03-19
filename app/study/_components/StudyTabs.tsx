@@ -22,6 +22,7 @@ import {
   BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StudyPrefsProvider, useStudyPrefs } from "./StudyPrefsContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,6 @@ function isActive(pathname: string, tab: Pick<Tab, "href" | "match">) {
 }
 
 const OVERFLOW_PREFIXES = [
-  "/study/questions",
   "/study/history",
   "/study/library",
   "/study/gpa",
@@ -276,6 +276,37 @@ function MoreSheet({
   );
 }
 
+// ─── Onboarding Banner ────────────────────────────────────────────────────────
+
+function useStudyOnboardingBanner() {
+  const { loading, hasPrefs } = useStudyPrefs();
+  return { shouldShowBanner: !loading && !hasPrefs };
+}
+
+function StudyOnboardingBannerInner() {
+  const { shouldShowBanner } = useStudyOnboardingBanner();
+  if (!shouldShowBanner) return null;
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 flex items-center justify-between gap-3">
+      <p className="text-sm text-amber-800">Complete your study profile to get personalised content.</p>
+      <Link
+        href="/study/onboarding"
+        className="shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-amber-700"
+      >
+        Set up →
+      </Link>
+    </div>
+  );
+}
+
+function StudyOnboardingBanner() {
+  return (
+    <StudyPrefsProvider>
+      <StudyOnboardingBannerInner />
+    </StudyPrefsProvider>
+  );
+}
+
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 const DESKTOP_TABS: Tab[] = [
@@ -330,6 +361,12 @@ const MOBILE_TABS: Tab[] = [
     icon: <Zap className="h-3.5 w-3.5" />,
     match: "prefix",
   },
+  {
+    href: "/study/questions",
+    label: "Q&A",
+    icon: <MessageCircleQuestion className="h-3.5 w-3.5" />,
+    match: "prefix",
+  },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -345,14 +382,6 @@ export default function StudyTabs({
 
   const overflowItems: OverflowItem[] = [
     {
-      href: "/study/questions",
-      label: "Q&A",
-      description: "Ask questions and get help from other students",
-      icon: MessageCircleQuestion,
-      color:
-        "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
-    },
-    {
       href: "/study/history",
       label: "History",
       description: "Review your recent study activity",
@@ -362,8 +391,8 @@ export default function StudyTabs({
     },
     {
       href: "/study/library",
-      label: "Library",
-      description: "Your saved materials and bookmarks",
+      label: "Bookmarks",
+      description: "Your saved materials, sets and questions",
       icon: BookMarked,
       color:
         "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
@@ -429,6 +458,7 @@ export default function StudyTabs({
 
   return (
     <>
+      <StudyOnboardingBanner />
       <nav
         aria-label="Study navigation"
         className={cn(

@@ -20,8 +20,11 @@ export default function HeaderCard(props: {
   avatarText: string;
   roles: RoleFlags;
   vendorName: string | null;
+  vendorId?: string | null;
   listingsCount?: number;
   materialsCount?: number;
+  menuItemsCount?: number;
+  ordersTodayCount?: number;
 }) {
   const { roles } = props;
   const grad = avatarGradient(props.name);
@@ -89,13 +92,27 @@ export default function HeaderCard(props: {
 
       {/* Stats row */}
       <div className="flex gap-2 mt-4">
-        <StatPill label="Listings" value={props.listingsCount ?? 0} />
+        {roles.isFoodVendor ? (
+          <StatPill label="Menu items" value={props.menuItemsCount ?? 0} />
+        ) : (
+          <StatPill label="Listings" value={props.listingsCount ?? 0} />
+        )}
         <StatPill label="Materials" value={props.materialsCount ?? 0} />
         {roles.isVendor && props.vendorName ? (
-          <div className="flex flex-col justify-center rounded-xl border bg-zinc-50 px-4 py-2.5 min-w-0 flex-1 overflow-hidden">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Store</span>
-            <span className="text-sm font-bold text-zinc-900 truncate">{props.vendorName}</span>
-          </div>
+          roles.isFoodVendor ? (
+            <div className="flex flex-col justify-center rounded-xl border bg-zinc-50 px-4 py-2.5 min-w-0 flex-1 overflow-hidden">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Orders today</span>
+              <span className="text-sm font-bold text-zinc-900">{props.ordersTodayCount ?? 0}</span>
+            </div>
+          ) : (
+            <Link
+              href={`/vendors/${props.vendorId}`}
+              className="flex flex-col justify-center rounded-xl border bg-zinc-50 px-4 py-2.5 min-w-0 flex-1 overflow-hidden hover:bg-zinc-100 transition-colors"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Store</span>
+              <span className="text-sm font-bold text-zinc-900 truncate">{props.vendorName}</span>
+            </Link>
+          )
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-2.5">
             <span className="text-xs text-zinc-400">No store yet</span>

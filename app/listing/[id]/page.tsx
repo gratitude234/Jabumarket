@@ -15,7 +15,7 @@ import {
 import ListingGallery from "@/components/listing/ListingGallery";
 import { getWhatsAppLink } from "@/lib/whatsapp";
 import ListingImage from "@/components/ListingImage";
-import { ArrowLeft, BadgeCheck, Clock, Eye, MapPin, Truck } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Clock, Eye, MapPin, Truck, Bookmark } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -198,33 +198,88 @@ export default async function ListingPage({
 
   const heroSrc = listing.image_url?.trim() || "/images/placeholder.svg";
 
-  // Similar listings
+  // Similar listings — ranked by relevance, not just recency.
+  // Strategy: same category + price within ±60% of current price, ordered by
+  // view count descending so popular items surface first. Falls back to
+  // same-category newest if no price is set, and to all-category if no matches.
   const categorySafe = String((listing as any).category ?? "").trim();
-  const similarQuery = supabase
-    .from("listings")
-    .select(
-      "id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable"
-    )
-    .neq("id", listing.id)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(6);
+  const currentPrice = typeof listing.price === "number" ? listing.price : null;
 
-  const { data: similarData } =
-    categorySafe.length > 0
-      ? await similarQuery.eq("category", categorySafe)
-      : await similarQuery;
+  let similar: ListingRow[] = [];
 
-  const similar = (similarData ?? []) as ListingRow[];
+  if (categorySafe.length > 0) {
+    // Base query — same category, not this listing, active
+    let simQ = supabase
+      .from("listings")
+      .select(
+        "id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable"
+      )
+      .neq("id", listing.id)
+      .eq("status", "active")
+      .eq("category", categorySafe);
+
+    // Apply price proximity filter when we have a numeric price
+    if (currentPrice !== null && currentPrice > 0) {
+      const minP = Math.floor(currentPrice * 0.4);
+      const maxP = Math.ceil(currentPrice * 1.6);
+      simQ = simQ.gte("price", minP).lte("price", maxP);
+    }
+
+    // Join listing_stats to order by views — most-viewed similar items first
+    const { data: simData } = await simQ
+      .order("created_at", { ascending: false })
+      .limit(12); // fetch more, then sort + trim client-side
+
+    if (simData && simData.length > 0) {
+      const simIds = simData.map((r: any) => r.id);
+      const { data: simStats } = await supabase
+        .from("listing_stats")
+        .select("listing_id, views")
+        .in("listing_id", simIds);
+
+      const viewMap: Record<string, number> = {};
+      for (const s of simStats ?? []) viewMap[s.listing_id] = Number(s.views ?? 0);
+
+      similar = (simData as ListingRow[])
+        .sort((a, b) => (viewMap[b.id] ?? 0) - (viewMap[a.id] ?? 0))
+        .slice(0, 6);
+    }
+
+    // Fallback 1: same category without price filter (if price-scoped returned nothing)
+    if (similar.length === 0 && currentPrice !== null) {
+      const { data: fallback1 } = await supabase
+        .from("listings")
+        .select("id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable")
+        .neq("id", listing.id)
+        .eq("status", "active")
+        .eq("category", categorySafe)
+        .order("created_at", { ascending: false })
+        .limit(6);
+      similar = (fallback1 ?? []) as ListingRow[];
+    }
+  }
+
+  // Fallback 2: newest active listings across all categories
+  if (similar.length === 0) {
+    const { data: fallback2 } = await supabase
+      .from("listings")
+      .select("id,title,price,price_label,image_url,category,listing_type,location,status,created_at,negotiable")
+      .neq("id", listing.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(6);
+    similar = (fallback2 ?? []) as ListingRow[];
+  }
 
   // Fetch view count (non-blocking — don't fail page if missing)
   const { data: statsData } = await supabase
     .from("listing_stats")
-    .select("views")
+    .select("views, saves")
     .eq("listing_id", listing.id)
     .maybeSingle();
 
   const viewCount: number = (statsData as any)?.views ?? 0;
+  const saveCount: number = (statsData as any)?.saves ?? 0;
 
   // ✅ Improved share link & message (absolute URL + helpful details)
   const origin = await getSiteOrigin();
@@ -516,6 +571,13 @@ export default async function ListingPage({
                     <span>{viewCount.toLocaleString()} {viewCount === 1 ? "view" : "views"}</span>
                   </div>
                 ) : null}
+
+                {saveCount > 0 ? (
+                  <div className="mt-1 inline-flex items-center justify-end gap-1">
+                    <Bookmark className="h-3.5 w-3.5" />
+                    <span>{saveCount.toLocaleString()} {saveCount === 1 ? "save" : "saves"}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -587,6 +649,9 @@ export default async function ListingPage({
               <AskSellerButton
                 listingId={listing.id}
                 vendorId={listing.vendor_id}
+                listingTitle={listing.title ?? undefined}
+                listingPrice={listing.price}
+                negotiable={listing.negotiable ?? false}
                 isSold={isSold}
                 className="mt-2"
               />
@@ -647,6 +712,9 @@ export default async function ListingPage({
             <AskSellerButton
               listingId={listing.id}
               vendorId={listing.vendor_id}
+              listingTitle={listing.title ?? undefined}
+              listingPrice={listing.price}
+              negotiable={listing.negotiable ?? false}
               isSold={isSold}
               className="mt-2"
             />

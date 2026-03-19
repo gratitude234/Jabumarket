@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isOpenNow } from "@/lib/vendorSchedule";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import {
   ArrowLeft,
@@ -14,6 +15,7 @@ import {
   Search,
 } from "lucide-react";
 import VendorReviews, { VendorRatingBadge } from "@/components/vendor/VendorReviews";
+import FoodOrderCTA from "@/components/vendor/FoodOrderCTA";
 
 type SortKey = "newest" | "price_asc" | "price_desc";
 
@@ -142,8 +144,8 @@ export default async function VendorProfilePage({
 }: {
   params: { id: string } | Promise<{ id: string }>;
   searchParams?:
-    | { q?: string; sort?: SortKey; page?: string }
-    | Promise<{ q?: string; sort?: SortKey; page?: string }>;
+    | { q?: string; sort?: SortKey; page?: string; review?: string }
+    | Promise<{ q?: string; sort?: SortKey; page?: string; review?: string }>;
 }) {
   const supabase = await createSupabaseServerClient();
   const { id } = await params;
@@ -151,6 +153,7 @@ export default async function VendorProfilePage({
     q?: string;
     sort?: SortKey;
     page?: string;
+    review?: string;
   };
 
   const q = (sp.q ?? "").trim();
@@ -164,7 +167,7 @@ export default async function VendorProfilePage({
   // Vendor
   const { data: vendorData, error: vErr } = await supabase
     .from("vendors")
-    .select("id,name,whatsapp,phone,location,verified,verification_status,vendor_type")
+    .select("id,name,whatsapp,phone,location,verified,verification_status,vendor_type,description,avatar_url,opens_at,closes_at,accepts_orders,day_schedule")
     .eq("id", id)
     .single();
 
@@ -204,6 +207,7 @@ export default async function VendorProfilePage({
   const name = vendor.name ?? "Vendor";
   const isVerified =
     (vendor as any).verification_status === "verified" || vendor.verified === true;
+  const isClosed = vendor.vendor_type === "food" && isOpenNow(vendor) === false;
   const safeWA = String(vendor.whatsapp ?? "").trim().replace(/[^\d]/g, "");
   const safePhone = String(vendor.phone ?? "").trim().replace(/[^\d]/g, "");
   const hasWA = safeWA.length >= 8;
@@ -265,6 +269,12 @@ export default async function VendorProfilePage({
                   </span>
 
                   <VendorRatingBadge vendorId={vendor.id} />
+
+                  {isClosed && (
+                    <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+                      Closed now
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-zinc-600">
@@ -324,6 +334,21 @@ export default async function VendorProfilePage({
           </div>
         </div>
       </section>
+
+      {/* Food vendor CTA */}
+      {vendor.vendor_type === "food" && (
+        <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+          <FoodOrderCTA
+            vendorId={vendor.id}
+            vendorName={name}
+            description={vendor.description}
+            opensAt={vendor.opens_at}
+            closesAt={vendor.closes_at}
+            acceptsOrders={vendor.accepts_orders ?? false}
+            daySchedule={(vendor as any).day_schedule ?? null}
+          />
+        </section>
+      )}
 
       {/* Shop controls */}
       <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
@@ -453,7 +478,7 @@ export default async function VendorProfilePage({
       )}
 
       {/* Vendor Reviews */}
-      <VendorReviews vendorId={vendor.id} />
+      <VendorReviews vendorId={vendor.id} autoOpen={sp.review === "1"} />
 
       {/* Mobile sticky action bar (kept above your bottom nav) */}
       <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 px-4">

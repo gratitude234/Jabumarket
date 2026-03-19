@@ -14,6 +14,7 @@ import ListingsTab from "./_components/ListingsTab";
 import VerificationTab from "./_components/VerificationTab";
 import AccountTab from "./_components/AccountTab";
 
+import QuickActions from "./_components/QuickActions";
 import type { TabKey, Me, Vendor, StudyMeResponse, RoleFlags } from "./_components/types";
 import { initials } from "./_components/utils";
 
@@ -64,12 +65,15 @@ function MeInner() {
   const [studyLoading, setStudyLoading] = useState(true);
   const [listingsCount, setListingsCount] = useState(0);
   const [materialsCount, setMaterialsCount] = useState(0);
+  const [menuItemsCount, setMenuItemsCount] = useState(0);
+  const [ordersTodayCount, setOrdersTodayCount] = useState(0);
 
   const activeTab = (sp.get("tab") as TabKey) || "profile";
 
   const roles: RoleFlags = useMemo(() => {
     const isVendor = !!vendor?.id;
     const isVerifiedVendor = !!vendor?.verified || vendor?.verification_status === "verified";
+    const isFoodVendor = !!vendor?.id && vendor?.vendor_type === "food";
 
     let studyStatus = null as RoleFlags["studyStatus"];
     let studyRole = null as RoleFlags["studyRole"];
@@ -81,28 +85,42 @@ function MeInner() {
       isStudyContributor = study.status === "approved" && !!study.role;
     }
 
-    return { isVendor, isVerifiedVendor, studyLoading, studyStatus, studyRole, isStudyContributor };
+    return { isVendor, isVerifiedVendor, isFoodVendor, studyLoading, studyStatus, studyRole, isStudyContributor };
   }, [vendor, study, studyLoading]);
 
   const availableTabs = useMemo(() => {
-    const base: Array<{ key: TabKey; label: string }> = [
-      { key: "profile", label: "Profile" },
-      { key: "listings", label: "Listings" },
-      ...(roles.isVendor ? [{ key: "verification" as TabKey, label: "Verification" }] : []),
-      { key: "account", label: "Account" },
+    if (roles.isFoodVendor) {
+      return [
+        { key: "dashboard" as TabKey, label: "Dashboard" },
+        { key: "study" as TabKey, label: "Study" },
+        { key: "account" as TabKey, label: "Account" },
+      ];
+    }
+    if (!roles.isVendor) {
+      return [
+        { key: "profile" as TabKey, label: "Profile" },
+        { key: "study" as TabKey, label: "Study" },
+        { key: "account" as TabKey, label: "Account" },
+      ];
+    }
+    return [
+      { key: "profile" as TabKey, label: "Profile" },
+      { key: "listings" as TabKey, label: "Listings" },
+      { key: "verification" as TabKey, label: "Verification" },
+      { key: "account" as TabKey, label: "Account" },
     ];
-    return base;
-  }, [roles.isVendor]);
+  }, [roles.isFoodVendor, roles.isVendor]);
 
-  // Bounce to profile if tab is no longer valid
+  // Bounce to role-appropriate default tab if current tab is no longer valid
   useEffect(() => {
     const ok = availableTabs.some((t) => t.key === activeTab);
     if (!ok) {
+      const defaultTab = roles.isFoodVendor ? "dashboard" : "profile";
       const url = new URL(window.location.href);
-      url.searchParams.set("tab", "profile");
+      url.searchParams.set("tab", defaultTab);
       router.replace(url.pathname + url.search);
     }
-  }, [roles.isVendor, activeTab, availableTabs, router]);
+  }, [roles.isVendor, roles.isFoodVendor, activeTab, availableTabs, router]);
 
   // Load user + vendor + counts
   useEffect(() => {
@@ -147,6 +165,21 @@ function MeInner() {
       setVendor(vendorRes.error ? null : ((vendorRes.data as any) ?? null));
       setListingsCount(listingsRes.count ?? 0);
       setMaterialsCount(materialsRes.count ?? 0);
+
+      // Food vendor extra stats
+      if (!vendorRes.error && vendorRes.data?.vendor_type === "food" && vendorRes.data?.id) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const [menuRes, ordersRes] = await Promise.all([
+          supabase.from("vendor_menu_items").select("id", { count: "exact", head: true }).eq("vendor_id", vendorRes.data.id),
+          supabase.from("orders").select("id", { count: "exact", head: true }).eq("vendor_id", vendorRes.data.id).gte("created_at", todayStart.toISOString()),
+        ]);
+        if (mounted) {
+          setMenuItemsCount(menuRes.count ?? 0);
+          setOrdersTodayCount(ordersRes.count ?? 0);
+        }
+      }
+
       setLoading(false);
     }
 
@@ -202,18 +235,24 @@ function MeInner() {
         avatarText={initials(displayName || me?.email)}
         roles={roles}
         vendorName={vendor?.name ?? null}
+        vendorId={vendor?.id ?? null}
         listingsCount={listingsCount}
         materialsCount={materialsCount}
+        menuItemsCount={menuItemsCount}
+        ordersTodayCount={ordersTodayCount}
       />
 
       {/* Context-sensitive banner */}
       <ContextBanner roles={roles} vendor={vendor} />
 
+      {/* Role-aware quick actions */}
+      <QuickActions roles={roles} />
+
       {/* Tabs + content card */}
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
         <Tabs active={activeTab} onChange={setTab} items={availableTabs} />
         <div className="p-4">
-          {activeTab === "profile" && (
+          {(activeTab === "profile" || activeTab === "dashboard") && (
             <ProfileTab
               roles={roles}
               me={me}
@@ -225,6 +264,17 @@ function MeInner() {
 
           {activeTab === "listings" && (
             <ListingsTab userId={me?.id ?? null} />
+          )}
+
+          {activeTab === "study" && (
+            <ProfileTab
+              roles={roles}
+              me={me}
+              vendor={vendor}
+              onVendorUpdated={(v) => setVendor(v)}
+              onMeUpdated={(m) => setMe(m)}
+              studyOnly
+            />
           )}
 
           {activeTab === "verification" && roles.isVendor && (
@@ -240,7 +290,7 @@ function MeInner() {
               <p className="text-sm font-semibold text-zinc-900">Verification is for vendors</p>
               <p className="mt-1 text-xs text-zinc-500">Create a vendor profile to request verification.</p>
               <Link
-                href="/post"
+                href="/vendor/create"
                 className="mt-3 inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
               >
                 Become a vendor

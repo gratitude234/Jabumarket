@@ -3,21 +3,35 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { MessageCircle, Loader2 } from "lucide-react";
+import { MessageCircle, Loader2, Tag, X, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Props {
   listingId: string;
   vendorId: string;
-  /** If the current user IS the vendor, hide the button */
+  listingTitle?: string;
+  listingPrice?: number | null;
+  negotiable?: boolean;
   isOwner?: boolean;
   isSold?: boolean;
   variant?: "pill" | "icon";
   className?: string;
 }
 
+function formatNaira(n: number) {
+  return `₦${n.toLocaleString("en-NG")}`;
+}
+
+function onlyDigits(s: string) {
+  return s.replace(/[^\d]/g, "");
+}
+
 export default function AskSellerButton({
   listingId,
   vendorId,
+  listingTitle,
+  listingPrice,
+  negotiable = false,
   isOwner = false,
   isSold = false,
   variant = "pill",
@@ -27,83 +41,141 @@ export default function AskSellerButton({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Offer panel state
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerDigits, setOfferDigits] = useState("");
+  const [offerNote, setOfferNote] = useState("");
+  const [offerLoading, setOfferLoading] = useState(false);
+
   if (isOwner) return null;
 
-  async function handleClick() {
-    if (loading) return;
-    setLoading(true);
-    setError(null); // Clear any previous error on retry
+  // ── Core: open or find conversation ───────────────────────────────────────
 
-    try {
-      // 1. Auth check
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push(`/login?next=/listing/${listingId}`);
-        return;
-      }
+  async function openConversation(): Promise<string | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push(`/login?next=/listing/${listingId}`);
+      return null;
+    }
 
-      // 2. Upsert conversation — ON CONFLICT(listing_id, buyer_id) returns existing row
-      const { data: existing } = await supabase
+    const { data: existing } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("listing_id", listingId)
+      .eq("buyer_id", user.id)
+      .maybeSingle();
+
+    if (existing?.id) return existing.id;
+
+    const { data: created, error: insertErr } = await supabase
+      .from("conversations")
+      .insert({ listing_id: listingId, buyer_id: user.id, vendor_id: vendorId })
+      .select("id")
+      .single();
+
+    if (insertErr || !created) {
+      const { data: retry } = await supabase
         .from("conversations")
         .select("id")
         .eq("listing_id", listingId)
         .eq("buyer_id", user.id)
         .maybeSingle();
+      return retry?.id ?? null;
+    }
 
-      if (existing?.id) {
-        router.push(`/inbox/${existing.id}`);
-        return;
-      }
+    return created.id;
+  }
 
-      const { data: created, error: insertError } = await supabase
-        .from("conversations")
-        .insert({
-          listing_id: listingId,
-          buyer_id: user.id,
-          vendor_id: vendorId,
-        })
-        .select("id")
-        .single();
+  // ── Message seller (plain) ────────────────────────────────────────────────
 
-      if (insertError || !created) {
-        // Maybe race condition — try fetching again
-        const { data: retry } = await supabase
-          .from("conversations")
-          .select("id")
-          .eq("listing_id", listingId)
-          .eq("buyer_id", user.id)
-          .maybeSingle();
-        if (retry?.id) {
-          router.push(`/inbox/${retry.id}`);
-          return;
-        }
-        // Both insert and retry failed — show user-facing error (#4)
-        setError("Couldn't open chat. Please try again.");
-        return;
-      }
-
-      router.push(`/inbox/${created.id}`);
+  async function handleMessage() {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const convId = await openConversation();
+      if (convId) router.push(`/inbox/${convId}`);
+      else setError("Couldn't open chat. Please try again.");
     } catch {
-      // Network or unexpected error — show user-facing message (#4)
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  // ── Make an offer ─────────────────────────────────────────────────────────
+
+  async function handleOffer() {
+    const offerAmount = parseInt(offerDigits, 10);
+    if (!offerDigits || !Number.isFinite(offerAmount) || offerAmount <= 0) return;
+
+    setOfferLoading(true);
+    setError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push(`/login?next=/listing/${listingId}`);
+        return;
+      }
+
+      const convId = await openConversation();
+      if (!convId) {
+        setError("Couldn't open chat. Please try again.");
+        return;
+      }
+
+      // Build the offer message
+      const titlePart = listingTitle ? `"${listingTitle}"` : "this listing";
+      const askingPart = listingPrice ? ` (asking ${formatNaira(listingPrice)})` : "";
+      const notePart = offerNote.trim() ? `\n\n${offerNote.trim()}` : "";
+      const body =
+        `Hi! I'd like to offer ${formatNaira(offerAmount)} for ${titlePart}${askingPart}.` +
+        notePart;
+
+      await supabase.from("messages").insert({
+        conversation_id: convId,
+        sender_id: user.id,
+        body,
+        type: "text",
+      });
+
+      // Update conversation preview
+      await supabase
+        .from("conversations")
+        .update({
+          last_message_at: new Date().toISOString(),
+          last_message_preview: body.slice(0, 120),
+          vendor_unread: 1,
+        })
+        .eq("id", convId);
+
+      setOfferOpen(false);
+      router.push(`/inbox/${convId}`);
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setOfferLoading(false);
+    }
+  }
+
+  // ── Icon variant ──────────────────────────────────────────────────────────
+
   if (variant === "icon") {
     return (
       <div className="flex flex-col items-center gap-1">
         <button
           type="button"
-          onClick={handleClick}
+          onClick={handleMessage}
           disabled={loading || isSold}
           aria-label="Message seller"
-          className={[
+          className={cn(
             "grid h-10 w-10 place-items-center rounded-full border transition",
-            isSold ? "opacity-40 cursor-not-allowed bg-zinc-50 text-zinc-400" : "bg-white text-zinc-700 hover:bg-zinc-50",
-            className,
-          ].filter(Boolean).join(" ")}
+            isSold
+              ? "opacity-40 cursor-not-allowed bg-zinc-50 text-zinc-400"
+              : "bg-white text-zinc-700 hover:bg-zinc-50",
+            className
+          )}
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
         </button>
@@ -112,23 +184,109 @@ export default function AskSellerButton({
     );
   }
 
+  // ── Pill variant ──────────────────────────────────────────────────────────
+
   return (
-    <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={loading || isSold}
-        className={[
-          "inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
-          isSold
-            ? "bg-zinc-50 text-zinc-400 cursor-not-allowed"
-            : "bg-white text-zinc-900 hover:bg-zinc-50",
-          className,
-        ].filter(Boolean).join(" ")}
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-        {loading ? "Opening…" : "Message seller"}
-      </button>
+    <div className={cn("flex flex-col gap-2", className)}>
+      {/* Primary CTA row */}
+      <div className="flex gap-2">
+        {/* Message seller */}
+        <button
+          type="button"
+          onClick={handleMessage}
+          disabled={loading || isSold}
+          className={cn(
+            "flex-1 inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+            isSold
+              ? "bg-zinc-50 text-zinc-400 cursor-not-allowed"
+              : "bg-white text-zinc-900 hover:bg-zinc-50"
+          )}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+          {loading ? "Opening…" : "Message seller"}
+        </button>
+
+        {/* Make an offer — only shown when negotiable */}
+        {negotiable && !isSold && (
+          <button
+            type="button"
+            onClick={() => setOfferOpen((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+              offerOpen
+                ? "border-zinc-900 bg-zinc-900 text-white"
+                : "bg-white text-zinc-900 hover:bg-zinc-50"
+            )}
+          >
+            <Tag className="h-4 w-4" />
+            Offer
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", offerOpen && "rotate-180")} />
+          </button>
+        )}
+      </div>
+
+      {/* Offer panel — slides open below */}
+      {offerOpen && !isSold && (
+        <div className="rounded-2xl border bg-zinc-50 p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-zinc-700">
+              Your offer
+              {listingPrice
+                ? ` — asking ${formatNaira(listingPrice)}`
+                : ""}
+            </p>
+            <button
+              type="button"
+              onClick={() => setOfferOpen(false)}
+              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700"
+              aria-label="Close offer panel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Price input */}
+          <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5 focus-within:ring-2 focus-within:ring-black/10">
+            <span className="shrink-0 text-sm font-semibold text-zinc-500">₦</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder={listingPrice ? (listingPrice * 0.85).toFixed(0) : "Enter amount"}
+              value={offerDigits ? parseInt(offerDigits, 10).toLocaleString("en-NG") : ""}
+              onChange={(e) => setOfferDigits(onlyDigits(e.target.value))}
+              className="w-full bg-transparent text-sm font-semibold outline-none placeholder:font-normal placeholder:text-zinc-400"
+              autoFocus
+            />
+          </div>
+
+          {/* Optional note */}
+          <textarea
+            placeholder="Add a note (optional) — e.g. pickup location, condition question…"
+            value={offerNote}
+            onChange={(e) => setOfferNote(e.target.value)}
+            rows={2}
+            className="w-full resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10 placeholder:text-zinc-400"
+          />
+
+          <button
+            type="button"
+            onClick={handleOffer}
+            disabled={offerLoading || !offerDigits}
+            className={cn(
+              "w-full inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition",
+              !offerDigits
+                ? "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                : "bg-zinc-900 text-white hover:bg-zinc-700"
+            )}
+          >
+            {offerLoading
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+              : <><Tag className="h-4 w-4" /> Send offer</>
+            }
+          </button>
+        </div>
+      )}
+
       {error && <p className="text-xs text-red-500 text-center">{error}</p>}
     </div>
   );

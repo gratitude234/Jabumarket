@@ -41,7 +41,17 @@ const DAY_COLORS: Record<string, string> = {
 
 // ── Week Card ─────────────────────────────────────────────────────────────────
 
-function WeekCard({ week }: { week: StudyWeek }) {
+function WeekCard({
+  week,
+  weekIdx,
+  progress,
+  onToggle,
+}: {
+  week: StudyWeek;
+  weekIdx: number;
+  progress: Record<string, boolean>;
+  onToggle: (key: string, val: boolean) => void;
+}) {
   const [open, setOpen] = useState(week.week === 1);
 
   return (
@@ -68,28 +78,42 @@ function WeekCard({ week }: { week: StudyWeek }) {
           <p className="text-xs font-semibold text-muted-foreground mb-3">
             Goal: <span className="text-foreground">{week.weeklyGoal}</span>
           </p>
-          {week.days.map((d) => (
-            <div
-              key={d.day}
-              className={cn("rounded-xl border p-3", DAY_COLORS[d.day] ?? "bg-background border-border")}
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs font-extrabold text-foreground">{d.day}</p>
-                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/70 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                  <Clock className="h-3 w-3" /> {d.hours}h
-                </span>
+          {week.days.map((d, dayIdx) => {
+            const key = `week-${weekIdx}-day-${dayIdx}`;
+            const done = !!progress[key];
+            return (
+              <div
+                key={d.day}
+                className={cn("rounded-xl border p-3", DAY_COLORS[d.day] ?? "bg-background border-border", done && "opacity-60")}
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={done}
+                      onChange={(e) => onToggle(key, e.target.checked)}
+                      aria-label={`Mark ${d.day} complete`}
+                      className="h-3.5 w-3.5 cursor-pointer accent-emerald-600"
+                    />
+                    <p className={cn("text-xs font-extrabold text-foreground", done && "line-through")}>{d.day}</p>
+                    {done && <span className="text-emerald-600 text-xs font-semibold">✓</span>}
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/70 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                    <Clock className="h-3 w-3" /> {d.hours}h
+                  </span>
+                </div>
+                <p className={cn("text-xs font-semibold text-foreground mb-1.5", done && "line-through")}>{d.focus}</p>
+                <ul className="space-y-1">
+                  {d.tasks.map((t, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <p className="text-xs font-semibold text-foreground mb-1.5">{d.focus}</p>
-              <ul className="space-y-1">
-                {d.tasks.map((t, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -118,6 +142,11 @@ export default function AiStudyPlanPage() {
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<StudyPlan | null>(null);
 
+  // Persistence state
+  const [userId, setUserId] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, boolean>>({});
+
   // Pre-fill courses from study_preferences + study_courses
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +155,29 @@ export default function AiStudyPlanPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || cancelled) return;
+
+        setUserId(user.id);
+
+        // Load saved plan from localStorage if < 7 days old
+        const savedRaw = localStorage.getItem(`jabu_study_plan:${user.id}`);
+        if (savedRaw) {
+          try {
+            const saved = JSON.parse(savedRaw) as { plan: StudyPlan; generatedAt: string; courses: string[] };
+            const age = Date.now() - new Date(saved.generatedAt).getTime();
+            if (age < 7 * 24 * 60 * 60 * 1000 && saved.plan) {
+              setPlan(saved.plan);
+              setSavedAt(saved.generatedAt);
+              if (saved.courses?.length) setCourses(saved.courses);
+              // Load progress
+              const progRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
+              if (progRaw) setProgress(JSON.parse(progRaw));
+              if (!cancelled) setPrefilling(false);
+              return;
+            }
+          } catch {
+            // corrupted, ignore
+          }
+        }
 
         // Fetch user's study preferences
         const { data: prefs } = await supabase
@@ -215,12 +267,65 @@ export default function AiStudyPlanPage() {
         setError(json.error ?? "Failed to generate plan.");
       } else {
         setPlan(json.plan);
+        setSavedAt(null);
+        if (userId) {
+          const generatedAt = new Date().toISOString();
+          localStorage.setItem(
+            `jabu_study_plan:${userId}`,
+            JSON.stringify({ plan: json.plan, generatedAt, courses: validCourses })
+          );
+        }
       }
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function clearPlan() {
+    if (userId) {
+      localStorage.removeItem(`jabu_study_plan:${userId}`);
+      localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+    }
+    setPlan(null);
+    setSavedAt(null);
+    setProgress({});
+  }
+
+  function handleToggleDay(key: string, val: boolean) {
+    setProgress((prev) => {
+      const next = { ...prev, [key]: val };
+      if (userId) localStorage.setItem(`jabu_study_plan_progress:${userId}`, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function exportAsText() {
+    if (!plan) return;
+    const lines: string[] = [`AI Study Plan — ${plan.totalWeeks} weeks`, ""];
+    if (plan.summary) lines.push(plan.summary, "");
+    if (plan.generalTips?.length) {
+      lines.push("General Tips:");
+      plan.generalTips.forEach((t) => lines.push(`  • ${t}`));
+      lines.push("");
+    }
+    plan.weeks.forEach((w) => {
+      lines.push(`Week ${w.week}: ${w.theme}`);
+      lines.push(`Goal: ${w.weeklyGoal}`);
+      w.days.forEach((d) => {
+        lines.push(`  ${d.day} (${d.hours}h) — ${d.focus}`);
+        d.tasks.forEach((t) => lines.push(`    - ${t}`));
+      });
+      lines.push("");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "study-plan.txt";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -399,6 +504,33 @@ export default function AiStudyPlanPage() {
       {/* Plan output */}
       {plan ? (
         <div className="space-y-3">
+          {/* Persistence banner — shown when plan loaded from localStorage */}
+          {savedAt ? (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-2.5">
+              <p className="text-xs text-muted-foreground">
+                Generated{" "}
+                {Math.floor((Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24))} day
+                {Math.floor((Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)) !== 1 ? "s" : ""} ago
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { clearPlan(); generate(); }}
+                  className="text-xs font-semibold text-violet-600 hover:text-violet-700 dark:text-violet-400"
+                >
+                  Regenerate
+                </button>
+                <button
+                  type="button"
+                  onClick={clearPlan}
+                  className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {/* Summary card */}
           <div className={cn("rounded-2xl border p-4", "border-violet-200/70 bg-violet-50/50 dark:border-violet-700/30 dark:bg-violet-950/20")}>
             <div className="flex items-center gap-2 mb-2">
@@ -432,27 +564,41 @@ export default function AiStudyPlanPage() {
             <BookOpen className="h-4 w-4 text-muted-foreground" />
             <p className="text-sm font-extrabold text-foreground">Week-by-Week Schedule</p>
           </div>
-          {plan.weeks.map((w) => (
-            <WeekCard key={w.week} week={w} />
+          {plan.weeks.map((w, weekIdx) => (
+            <WeekCard key={w.week} week={w} weekIdx={weekIdx} progress={progress} onToggle={handleToggleDay} />
           ))}
 
           <p className="text-center text-[11px] text-muted-foreground px-4">
             AI can make mistakes. Adjust this plan based on your actual syllabus and exam schedule.
           </p>
 
-          {/* Regenerate */}
+          {/* Export as text */}
           <button
             type="button"
-            onClick={generate}
-            disabled={loading}
+            onClick={exportAsText}
             className={cn(
-              "w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 py-2.5 text-sm font-extrabold text-violet-600",
-              "hover:bg-violet-50 dark:border-violet-700/40 dark:text-violet-400 dark:hover:bg-violet-950/30 transition",
-              loading && "opacity-60 cursor-not-allowed"
+              "w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-border py-2.5 text-sm font-extrabold text-foreground",
+              "hover:bg-secondary/50 transition"
             )}
           >
-            <Sparkles className="h-4 w-4" /> Regenerate Plan
+            Export as text
           </button>
+
+          {/* Regenerate */}
+          {!savedAt && (
+            <button
+              type="button"
+              onClick={generate}
+              disabled={loading}
+              className={cn(
+                "w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 py-2.5 text-sm font-extrabold text-violet-600",
+                "hover:bg-violet-50 dark:border-violet-700/40 dark:text-violet-400 dark:hover:bg-violet-950/30 transition",
+                loading && "opacity-60 cursor-not-allowed"
+              )}
+            >
+              <Sparkles className="h-4 w-4" /> Regenerate Plan
+            </button>
+          )}
         </div>
       ) : null}
     </div>

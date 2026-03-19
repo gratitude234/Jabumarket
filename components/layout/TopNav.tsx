@@ -8,10 +8,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import NotificationBell from "@/components/notifications/NotificationBell";
 import InboxNavIcon from "@/components/layout/InboxNavIcon";
+import { supabase } from "@/lib/supabase";
 
 const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
+  { href: "/food", label: "Food" },
   { href: "/study", label: "Study" },
 ];
 
@@ -56,6 +58,20 @@ export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const sp = useSearchParams();
+  const [isVendor, setIsVendor] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      supabase
+        .from('vendors')
+        .select('id')
+        .eq('user_id', data.user.id)
+        .eq('vendor_type', 'food')
+        .maybeSingle()
+        .then(({ data: v }) => setIsVendor(!!v));
+    });
+  }, []);
 
   const showSearch =
     pathname === "/" ||
@@ -126,6 +142,18 @@ export default function TopNav() {
               </Link>
             );
           })}
+          {isVendor && (
+            <Link
+              href="/vendor"
+              className={
+                pathname.startsWith('/vendor')
+                  ? "font-semibold no-underline text-foreground"
+                  : "text-muted-foreground hover:text-foreground no-underline"
+              }
+            >
+              My Store
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-3">

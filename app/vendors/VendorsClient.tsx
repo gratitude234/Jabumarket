@@ -1,10 +1,8 @@
 "use client";
 import { cn } from "@/lib/utils";
-
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import {
   Search,
   X,
@@ -15,11 +13,17 @@ import {
   MessageCircle,
   ChevronLeft,
   ChevronRight,
+  Star,
+  Package,
+  UtensilsCrossed,
 } from "lucide-react";
 
-type VendorType = "food" | "mall" | "student" | "other";
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type VendorRow = {
+type VendorType = "food" | "mall" | "student" | "other";
+type SortKey = "type" | "name_asc" | "name_desc";
+
+export type VendorRow = {
   id: string;
   name: string | null;
   whatsapp: string | null;
@@ -27,7 +31,17 @@ type VendorRow = {
   location: string | null;
   verified: boolean;
   vendor_type: VendorType;
+  avatar_url?: string | null;
 };
+
+export type VendorMeta = {
+  rating: { avg: number; count: number } | null;
+  listingCount: number;
+};
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const PER_PAGE = 18;
 
 const LABELS: Record<VendorType, string> = {
   food: "Food",
@@ -44,14 +58,12 @@ const SECTION_TITLES: Record<VendorType, string> = {
 };
 
 const SORTS = [
-  { key: "type", label: "By Type" },
-  { key: "name_asc", label: "A–Z" },
-  { key: "name_desc", label: "Z–A" },
-] as const;
+  { key: "type" as SortKey, label: "By Type" },
+  { key: "name_asc" as SortKey, label: "A–Z" },
+  { key: "name_desc" as SortKey, label: "Z–A" },
+];
 
-type SortKey = (typeof SORTS)[number]["key"];
-
-const PER_PAGE = 18;
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function normalizePhone(input?: string | null) {
   if (!input) return "";
@@ -79,18 +91,7 @@ function updateParams(
   return qs ? `${pathname}?${qs}` : pathname;
 }
 
-function SkeletonCard() {
-  return (
-    <div className="rounded-2xl border bg-white p-4">
-      <div className="h-4 w-2/3 rounded bg-zinc-100" />
-      <div className="mt-2 h-3 w-1/2 rounded bg-zinc-100" />
-      <div className="mt-4 flex gap-2">
-        <div className="h-9 w-28 rounded-xl bg-zinc-100" />
-        <div className="h-9 w-20 rounded-xl bg-zinc-100" />
-      </div>
-    </div>
-  );
-}
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function Pill({
   active,
@@ -118,37 +119,39 @@ function Pill({
   );
 }
 
-export default function VendorsClient() {
+// ── Main component ────────────────────────────────────────────────────────────
+
+interface Props {
+  initialVendors: VendorRow[];
+  initialTotal: number;
+  initialMeta: Record<string, VendorMeta>;
+  initialError: string | null;
+  qParam: string;
+  typeParam: "all" | VendorType;
+  sortParam: SortKey;
+  pageParam: number;
+}
+
+export default function VendorsClient({
+  initialVendors,
+  initialTotal,
+  initialMeta,
+  initialError,
+  qParam,
+  typeParam,
+  sortParam,
+  pageParam,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
 
-  const qParam = (sp.get("q") ?? "").trim();
-  const typeParam = (sp.get("type") ?? "all").trim() as "all" | VendorType;
-  const sortParam = (sp.get("sort") ?? "type").trim() as SortKey;
-
-  const pageParamRaw = (sp.get("page") ?? "1").trim();
-  const pageParam = Math.max(
-    1,
-    Number.isFinite(Number(pageParamRaw)) ? Number(pageParamRaw) : 1
-  );
-
+  // Local search input state (debounced before pushing to URL)
   const [q, setQ] = useState(qParam);
   const [showFilters, setShowFilters] = useState(false);
-
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [vendors, setVendors] = useState<VendorRow[]>([]);
-  const [total, setTotal] = useState(0);
-
-  useEffect(() => setQ(qParam), [qParam]);
-
-  const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(total / PER_PAGE)),
-    [total]
-  );
-
   const debouncedRef = useRef<number | null>(null);
+
+  const totalPages = Math.max(1, Math.ceil(initialTotal / PER_PAGE));
 
   function pushPatch(patch: Record<string, string | null | undefined>) {
     router.push(updateParams(pathname, sp, patch));
@@ -176,127 +179,28 @@ export default function VendorsClient() {
     pushPatch({ page: String(safe) });
   }
 
-  const grouped = useMemo(() => {
-    const groups: Record<VendorType, VendorRow[]> = {
-      food: [],
-      mall: [],
-      student: [],
-      other: [],
-    };
-    for (const v of vendors) groups[v.vendor_type]?.push(v);
-    return groups;
-  }, [vendors]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      setLoading(true);
-      setErrorMsg(null);
-
-      const start = (pageParam - 1) * PER_PAGE;
-      const end = start + PER_PAGE - 1;
-
-      async function fetchOnce() {
-        // If there is an auth session and it's expired, try to refresh it.
-        // If refresh fails (common when cookies/storage are cleared), fall back to signed-out state.
-        const { data: sessionData } = await supabase.auth.getSession();
-        const session = sessionData?.session;
-
-        if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
-          const refreshed = await supabase.auth.refreshSession().catch(() => null);
-          if (!refreshed?.data?.session) {
-            await supabase.auth.signOut().catch(() => {});
-          }
-        }
-
-        // ✅ Only VERIFIED vendors are allowed on this page
-        let query = supabase
-          .from("vendors")
-          .select(
-            "id, name, whatsapp, phone, location, verified, verification_status, vendor_type",
-            { count: "exact" }
-          )
-          .or("verification_status.eq.verified,verified.eq.true");
-
-        if (typeParam !== "all") query = query.eq("vendor_type", typeParam);
-
-        if (qParam) {
-          const safe = qParam.replaceAll(",", " ");
-          query = query.or(`name.ilike.%${safe}%,location.ilike.%${safe}%`);
-        }
-
-        if (sortParam === "name_asc") {
-          query = query.order("name", { ascending: true, nullsFirst: false });
-        } else if (sortParam === "name_desc") {
-          query = query.order("name", { ascending: false, nullsFirst: false });
-        } else {
-          query = query
-            .order("vendor_type", { ascending: true })
-            .order("name", { ascending: true, nullsFirst: false });
-        }
-
-        query = query.range(start, end);
-
-        return await query;
-      }
-
-      try {
-        let res = await fetchOnce();
-
-        // If the stored token is expired, Supabase can still throw "JWT expired".
-        // We sign out (clears the bad token) and retry once with anon access.
-        if (res.error?.message?.toLowerCase().includes("jwt expired")) {
-          await supabase.auth.signOut().catch(() => {});
-          res = await fetchOnce();
-        }
-
-        if (res.error) throw res.error;
-
-        if (!cancelled) {
-          setVendors((res.data ?? []) as VendorRow[]);
-          setTotal(res.count ?? 0);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          const msg = e?.message ?? "Failed to load vendors.";
-          setErrorMsg(
-            msg.toLowerCase().includes("jwt expired")
-              ? "Session expired. Please refresh the page or sign in again."
-              : msg
-          );
-          setVendors([]);
-          setTotal(0);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [qParam, typeParam, sortParam, pageParam]);
+  // Group vendors by type (for the "By Type" sort view)
+  const grouped: Record<VendorType, VendorRow[]> = {
+    food: [], mall: [], student: [], other: [],
+  };
+  for (const v of initialVendors) grouped[v.vendor_type]?.push(v);
+  const isGrouped = sortParam === "type";
 
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header + search + filters */}
       <header className="rounded-3xl border bg-white p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-zinc-900">Vendors</h1>
             <p className="mt-1 text-sm text-zinc-600">
-              {loading
-                ? "Loading…"
-                : `${total.toLocaleString()} verified vendor${
-                    total === 1 ? "" : "s"
-                  } found`}
+              {initialError
+                ? "Could not load vendors"
+                : `${initialTotal.toLocaleString()} verified vendor${initialTotal === 1 ? "" : "s"} found`}
               {qParam ? (
                 <>
-                  {" "}
-                  for{" "}
-                  <span className="font-medium text-zinc-900">“{qParam}”</span>
+                  {" "}for{" "}
+                  <span className="font-medium text-zinc-900">"{qParam}"</span>
                 </>
               ) : null}
             </p>
@@ -307,7 +211,8 @@ export default function VendorsClient() {
             onClick={() => setShowFilters((s) => !s)}
             className={cn(
               "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm",
-              "hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-black/10"
+              "hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-black/10",
+              showFilters && "bg-zinc-50"
             )}
           >
             <SlidersHorizontal className="h-4 w-4" />
@@ -324,13 +229,8 @@ export default function VendorsClient() {
               onChange={(e) => {
                 const next = e.target.value;
                 setQ(next);
-
-                if (debouncedRef.current)
-                  window.clearTimeout(debouncedRef.current);
-                debouncedRef.current = window.setTimeout(
-                  () => applySearch(next),
-                  350
-                );
+                if (debouncedRef.current) window.clearTimeout(debouncedRef.current);
+                debouncedRef.current = window.setTimeout(() => applySearch(next), 350);
               }}
               placeholder="Search verified vendors by name or location…"
               className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
@@ -347,11 +247,9 @@ export default function VendorsClient() {
             ) : null}
           </div>
 
-          {/* Filter chips */}
+          {/* Type filter pills */}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Pill active={typeParam === "all"} onClick={() => setType("all")}>
-              All
-            </Pill>
+            <Pill active={typeParam === "all"} onClick={() => setType("all")}>All</Pill>
             {(Object.keys(LABELS) as VendorType[]).map((t) => (
               <Pill key={t} active={typeParam === t} onClick={() => setType(t)}>
                 {LABELS[t]}
@@ -378,12 +276,10 @@ export default function VendorsClient() {
       </header>
 
       {/* Error */}
-      {errorMsg ? (
+      {initialError ? (
         <div className="rounded-3xl border bg-white p-5">
-          <p className="text-sm font-medium text-zinc-900">
-            Couldn’t load vendors
-          </p>
-          <p className="mt-1 text-sm text-zinc-600">{errorMsg}</p>
+          <p className="text-sm font-medium text-zinc-900">Couldn't load vendors</p>
+          <p className="mt-1 text-sm text-zinc-600">{initialError}</p>
           <button
             type="button"
             onClick={() => router.refresh()}
@@ -395,155 +291,63 @@ export default function VendorsClient() {
       ) : null}
 
       {/* Results */}
-      <div className="space-y-8">
-        {loading ? (
-          <section className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
-          </section>
-        ) : total === 0 ? (
-          <div className="rounded-3xl border bg-white p-6 text-center">
-            <p className="text-sm font-semibold text-zinc-900">
-              No verified vendors found
-            </p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Try a different search, or switch the vendor type filter.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setType("all")}
-                className="rounded-2xl border px-4 py-2 text-sm hover:bg-zinc-50"
-              >
-                View all types
-              </button>
-              {qParam ? (
+      {!initialError && (
+        <div className="space-y-8">
+          {initialTotal === 0 ? (
+            <div className="rounded-3xl border bg-white p-6 text-center">
+              <p className="text-sm font-semibold text-zinc-900">No verified vendors found</p>
+              <p className="mt-1 text-sm text-zinc-600">
+                Try a different search, or switch the vendor type filter.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
-                  onClick={clearSearch}
-                  className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white"
+                  onClick={() => setType("all")}
+                  className="rounded-2xl border px-4 py-2 text-sm hover:bg-zinc-50"
                 >
-                  Clear search
+                  View all types
                 </button>
-              ) : null}
+                {qParam ? (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white"
+                  >
+                    Clear search
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {(Object.keys(grouped) as VendorType[]).map((type) => {
+          ) : isGrouped ? (
+            // Grouped by vendor type
+            (Object.keys(grouped) as VendorType[]).map((type) => {
               const list = grouped[type];
               if (!list.length) return null;
-
               return (
                 <section key={type} className="space-y-3">
                   <h2 className="text-sm font-semibold text-zinc-800">
                     {SECTION_TITLES[type]}{" "}
                     <span className="text-zinc-400">({list.length})</span>
                   </h2>
-
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {list.map((v) => {
-                      const phone = normalizePhone(v.phone);
-                      const whatsapp = normalizePhone(v.whatsapp);
-                      const hasWA = Boolean(whatsapp);
-                      const hasPhone = Boolean(phone);
-
-                      return (
-                        <div
-                          key={v.id}
-                          className="rounded-2xl border bg-white p-4 transition hover:bg-zinc-50"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <Link
-                                href={`/vendors/${v.id}`}
-                                className="block no-underline"
-                              >
-                                <p className="truncate text-base font-semibold text-zinc-900">
-                                  {v.name ?? "Vendor"}
-                                </p>
-                              </Link>
-
-                              <div className="mt-1 flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-700">
-                                  {LABELS[v.vendor_type]}
-                                </span>
-
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                                  <BadgeCheck className="h-3.5 w-3.5" />
-                                  Verified
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex items-start gap-2 text-sm text-zinc-600">
-                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
-                            <p className="line-clamp-2">
-                              {v.location ?? "Location not provided"}
-                            </p>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <Link
-                              href={`/vendors/${v.id}`}
-                              className="inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-white"
-                            >
-                              View profile
-                            </Link>
-
-                            {hasWA ? (
-                              <a
-                                href={waLink(
-                                  whatsapp,
-                                  "Hi, I found you on Jabu Market. I'm interested in your services."
-                                )}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-medium text-white no-underline"
-                              >
-                                <MessageCircle className="h-4 w-4" />
-                                WhatsApp
-                              </a>
-                            ) : (
-                              <span className="inline-flex items-center justify-center rounded-xl border border-dashed px-3 py-2 text-xs text-zinc-500">
-                                No WhatsApp
-                              </span>
-                            )}
-
-                            {hasPhone ? (
-                              <a
-                                href={`tel:${phone}`}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-white"
-                              >
-                                <Phone className="h-4 w-4" />
-                                Call
-                              </a>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <VendorGrid vendors={list} meta={initialMeta} />
                 </section>
               );
-            })}
-          </>
-        )}
-      </div>
+            })
+          ) : (
+            // Flat list (A-Z / Z-A)
+            <VendorGrid vendors={initialVendors} meta={initialMeta} />
+          )}
+        </div>
+      )}
 
       {/* Pagination */}
-      {!loading && total > 0 ? (
+      {!initialError && initialTotal > 0 ? (
         <div className="flex items-center justify-between rounded-3xl border bg-white p-4">
           <p className="text-sm text-zinc-600">
             Page{" "}
             <span className="font-medium text-zinc-900">{pageParam}</span> of{" "}
             <span className="font-medium text-zinc-900">{totalPages}</span>
           </p>
-
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -551,24 +355,19 @@ export default function VendorsClient() {
               disabled={pageParam <= 1}
               className={cn(
                 "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm",
-                pageParam <= 1
-                  ? "cursor-not-allowed opacity-50"
-                  : "hover:bg-zinc-50"
+                pageParam <= 1 ? "cursor-not-allowed opacity-50" : "hover:bg-zinc-50"
               )}
             >
               <ChevronLeft className="h-4 w-4" />
               Prev
             </button>
-
             <button
               type="button"
               onClick={() => goPage(pageParam + 1)}
               disabled={pageParam >= totalPages}
               className={cn(
                 "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm",
-                pageParam >= totalPages
-                  ? "cursor-not-allowed opacity-50"
-                  : "hover:bg-zinc-50"
+                pageParam >= totalPages ? "cursor-not-allowed opacity-50" : "hover:bg-zinc-50"
               )}
             >
               Next
@@ -577,6 +376,160 @@ export default function VendorsClient() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ── Vendor grid + card ────────────────────────────────────────────────────────
+
+function VendorGrid({
+  vendors,
+  meta,
+}: {
+  vendors: VendorRow[];
+  meta: Record<string, VendorMeta>;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {vendors.map((v) => (
+        <VendorCard key={v.id} vendor={v} meta={meta[v.id] ?? null} />
+      ))}
+    </div>
+  );
+}
+
+function VendorCard({
+  vendor: v,
+  meta,
+}: {
+  vendor: VendorRow;
+  meta: VendorMeta | null;
+}) {
+  const phone = normalizePhone(v.phone);
+  const whatsapp = normalizePhone(v.whatsapp);
+  const hasWA = Boolean(whatsapp);
+  const hasPhone = Boolean(phone);
+
+  return (
+    <div className="rounded-2xl border bg-white p-4 transition hover:bg-zinc-50">
+      {/* Avatar + name + badges */}
+      <div className="flex items-start gap-3">
+        {v.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={v.avatar_url}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-xl object-cover"
+          />
+        ) : (
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-500">
+            {(v.name ?? "V")[0].toUpperCase()}
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <Link href={`/vendors/${v.id}`} className="block no-underline">
+            <p className="truncate text-base font-semibold text-zinc-900">
+              {v.name ?? "Vendor"}
+            </p>
+          </Link>
+
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-700">
+              {LABELS[v.vendor_type]}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              Verified
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Rating + listing count */}
+      {meta && (meta.rating || meta.listingCount > 0) ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {meta.rating ? (
+            <span className="inline-flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              <span className="text-xs font-semibold text-zinc-900">
+                {meta.rating.avg.toFixed(1)}
+              </span>
+              <span className="text-xs text-zinc-400">({meta.rating.count})</span>
+            </span>
+          ) : null}
+          {meta.listingCount > 0 ? (
+            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+              <Package className="h-3.5 w-3.5" />
+              {meta.listingCount} listing{meta.listingCount !== 1 ? "s" : ""}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Location */}
+      <div className="mt-3 flex items-start gap-2 text-sm text-zinc-600">
+        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+        <p className="line-clamp-2">{v.location ?? "Location not provided"}</p>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {v.vendor_type === "food" ? (
+          // Food vendors are fully siloed — send directly to ordering flow
+          <>
+            <Link
+              href={`/vendors/${v.id}`}
+              className="inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50"
+            >
+              View menu
+            </Link>
+            <Link
+              href={`/vendors/${v.id}?order=true`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white no-underline hover:bg-zinc-700"
+            >
+              <UtensilsCrossed className="h-4 w-4" />
+              Order food
+            </Link>
+          </>
+        ) : (
+          // Non-food vendors — standard marketplace actions
+          <>
+            <Link
+              href={`/vendors/${v.id}`}
+              className="inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50"
+            >
+              View profile
+            </Link>
+
+            {hasWA ? (
+              <a
+                href={waLink(whatsapp, "Hi, I found you on Jabu Market. I'm interested in your services.")}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-medium text-white no-underline"
+              >
+                <MessageCircle className="h-4 w-4" />
+                WhatsApp
+              </a>
+            ) : (
+              <span className="inline-flex items-center justify-center rounded-xl border border-dashed px-3 py-2 text-xs text-zinc-500">
+                No WhatsApp
+              </span>
+            )}
+
+            {hasPhone ? (
+              <a
+                href={`tel:${phone}`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50"
+              >
+                <Phone className="h-4 w-4" />
+                Call
+              </a>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }

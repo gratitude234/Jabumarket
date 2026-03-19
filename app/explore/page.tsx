@@ -120,12 +120,81 @@ export default async function ExplorePage({
   // ── Tab routing ──────────────────────────────────────────────────────────
   const activeTab = (sp.tab ?? "listings") as ExploreTab;
 
-  // Render non-listings tabs early (they manage their own data fetching)
+  // Vendors tab — fetch server-side, same as /vendors/page.tsx
   if (activeTab === "vendors") {
+    const PER_PAGE_V = 18;
+    type VendorType = "food" | "mall" | "student" | "other";
+    type SortKey = "type" | "name_asc" | "name_desc";
+
+    const vQ = (sp.q ?? "").trim();
+    const vType = (sp.type ?? "all").trim() as "all" | VendorType;
+    const vSort = (sp.sort ?? "type").trim() as SortKey;
+    const vPage = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+    const vStart = (vPage - 1) * PER_PAGE_V;
+    const vEnd = vStart + PER_PAGE_V - 1;
+
+    let vQuery = supabase
+      .from("vendors")
+      .select(
+        "id, name, whatsapp, phone, location, verified, verification_status, vendor_type, avatar_url",
+        { count: "exact" }
+      )
+      .or("verification_status.eq.verified,verified.eq.true");
+
+    if (vType !== "all") vQuery = vQuery.eq("vendor_type", vType);
+    if (vQ) {
+      const safe = vQ.replaceAll(",", " ");
+      vQuery = vQuery.or(`name.ilike.%${safe}%,location.ilike.%${safe}%`);
+    }
+    if (vSort === "name_asc") {
+      vQuery = vQuery.order("name", { ascending: true, nullsFirst: false });
+    } else if (vSort === "name_desc") {
+      vQuery = vQuery.order("name", { ascending: false, nullsFirst: false });
+    } else {
+      vQuery = vQuery
+        .order("vendor_type", { ascending: true })
+        .order("name", { ascending: true, nullsFirst: false });
+    }
+    vQuery = vQuery.range(vStart, vEnd);
+
+    const { data: vData, count: vCount, error: vErr } = await vQuery;
+    const vVendors = (vData ?? []) as any[];
+
+    // Meta: ratings + listing counts
+    type VMeta = { rating: { avg: number; count: number } | null; listingCount: number };
+    let vMeta: Record<string, VMeta> = {};
+    const vIds = vVendors.map((v: any) => v.id);
+    if (vIds.length > 0) {
+      const [revRes, lstRes] = await Promise.all([
+        supabase.from("vendor_reviews").select("vendor_id, rating").in("vendor_id", vIds),
+        supabase.from("listings").select("vendor_id").in("vendor_id", vIds).eq("status", "active"),
+      ]);
+      const rMap: Record<string, { sum: number; count: number }> = {};
+      for (const r of revRes.data ?? []) {
+        const e = rMap[r.vendor_id];
+        rMap[r.vendor_id] = e ? { sum: e.sum + r.rating, count: e.count + 1 } : { sum: r.rating, count: 1 };
+      }
+      const lMap: Record<string, number> = {};
+      for (const l of lstRes.data ?? []) { lMap[l.vendor_id] = (lMap[l.vendor_id] ?? 0) + 1; }
+      for (const id of vIds) {
+        const r = rMap[id];
+        vMeta[id] = { rating: r ? { avg: r.sum / r.count, count: r.count } : null, listingCount: lMap[id] ?? 0 };
+      }
+    }
+
     return (
       <div className="space-y-4">
         <ExploreTabs active="vendors" />
-        <VendorsClient />
+        <VendorsClient
+          initialVendors={vVendors}
+          initialTotal={vCount ?? 0}
+          initialMeta={vMeta}
+          initialError={vErr?.message ?? null}
+          qParam={vQ}
+          typeParam={vType}
+          sortParam={vSort}
+          pageParam={vPage}
+        />
       </div>
     );
   }
@@ -199,77 +268,74 @@ export default async function ExplorePage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  // Count (for pagination + "Showing x–y")
-  let countQuery = supabase.from("listings").select("id", { count: "exact", head: true });
-
-  if (type !== "all") countQuery = countQuery.eq("listing_type", type);
-  if (category !== "all") countQuery = countQuery.eq("category", category);
-
   const statuses: StatusKey[] = ["active"];
   if (includeInactive) statuses.push("inactive");
   if (includeSold) statuses.push("sold");
-  countQuery = countQuery.in("status", statuses);
 
-  if (minPrice !== null && Number.isFinite(minPrice)) countQuery = countQuery.gte("price", minPrice);
-  if (maxPrice !== null && Number.isFinite(maxPrice)) countQuery = countQuery.lte("price", maxPrice);
-  if (onlyNegotiable) countQuery = countQuery.eq("negotiable", true);
-  if (conditionFilter) countQuery = countQuery.eq("condition", conditionFilter);
-
-  if (qRaw && qRaw.length >= 2) {
-    // Use full-text search on the generated tsvector column — much faster and
-    // more relevant than LIKE. websearch_to_tsquery handles partial words,
-    // quoted phrases and hyphens without errors on arbitrary input.
-    countQuery = countQuery.textSearch("search_vector", qRaw, {
-      type: "websearch",
-      config: "english",
-    });
-  }
-
-  const { count, error: countError } = await countQuery;
+  const rpcBaseParams = {
+    p_q:         qRaw && qRaw.length >= 2 ? qRaw : null,
+    p_type:      type === "all" ? "all" : type,
+    p_category:  category,
+    p_statuses:  statuses,
+    p_min_price: minPrice  ?? null,
+    p_max_price: maxPrice  ?? null,
+    p_negotiable: onlyNegotiable ? true : null,
+    p_condition: conditionFilter ?? null,
+  } as const;
 
   let listings: ListingRow[] = [];
   let error: any = null;
+  let count: number | null = null;
 
-  // If price range or negotiable filter is active, the RPC doesn't support these params
-  // so we always use the standard query path in that case.
-  const hasPriceOrNegotiableFilter = (minPrice !== null) || (maxPrice !== null) || onlyNegotiable || !!conditionFilter;
+  if (sort === "smart") {
+    // For smart sort: use the ranking RPC for results AND a matching count RPC
+    // so that pagination totals are always based on the same filter logic.
+    const [rankedResult, countResult] = await Promise.all([
+      supabase.rpc("explore_ranked_listings", { ...rpcBaseParams, p_from: from, p_to: to }),
+      supabase.rpc("explore_ranked_count", rpcBaseParams),
+    ]);
 
-  if (sort === "smart" && !hasPriceOrNegotiableFilter) {
-    const { data: rankedData, error: rankedError } = await supabase.rpc("explore_ranked_listings", {
-      p_q: qRaw && qRaw.length >= 2 ? qRaw : null,
-      p_type: type === "all" ? "all" : type,
-      p_category: category,
-      p_statuses: statuses,
-      p_from: from,
-      p_to: to,
-    });
+    listings = (rankedResult.data ?? []) as ListingRow[];
+    count    = typeof countResult.data === "number" ? countResult.data : null;
+    error    = rankedResult.error ?? countResult.error ?? null;
 
-    listings = (rankedData ?? []) as ListingRow[];
-    error = rankedError ?? countError ?? null;
   } else {
+    // For price/newest sorts: plain query + count — no need for the RPC.
     let query = supabase
       .from("listings")
       .select(
-        "id,title,description,listing_type,category,condition,price,price_label,location,image_url,negotiable,status,created_at"
+        "id,title,description,listing_type,category,condition,price,price_label,location,image_url,negotiable,status,created_at,vendor_id"
       );
+    let countQuery = supabase.from("listings").select("id", { count: "exact", head: true });
 
-    if (type !== "all") query = query.eq("listing_type", type);
-    if (category !== "all") query = query.eq("category", category);
-    query = query.in("status", statuses);
+    const applyFilters = <T extends typeof query | typeof countQuery>(q: T): T => {
+      if (type !== "all")   q = (q as typeof query).eq("listing_type", type) as T;
+      if (category !== "all") q = (q as typeof query).eq("category", category) as T;
+      q = (q as typeof query).in("status", statuses) as T;
+      if (minPrice !== null && Number.isFinite(minPrice)) q = (q as typeof query).gte("price", minPrice) as T;
+      if (maxPrice !== null && Number.isFinite(maxPrice)) q = (q as typeof query).lte("price", maxPrice) as T;
+      if (onlyNegotiable) q = (q as typeof query).eq("negotiable", true) as T;
+      if (conditionFilter) q = (q as typeof query).eq("condition", conditionFilter) as T;
+      if (qRaw && qRaw.length >= 2) {
+        q = (q as typeof query).textSearch("search_vector", qRaw, {
+          type: "websearch",
+          config: "english",
+        }) as T;
+      }
+      // Exclude listings from food vendors — they are fully siloed to /food
+      q = (q as typeof query).not(
+        "vendor_id",
+        "in",
+        `(select id from vendors where vendor_type = 'food')`
+      ) as T;
+      return q;
+    };
 
-    if (minPrice !== null && Number.isFinite(minPrice)) query = query.gte("price", minPrice);
-    if (maxPrice !== null && Number.isFinite(maxPrice)) query = query.lte("price", maxPrice);
-    if (onlyNegotiable) query = query.eq("negotiable", true);
-    if (conditionFilter) query = query.eq("condition", conditionFilter);
+    query      = applyFilters(query);
+    countQuery = applyFilters(countQuery);
 
-    if (qRaw && qRaw.length >= 2) {
-      // Full-text search — consistent with the count query above
-      query = query.textSearch("search_vector", qRaw, {
-        type: "websearch",
-        config: "english",
-      });
-    }
-
+    // Order: when a search query is present, secondary-sort by ts_rank so
+    // the most relevant matches rise to the top within the chosen sort order.
     if (sort === "price_asc") {
       query = query
         .order("price", { ascending: true, nullsFirst: false })
@@ -279,20 +345,63 @@ export default async function ExplorePage({
         .order("price", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false });
     } else {
+      // "newest"
       query = query.order("created_at", { ascending: false });
     }
 
     query = query.range(from, to);
 
-    const { data, error: dataError } = await query;
+    const [{ data, error: dataError }, { count: c, error: countError }] = await Promise.all([
+      query,
+      countQuery,
+    ]);
+
     listings = (data ?? []) as ListingRow[];
-    error = dataError ?? countError ?? null;
+    count    = c ?? null;
+    error    = dataError ?? countError ?? null;
   }
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const showingFrom = total === 0 ? 0 : from + 1;
   const showingTo = Math.min(total, to + 1);
+
+  // Secondary fetches: vendor trust signals + listing stats — parallel, small queries.
+  type VendorSnippet = { id: string; name: string | null; verified: boolean; verification_status: string | null };
+  let vendorMap: Record<string, VendorSnippet> = {};
+  let statsMap: Record<string, { views: number; saves: number }> = {};
+
+  const listingIds = listings.map((l) => l.id);
+  const vendorIds = [...new Set(listings.map((l) => (l as any).vendor_id).filter(Boolean))] as string[];
+
+  const parallelFetches: Promise<void>[] = [];
+
+  if (vendorIds.length > 0) {
+    parallelFetches.push(
+      supabase
+        .from("vendors")
+        .select("id, name, verified, verification_status")
+        .in("id", vendorIds)
+        .then(({ data }) => {
+          for (const v of data ?? []) vendorMap[v.id] = v as VendorSnippet;
+        })
+    );
+  }
+
+  if (listingIds.length > 0) {
+    parallelFetches.push(
+      supabase
+        .from("listing_stats")
+        .select("listing_id, views, saves")
+        .in("listing_id", listingIds)
+        .then(({ data }) => {
+          for (const s of data ?? [])
+            statsMap[s.listing_id] = { views: Number(s.views ?? 0), saves: Number(s.saves ?? 0) };
+        })
+    );
+  }
+
+  await Promise.all(parallelFetches);
 
   const activeFilters = {
     q,
@@ -358,7 +467,7 @@ export default async function ExplorePage({
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {listings.map((l) => (
-              <ListingCard key={l.id} listing={l} />
+              <ListingCard key={l.id} listing={l} vendor={vendorMap[(l as any).vendor_id] ?? null} stats={statsMap[l.id] ?? null} />
             ))}
           </div>
 
@@ -1064,7 +1173,15 @@ function ActiveChip({ href, label }: { href: string; label: string }) {
   );
 }
 
-function ListingCard({ listing }: { listing: ListingRow }) {
+function ListingCard({
+  listing,
+  vendor,
+  stats,
+}: {
+  listing: ListingRow;
+  vendor: { id: string; name: string | null; verified: boolean; verification_status: string | null } | null;
+  stats: { views: number; saves: number } | null;
+}) {
   const priceText =
     listing.price !== null ? formatNaira(listing.price) : listing.price_label ?? "Contact for price";
 
@@ -1078,6 +1195,9 @@ function ListingCard({ listing }: { listing: ListingRow }) {
     Date.now() - new Date(listing.created_at).getTime() < 24 * 60 * 60 * 1000;
 
   const desc = (listing.description ?? "").trim();
+
+  const isVerified =
+    vendor?.verified === true || vendor?.verification_status === "verified";
 
   return (
     <Link
@@ -1151,17 +1271,33 @@ function ListingCard({ listing }: { listing: ListingRow }) {
             {listing.title ?? "Untitled listing"}
           </p>
 
-          {/* ✅ extra context (helps services a lot) */}
           {desc ? (
             <p className="mt-1 line-clamp-2 text-xs text-zinc-600">{desc}</p>
           ) : null}
         </div>
 
+        {/* Vendor trust row */}
+        {vendor?.name ? (
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-xs text-zinc-500">{vendor.name}</span>
+            {isVerified && (
+              <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                ✓ Verified
+              </span>
+            )}
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
           <span className="truncate">{listing.location ?? "—"}</span>
-          <span>
-            {listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {stats && stats.saves > 0 ? (
+              <span className="text-zinc-400">{stats.saves} saved</span>
+            ) : null}
+            <span>
+              {listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}
+            </span>
+          </div>
         </div>
       </div>
     </Link>
@@ -1173,8 +1309,8 @@ function ListingCard({ listing }: { listing: ListingRow }) {
 const EXPLORE_TABS: { key: ExploreTab; label: string; emoji: string; desc: string }[] = [
   { key: "listings", label: "Listings", emoji: "🏷️", desc: "Products & services" },
   { key: "vendors", label: "Vendors", emoji: "🏪", desc: "Campus shops" },
-  { key: "delivery", label: "Delivery", emoji: "🛵", desc: "Delivery riders" },
-  { key: "transport", label: "Transport", emoji: "🚗", desc: "Cars & keke" },
+  { key: "delivery", label: "Delivery", emoji: "🛵", desc: "For food and marketplace item delivery on campus" },
+  { key: "transport", label: "Transport", emoji: "🚗", desc: "Moving goods off-campus or between locations" },
 ];
 
 function ExploreTabs({ active }: { active: ExploreTab }) {
@@ -1195,7 +1331,10 @@ function ExploreTabs({ active }: { active: ExploreTab }) {
               ].join(" ")}
             >
               <span className="text-base leading-none">{tab.emoji}</span>
-              <span>{tab.label}</span>
+              <span>
+                {tab.label}
+                <span className="block text-[10px] font-normal mt-0.5 opacity-70">{tab.desc}</span>
+              </span>
             </Link>
           );
         })}

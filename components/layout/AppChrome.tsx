@@ -11,7 +11,7 @@ const APP_CONTAINER =
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isAdmin = pathname?.startsWith("/admin");
+  const isAdmin = pathname?.startsWith("/admin") || pathname?.startsWith("/study-admin");
 
   // ✅ IMPORTANT
   // Admin pages have their own layout (AdminGate/AdminShell).

@@ -280,7 +280,6 @@ export default function PracticeTakeClient() {
 
   // Instant feedback: reveal correctness after first tap (per question)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [autoNext, setAutoNext] = useState(true);
 
   // Milestone toast — fires once when finalization completes
   const [milestone, setMilestone] = useState<Milestone | null>(null);
@@ -362,13 +361,6 @@ export default function PracticeTakeClient() {
 
     choose(current.id, optionId);
     setRevealed((m) => ({ ...m, [current.id]: true }));
-
-    if (autoNext) {
-      window.setTimeout(() => {
-        if (isLast) return;
-        goNext();
-      }, 700);
-    }
   }
 
   if (dueFetching || (isDueParam && !engineReady)) {
@@ -503,20 +495,6 @@ if (err || !meta) {
               </p>
             </div>
 
-            {/* Tiny toggle - mobile friendly */}
-            <button
-              type="button"
-              onClick={() => setAutoNext((v) => !v)}
-              className={cn(
-                "shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-extrabold",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                autoNext ? "border-border bg-secondary text-foreground" : "border-border bg-background text-muted-foreground"
-              )}
-              aria-pressed={autoNext}
-              title="Auto move to next question"
-            >
-              Auto-next: {autoNext ? "On" : "Off"}
-            </button>
           </div>
 
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary" aria-hidden="true">
@@ -714,6 +692,19 @@ if (err || !meta) {
               </div>
             </Card>
           ) : null}
+
+          {/* GPA calculator prompt */}
+          {stats.correct > 0 && (
+            <div className="text-sm text-muted-foreground text-center mt-4">
+              Want to track how this affects your GPA?{" "}
+              <Link
+                href="/study/gpa"
+                className="underline underline-offset-2 font-semibold text-foreground hover:opacity-80"
+              >
+                Open GPA calculator →
+              </Link>
+            </div>
+          )}
         </div>
       ) : (
         /* Question */
