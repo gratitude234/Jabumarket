@@ -261,7 +261,7 @@ export default function ApplyRepPage() {
             <div className="min-w-0">
               <div className="font-semibold">Application under review</div>
               <div className="mt-0.5 text-amber-900/80">
-                You can keep browsing while we review your request. Updates will appear here.
+                Your application is under review. This usually takes 2–3 working days. Updates will appear here.
               </div>
               {meRole ? (
                 <div className="mt-2 text-xs text-amber-900/80">
@@ -350,6 +350,19 @@ export default function ApplyRepPage() {
                   <span className="font-semibold">Reason:</span> {meDecisionReason}
                 </div>
               ) : null}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setMeStatus("not_applied")}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
+                    "text-sm font-semibold text-foreground hover:opacity-90",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  )}
+                >
+                  Apply again <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
 

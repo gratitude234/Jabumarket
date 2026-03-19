@@ -107,7 +107,7 @@ export async function GET(req: Request) {
       .from("study_materials")
       .select(
         `
-          id,title,description,file_url,file_path,session,approved,created_at,downloads,course_id,
+          id,title,description,file_url,file_path,session,approved,created_at,downloads,up_votes,course_id,
           material_type,featured,verified,
           study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)
         `,

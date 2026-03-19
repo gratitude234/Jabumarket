@@ -16,7 +16,8 @@
       "Bash(npx eslint:*)",
       "Bash(./node_modules/.bin/eslint app/study/leaderboard/page.tsx app/study/ai-plan/page.tsx app/study/onboarding/OnboardingClient.tsx \"app/study/_components/StudyTabs.tsx\" app/study/StudyHomeClient.tsx \"app/study/library/LibraryClient.tsx\" \"app/study/practice/[setId]/PracticeTakeClient.tsx\" \"app/study/_components/StudyUI.tsx\" 2>&1)",
       "Bash(node:*)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -E \"^C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\\\\\\\(app\\\\study|app\\\\study\\\\_components|lib\\\\studyPractice\\)\")"
     ]
   }
 }

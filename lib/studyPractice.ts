@@ -39,6 +39,22 @@ export async function getLatestAttempt(): Promise<PracticeAttemptRow | null> {
   return row as PracticeAttemptRow;
 }
 
+export async function getInProgressAttempts(limit = 3): Promise<PracticeAttemptRow[]> {
+  const userId = await getAuthedUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from("study_practice_attempts")
+    .select("id,user_id,set_id,status,started_at,submitted_at,score,total_questions,time_spent_seconds,study_quiz_sets(title,course_code)")
+    .eq("user_id", userId)
+    .eq("status", "in_progress")
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !Array.isArray(data)) return [];
+  return (data as any[]).filter((r) => r?.id) as PracticeAttemptRow[];
+}
+
 export async function upsertDailyPracticeActivity(points: number) {
   const userId = await getAuthedUserId();
   if (!userId) return;

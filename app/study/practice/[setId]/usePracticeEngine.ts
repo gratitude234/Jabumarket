@@ -158,7 +158,7 @@ export function usePracticeEngine({
 
         const setReq = supabase
           .from("study_quiz_sets")
-          .select("id,title,description,course_code,level,time_limit_minutes")
+          .select("id,title,description,course_code,level,time_limit_minutes,published")
           .eq("id", setId)
           .maybeSingle();
 
@@ -195,6 +195,16 @@ export function usePracticeEngine({
         if (setRes.error) throw setRes.error;
         if (!setRes.data) throw new Error("Practice set not found");
         if (qRes.error) throw qRes.error;
+
+        // Block unpublished sets for non-privileged users
+        if (!(setRes.data as any).published) {
+          const [repRow, adminRow] = await Promise.all([
+            supabase.from("study_reps").select("id").eq("user_id", user?.id ?? "").maybeSingle(),
+            supabase.from("study_admins").select("id").eq("user_id", user?.id ?? "").maybeSingle(),
+          ]);
+          const isPrivileged = Boolean(repRow.data?.id || adminRow.data?.id);
+          if (!isPrivileged) throw new Error("This practice set is not available yet.");
+        }
 
         // Unpack the nested options from each question row
         const qData = (qRes.data ?? []) as any[];

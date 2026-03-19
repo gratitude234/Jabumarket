@@ -25,12 +25,14 @@ import {
   File,
   SortAsc,
   SortDesc,
+  ThumbsUp,
 } from "lucide-react";
 
 import { getAuthedUserId, toggleSaved } from "@/lib/studySaved";
 import { cn, formatWhen, normalizeQuery, safeSearchTerm, buildHref, asInt, clamp } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
 import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
+import { RequestCourseModal } from "../_components/RequestCourseModal";
 
 type SortKey = "newest" | "oldest" | "downloads_desc" | "downloads_asc";
 
@@ -63,6 +65,7 @@ type MaterialRow = {
   approved: boolean | null;
   created_at: string | null;
   downloads: number | null;
+  up_votes: number | null;
   course_id: string | null;
 
   material_type?: string | null;
@@ -617,11 +620,21 @@ function MaterialCard({
         </a>
       </div>
 
-      {typeof m.downloads === "number" ? (
-        <p className="mt-2 text-xs font-semibold text-muted-foreground">
-          {m.downloads.toLocaleString("en-NG")} downloads
-        </p>
-      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-muted-foreground">
+          {(m.downloads ?? 0).toLocaleString("en-NG")} downloads
+        </span>
+        {(m.up_votes ?? 0) > 0 ? (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+            <ThumbsUp className="h-3 w-3" /> {m.up_votes}
+          </span>
+        ) : null}
+        {(m.downloads ?? 0) > 50 ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+            Popular
+          </span>
+        ) : null}
+      </div>
     </Card>
   );
 }
@@ -718,6 +731,9 @@ export default function MaterialsClient() {
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [previewTitle, setPreviewTitle] = useState<string>("");
   const [previewKind, setPreviewKind] = useState<"pdf" | "image" | "other">("other");
+
+  // Request course modal
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   // Effective scope:
   // - mine=1 => always mine
@@ -916,12 +932,13 @@ export default function MaterialsClient() {
 
     // Avoid a route transition (which can look like a "reload") by updating the URL
     // without triggering Next.js navigation.
+    // Also pre-apply dept name and level from prefs so the URL is shareable and bookmarkable.
     const href = buildHref(pathname, {
       q: normalizeQuery(q) || null,
-      level: levelParam || null,
+      level: levelParam || (scopeLevel ? String(scopeLevel) : null),
       semester: semesterParam || null,
       faculty: facultyParam || null,
-      dept: deptParam || null,
+      dept: deptParam || scopeDept || null,
       course: courseParam || null,
       session: sessionParam || null,
       type: typeParam !== "all" ? typeParam : null,
@@ -1349,6 +1366,22 @@ export default function MaterialsClient() {
         </Chip>
       </div>
 
+      {/* Dept auto-filter chip */}
+      {mineOnly && !mineExplicitOff && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            Showing results for your department
+          </span>
+          <button
+            type="button"
+            onClick={openFilters}
+            className="font-semibold text-foreground underline underline-offset-2 hover:opacity-70 focus-visible:outline-none"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
       <div className="sticky top-16 z-30">
         <Card className="rounded-3xl border bg-background/85 backdrop-blur">
@@ -1499,20 +1532,33 @@ export default function MaterialsClient() {
           <div className="sm:col-span-2">
             <EmptyState
               icon={<FileText className="h-5 w-5" />}
-              title="No materials found"
-              description={mineOnly ? "You’re viewing a filtered feed (mine=1). Switch to All materials or clear filters, or upload your first material." : "Try clearing filters or upload the first material for your course."}
+              title="No content yet for this course"
+              description="Help us grow — request it and we’ll notify you when content is available."
               action={
-                <Link
-                  href="/study/materials/upload"
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
-                    "hover:opacity-90",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  )}
-                >
-                  <UploadCloud className="h-4 w-4" />
-                  Upload a material
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRequestModalOpen(true)}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+                      "hover:opacity-90",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    )}
+                  >
+                    Request this course
+                  </button>
+                  <Link
+                    href="/study/materials/upload"
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground no-underline",
+                      "hover:bg-secondary/50",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    )}
+                  >
+                    <UploadCloud className="h-4 w-4" />
+                    Upload a material
+                  </Link>
+                </div>
               }
             />
           </div>
@@ -1722,6 +1768,13 @@ export default function MaterialsClient() {
         title={previewTitle}
         url={previewUrl}
         kind={previewKind}
+      />
+
+      {/* Request course modal */}
+      <RequestCourseModal
+        open={requestModalOpen}
+        onClose={() => setRequestModalOpen(false)}
+        initialCourseCode={courseParam}
       />
 
       {/* Toast */}

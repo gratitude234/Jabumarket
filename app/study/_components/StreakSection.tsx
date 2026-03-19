@@ -3,13 +3,8 @@
 import { useEffect, useState } from "react";
 import StreakCard, { type PracticeAttemptRow } from "./StreakCard";
 import { getLatestAttempt, getPracticeStreak } from "@/lib/studyPractice";
+import { supabase } from "@/lib/supabase";
 
-/**
- * Self-contained streak section for the Study home page.
- *
- * Fetches streak and latest attempt in parallel on mount,
- * then passes resolved values down to StreakCard.
- */
 export function StreakSection() {
   const [streak, setStreak] = useState<{
     streak: number;
@@ -17,19 +12,43 @@ export function StreakSection() {
   } | null>(null);
   const [lastAttempt, setLastAttempt] = useState<PracticeAttemptRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      getPracticeStreak().catch(() => null),
-      getLatestAttempt().catch(() => null),
-    ]).then(([streakRes, attemptRes]) => {
+    (async () => {
+      const [streakRes, attemptRes] = await Promise.all([
+        getPracticeStreak().catch(() => null),
+        getLatestAttempt().catch(() => null),
+      ]);
+
       if (cancelled) return;
       setStreak(streakRes);
       setLastAttempt(attemptRes);
       setLoading(false);
-    });
+
+      // Fetch 28-day activity for dot grid
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const { data } = await supabase
+          .from("study_daily_activity")
+          .select("activity_date,did_practice")
+          .eq("user_id", user.id)
+          .gte("activity_date", since);
+        if (!cancelled && data) {
+          const s = new Set<string>();
+          for (const r of data as { activity_date: string; did_practice: boolean }[]) {
+            if (r?.did_practice === true && r?.activity_date) s.add(String(r.activity_date));
+          }
+          setActiveDays(s);
+        }
+      } catch {
+        // silent
+      }
+    })();
 
     return () => { cancelled = true; };
   }, []);
@@ -39,6 +58,7 @@ export function StreakSection() {
       streak={streak?.streak ?? 0}
       lastAttempt={lastAttempt}
       loading={loading}
+      activeDays={activeDays}
     />
   );
 }

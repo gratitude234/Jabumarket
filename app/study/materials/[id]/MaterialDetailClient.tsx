@@ -64,6 +64,7 @@ type Material = {
   featured: boolean | null;
   created_at: string | null;
   uploader_email: string | null;
+  ai_summary: string | null;
   study_courses: Course | null;
 };
 
@@ -925,6 +926,14 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       {/* ── Inline preview strip ── */}
       {hasFile && (
         <InlinePreview url={fileUrl} title={title} kind={kind} />
+      )}
+
+      {/* ── Pre-generated AI Summary ── */}
+      {m.ai_summary && (
+        <div className="rounded-2xl border bg-amber-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-2">AI Summary</p>
+          <p className="text-sm text-zinc-700">{m.ai_summary}</p>
+        </div>
       )}
 
       {/* ── AI Summarize ── */}

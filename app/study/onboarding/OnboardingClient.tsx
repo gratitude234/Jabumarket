@@ -20,6 +20,7 @@ import {
   X,
   Search,
   Zap,
+  UploadCloud,
 } from "lucide-react";
 import { Card } from "../_components/StudyUI";
 import { cn, normalizeStr as normalize, currentAcademicSessionFallback } from "@/lib/utils";
@@ -376,8 +377,9 @@ export default function OnboardingClient() {
 
       // Load faculties (official)
       const facRes = await supabase
-        .from("study_faculties_clean")
+        .from("study_faculties")
         .select("id,name,sort_order")
+        .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
 
@@ -386,11 +388,18 @@ export default function OnboardingClient() {
       if (facRes.error) {
         setOfficialOk(false);
         setFaculties([]);
-        setManualMode(true);
+        setBanner({
+          tone: "error",
+          title: "Couldn't load the faculty list",
+          description: "Check your connection and reload, or use manual entry.",
+        });
+      } else if ((facRes.data ?? []).length === 0) {
+        setOfficialOk(false);
+        setFaculties([]);
         setBanner({
           tone: "info",
-          title: "Official list unavailable right now",
-          description: "You can type your faculty/department manually and continue.",
+          title: "No faculties available yet",
+          description: "Switch to manual entry to type your faculty and department.",
         });
       } else {
         setOfficialOk(true);
@@ -487,22 +496,31 @@ export default function OnboardingClient() {
     let mounted = true;
     (async () => {
       const res = await supabase
-        .from("study_departments_clean")
+        .from("study_departments")
         .select("id,faculty_id,display_name,official_name,sort_order")
         .eq("faculty_id", facultyId)
+        .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("display_name", { ascending: true });
 
       if (!mounted) return;
 
       if (res.error) {
-        setOfficialOk(false);
         setDepartments([]);
-        setManualMode(true);
+        setBanner({
+          tone: "error",
+          title: "Couldn't load departments",
+          description: "Check your connection and reload, or switch to manual entry.",
+        });
+        return;
+      }
+
+      if ((res.data ?? []).length === 0) {
+        setDepartments([]);
         setBanner({
           tone: "info",
-          title: "Departments list failed to load",
-          description: "No worries—switch to manual typing and continue.",
+          title: "No departments found for this faculty",
+          description: "Switch to manual entry to type your department.",
         });
         return;
       }
@@ -1068,22 +1086,41 @@ export default function OnboardingClient() {
                   </span>
                 </div>
 
-                {/* CTA cards */}
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <Link
-                    href="/study/materials"
-                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
-                  >
-                    <BookOpen className="h-5 w-5 text-muted-foreground" />
-                    <p className="text-sm font-extrabold text-foreground">Browse materials</p>
-                  </Link>
-                  <Link
-                    href="/study/practice"
-                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
-                  >
-                    <Zap className="h-5 w-5 text-muted-foreground" />
-                    <p className="text-sm font-extrabold text-foreground">Start practising</p>
-                  </Link>
+                {/* Primary CTA — dynamic based on available content */}
+                <div className="mt-6">
+                  {(step4Data?.quizSets ?? 0) > 0 ? (
+                    <Link
+                      href="/study/practice"
+                      className="flex w-full items-center gap-3 rounded-2xl bg-secondary px-5 py-4 hover:opacity-90 transition"
+                    >
+                      <Zap className="h-5 w-5 text-foreground" />
+                      <p className="text-sm font-extrabold text-foreground">
+                        Start practising ({step4Data!.quizSets} sets available)
+                      </p>
+                    </Link>
+                  ) : (step4Data?.materials ?? 0) > 0 ? (
+                    <Link
+                      href="/study/materials"
+                      className="flex w-full items-center gap-3 rounded-2xl bg-secondary px-5 py-4 hover:opacity-90 transition"
+                    >
+                      <BookOpen className="h-5 w-5 text-foreground" />
+                      <p className="text-sm font-extrabold text-foreground">
+                        Browse materials ({step4Data!.materials} available)
+                      </p>
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/study"
+                      className="flex w-full items-center gap-3 rounded-2xl bg-secondary px-5 py-4 hover:opacity-90 transition"
+                    >
+                      <BookOpen className="h-5 w-5 text-foreground" />
+                      <p className="text-sm font-extrabold text-foreground">Explore Study Hub</p>
+                    </Link>
+                  )}
+                </div>
+
+                {/* Secondary CTAs */}
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <Link
                     href="/study/questions/ask"
                     className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
@@ -1091,9 +1128,16 @@ export default function OnboardingClient() {
                     <MessageCircleQuestion className="h-5 w-5 text-muted-foreground" />
                     <p className="text-sm font-extrabold text-foreground">Ask a question</p>
                   </Link>
+                  <Link
+                    href="/study/materials/upload"
+                    className="flex flex-col gap-2 rounded-2xl border bg-background p-4 hover:bg-secondary/30 transition"
+                  >
+                    <UploadCloud className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-extrabold text-foreground">Upload materials</p>
+                  </Link>
                 </div>
 
-                <div className="mt-6 text-center">
+                <div className="mt-4 text-center">
                   <Link href="/study" className="text-sm font-semibold text-muted-foreground hover:text-foreground">
                     Go to Study Hub →
                   </Link>

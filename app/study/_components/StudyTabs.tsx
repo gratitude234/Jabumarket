@@ -382,6 +382,33 @@ export default function StudyTabs({
 
   const overflowItems: OverflowItem[] = [
     {
+      href: "/study/materials/upload",
+      label: "Upload Materials",
+      description: "Share past questions, notes, and slides",
+      icon: UploadCloud,
+      color:
+        "bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400",
+      badge: contributorStatus === "approved" ? "Rep" : undefined,
+    },
+    ...(contributorStatus !== "approved"
+      ? [
+          {
+            href: "/study/apply-rep",
+            label: "Apply as Course Rep",
+            description: "Get elevated upload permissions",
+            icon: UserCheck,
+            color:
+              "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400",
+            badge:
+              contributorStatus === "pending"
+                ? "Pending"
+                : contributorStatus === "rejected"
+                ? "Reapply"
+                : undefined,
+          } as OverflowItem,
+        ]
+      : []),
+    {
       href: "/study/history",
       label: "History",
       description: "Review your recent study activity",
@@ -430,30 +457,6 @@ export default function StudyTabs({
         "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
       badge: "AI",
     },
-    contributorStatus === "approved"
-      ? {
-          href: "/study/materials/upload",
-          label: "Upload",
-          description: "Upload materials for your department",
-          icon: UploadCloud,
-          color:
-            "bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400",
-          badge: "Rep",
-        }
-      : {
-          href: "/study/apply-rep",
-          label: "Contribute",
-          description: "Apply to become a Course Rep or Librarian",
-          icon: UserCheck,
-          color:
-            "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400",
-          badge:
-            contributorStatus === "pending"
-              ? "Pending"
-              : contributorStatus === "rejected"
-              ? "Reapply"
-              : undefined,
-        },
   ];
 
   return (

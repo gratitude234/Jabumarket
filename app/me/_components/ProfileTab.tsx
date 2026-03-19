@@ -192,8 +192,9 @@ export default function ProfileTab({
         if (!user) return;
 
         const facRes = await supabase
-          .from("study_faculties_clean")
+          .from("study_faculties")
           .select("id,name,sort_order")
+          .eq("is_active", true)
           .order("sort_order", { ascending: true });
 
         // Single source of truth: study_preferences only.
@@ -245,9 +246,10 @@ export default function ProfileTab({
       }
 
       const depRes = await supabase
-        .from("study_departments_clean")
+        .from("study_departments")
         .select("id,faculty_id,display_name,official_name,sort_order")
         .eq("faculty_id", studyForm.faculty_id)
+        .eq("is_active", true)
         .order("sort_order", { ascending: true });
 
       if (!mounted) return;

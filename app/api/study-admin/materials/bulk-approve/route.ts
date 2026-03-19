@@ -61,6 +61,25 @@ export async function POST(req: Request) {
       );
     }
 
+    // Fire dept notifications + AI summary per approved material — fire-and-forget
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+      for (const id of ids) {
+        fetch(`${baseUrl}/api/study/notify-new-material`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ material_id: id }),
+        }).catch(() => {});
+        fetch(`${baseUrl}/api/ai/summarize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ material_id: id }),
+        }).catch(() => {});
+      }
+    } catch {}
+
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (e: any) {
     const status = Number(e?.status) || 500;

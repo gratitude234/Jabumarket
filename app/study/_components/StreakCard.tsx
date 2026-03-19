@@ -20,6 +20,7 @@ interface StreakCardProps {
   lastAttempt?: PracticeAttemptRow | null;
   className?: string;
   loading?: boolean;
+  activeDays?: Set<string>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -136,6 +137,7 @@ export default function StreakCard({
   lastAttempt,
   className,
   loading,
+  activeDays,
 }: StreakCardProps) {
 
   // ── Skeleton ───────────────────────────────────────────────────────────────
@@ -259,6 +261,41 @@ export default function StreakCard({
           <span>{prompt.message}</span>
         </div>
       )}
+
+      {/* 28-day activity dot grid (2 rows × 14 cols) */}
+      {activeDays !== undefined && (() => {
+        const days: string[] = [];
+        for (let i = 27; i >= 0; i--) {
+          const d = new Date(now.getTime() - i * 86_400_000);
+          days.push(d.toISOString().slice(0, 10));
+        }
+        return (
+          <div
+            style={{ display: "grid", gridTemplateColumns: "repeat(14, 1fr)", gap: "4px" }}
+          >
+            {days.map((d) => {
+              const isToday = d === todayStr;
+              const practiced = activeDays.has(d);
+              return (
+                <div
+                  key={d}
+                  title={d}
+                  className={cn(
+                    "h-3 w-3 rounded-full",
+                    isToday
+                      ? practiced
+                        ? "bg-primary ring-2 ring-primary/40"
+                        : "bg-muted ring-2 ring-primary/30"
+                      : practiced
+                      ? "bg-primary/70"
+                      : "bg-muted"
+                  )}
+                />
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

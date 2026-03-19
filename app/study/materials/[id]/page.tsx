@@ -16,7 +16,7 @@ async function getMaterial(id: string) {
     .select(
       `id, title, description, material_type, session,
        approved, downloads, up_votes, down_votes,
-       file_url, file_path,
+       file_url, file_path, ai_summary,
        verified, featured, created_at, uploader_email,
        study_courses (
          id, course_code, course_title,

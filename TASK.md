@@ -1,222 +1,267 @@
 
-**"You are a senior full-stack engineer implementing a delivery system overhaul on Jabu Market — a Next.js + Supabase campus super-app. You have a full audit report. Your job is to implement every fix in order, surgically, without breaking anything.**
+**"You are a senior full-stack engineer implementing a prioritised Study Hub overhaul on Jabu Market — a Next.js + Supabase campus super-app. You have a full product and UX audit. Your job is to implement every fix in order, surgically, without breaking anything.**
 
 **Before touching a single file:**
 1. Read `CLAUDE.md` fully
-2. Scan every file related to delivery — `/delivery`, `/my-orders`, `/rider`, `/vendor/orders`, `MealBuilder.tsx`, `orders/create/route.ts`, `delivery_requests`, `riders`, `couriers`
+2. Scan every file under `/study`, `/study-admin`, `app/study/_components/`, every API route touching study data, every hook and context the study system uses
 3. List every file you'll touch across all fixes before starting
 4. Flag any file that doesn't exist yet — confirm you'll create it
 5. Confirm you understand the Supabase client rules — browser vs server vs admin — before writing a single query
+6. Run all migrations first and confirm before touching any UI
 
 ---
 
 ## 🔴 CRITICAL — Implement These First
 
-**FIX 1 — Schema migration: add `order_id` FK to `delivery_requests`**
-Create file: `supabase/migrations/[timestamp]_delivery_requests_order_id.sql`
+**FIX 1 — Upload accessible to all authenticated students**
+File: `app/study/_components/StudyTabs.tsx` (MoreSheet section)
 
-```sql
-ALTER TABLE public.delivery_requests
-  ADD COLUMN IF NOT EXISTS order_id uuid REFERENCES public.orders(id);
-
-CREATE INDEX IF NOT EXISTS delivery_requests_order_id_idx
-  ON public.delivery_requests(order_id);
-```
-
-Tell me when this is ready so I can run it manually in the Supabase SQL editor before you proceed.
+Currently "Upload" is only shown when `contributorStatus === 'approved'`. Change this:
+- Show "Upload Materials" for ALL authenticated users — move it to the top of the MoreSheet
+- Below it, keep "Apply as Course Rep" as a separate entry — label it clearly: "Apply as Course Rep → get elevated upload permissions"
+- The "Apply Rep" entry should only show when `contributorStatus !== 'approved'`
+- Never remove or hide the upload path from any authenticated student
 
 ---
 
-**FIX 2 — Wire food delivery orders to auto-create a `delivery_requests` row**
-File: `app/api/orders/create/route.ts`
+**FIX 2 — Fix onboarding to query real tables directly**
+Files: Every file in the onboarding flow that queries `study_faculties_clean` or `study_departments_clean`
 
-After the `orders` insert succeeds and `order_type === 'delivery'`, insert a corresponding row into `delivery_requests` using the admin client:
+Search the entire codebase for `study_faculties_clean` and `study_departments_clean`. Replace every reference with the real tables:
+- `study_faculties_clean` → `study_faculties` (filter: `.eq('is_active', true).order('sort_order')`)
+- `study_departments_clean` → `study_departments` (filter: `.eq('is_active', true).order('sort_order')`)
+
+Remove all view-dependent fallback logic. If the real tables return empty, show a proper empty state — not a manual text input fallback. This is a one-line change per query but must be applied consistently across every onboarding step.
+
+---
+
+**FIX 3 — Block unpublished quiz sets in the practice engine**
+File: `usePracticeEngine.ts` (or wherever the set fetch lives)
+
+After fetching a set by ID, add:
 ```ts
-if (order_type === 'delivery') {
-  await admin.from('delivery_requests').insert({
-    order_id: newOrder.id,
-    listing_id: null,
-    buyer_id: user.id,
-    vendor_id: vendor_id,
-    dropoff: delivery_address,
-    status: 'open',
-  });
+if (!set.published) {
+  // Check if caller is admin or rep
+  const isPrivileged = roles.isStudyAdmin || roles.isStudyContributor;
+  if (!isPrivileged) {
+    return { error: 'This practice set is not available yet.', set: null };
+  }
 }
 ```
-Wrap in try/catch — a delivery_request creation failure must never roll back or crash the order creation response. Log the error but return the order success.
+The practice home should already filter to `published: true` — add that filter there too if missing. No student should reach an unpublished set.
 
 ---
 
-**FIX 3 — Fix all hardcoded pickup strings to be delivery-aware**
+**FIX 4 — "Due Today" widget on Study Home**
+Files:
+- `app/study/_components/StudyHomeClient.tsx` (add widget)
+- Create: `app/study/_components/DueTodayWidget.tsx`
 
-File 1: `app/api/orders/[orderId]/status/route.ts`
-Find every hardcoded notification string mentioning "pickup." Make them conditional on `order_type`:
-```ts
-case 'ready':
-  return order_type === 'delivery'
-    ? '🛵 Your order is ready — rider is on the way!'
-    : '🔔 Your order is ready for pickup!';
-```
-Fetch `order_type` from the orders row before building the message. Apply the same pattern to every status case that references pickup.
-
-File 2: `app/vendor/orders/page.tsx`
-Pass `order_type` to the action buttons. Change button labels conditionally:
-- `order_type === 'delivery'` → "Mark ready for delivery"
-- `order_type === 'pickup'` → "Mark ready for pickup"
-Show the delivery address prominently on the order card when `order_type === 'delivery'` — large text, clearly labeled, with a copy-to-clipboard button.
+Create a `DueTodayWidget` component:
+- Query `study_weak_questions` where `user_id = currentUser` AND `next_due_at <= now()` AND `graduated_at IS NULL`
+- Show count of due questions
+- If count > 0: render a prominent card — amber or primary color — "You have {n} questions due today" with a single CTA button: "Start review →" linking to `/study/practice?due=1`
+- If count === 0: render a quiet "Nothing due today — you're on track ✓" chip
+- Place this widget immediately below the streak card on the home page — above the For You / Trending section
+- Use the browser Supabase client — this is a client component
 
 ---
 
-**FIX 4 — Add `delivery_fee` to vendor setup and order flow**
+**FIX 5 — Auto-apply department and level filter post-onboarding**
+File: `app/study/materials/page.tsx` or `MaterialsClient.tsx`
 
-Step 1 — File: `app/vendor/setup/page.tsx`
-Add a `delivery_fee` numeric input field to the vendor setup form. Label: "Delivery fee (₦)". Save it to the `vendors` table — add the column if it doesn't exist or use `description` as a fallback until schema is updated. Minimum value: 0.
-
-Step 2 — File: `components/chat/MealBuilder.tsx` (FulfillmentStep)
-Fetch the vendor's `delivery_fee` from the vendor row. Display it as a line item on the ReviewStep:
-```
-Delivery fee: ₦{delivery_fee}
-```
-Include it in the order total calculation. Pass it to `orders/create` as `delivery_fee` instead of hardcoded `0`.
-
-Step 3 — File: `app/api/orders/create/route.ts`
-Accept `delivery_fee` from the request body. Validate it's a non-negative integer. Store it in the `orders` row.
+After a student completes onboarding, their `study_preferences` has `faculty_id`, `department_id`, `level`, `semester`. On the materials page:
+- On first load with no URL params, automatically apply filters from `useStudyPrefs()`: department and level
+- Set these as the default filter state — not as locked filters, but as pre-selected ones the student can change
+- Update the URL params to reflect the applied filters so the page is shareable and bookmarkable
+- Show a small chip: "Showing results for your department · Change" that links to filter controls
 
 ---
 
-**FIX 5 — Add `accepts_delivery` toggle to vendor setup**
+**FIX 6 — Add "Request missing content" path for students**
+Files:
+- Create: `app/study/_components/RequestCourseModal.tsx`
+- File: `app/study/materials/page.tsx` (empty state)
+- File: `app/study/practice/page.tsx` (empty state)
+- Create: `app/api/study/course-requests/route.ts`
 
-Step 1 — Create migration: `supabase/migrations/[timestamp]_vendors_accepts_delivery.sql`
-```sql
-ALTER TABLE public.vendors
-  ADD COLUMN IF NOT EXISTS accepts_delivery boolean NOT NULL DEFAULT true;
-```
-
-Step 2 — File: `app/vendor/setup/page.tsx`
-Add a toggle switch: "Accept delivery orders". Default on. Save to `vendors.accepts_delivery`.
-
-Step 3 — File: `components/chat/MealBuilder.tsx` (FulfillmentStep)
-Fetch `accepts_delivery` from the vendor row. If `accepts_delivery === false`, hide the delivery option entirely. Only show pickup.
-
----
-
-**FIX 6 — Fix unauthenticated cancel on delivery requests**
-File: `app/delivery/requests/page.tsx`
-
-Move the cancel action to a new API route: `app/api/delivery/requests/[requestId]/cancel/route.ts`
-- Authenticate the user server-side
-- Verify `delivery_requests.buyer_id === user.id` before updating
-- Update `status` to `cancelled` only if ownership check passes
-- Return 403 if check fails
-Remove the direct client-side Supabase update from the page component. Call the new API route instead.
+When a student sees an empty state on `/study/materials` or `/study/practice`:
+- Replace the generic "No materials found" with: "No content yet for this course. Help us grow — request it."
+- Add a "Request this course" button that opens `RequestCourseModal`
+- Modal collects: course code, course title (optional), and a note
+- On submit, insert into `study_course_requests` table using an API route with the server Supabase client
+- Show success: "Request submitted — we'll notify you when content is available"
+- The admin already has a review UI for this table — no admin changes needed
 
 ---
 
-**FIX 7 — Add `accepts_delivery` to vendor schema migration**
-Already covered in Fix 5 Step 1. Confirm it runs before Fix 5 Step 3.
+**FIX 7 — Surface "new in your department" notifications**
+Files:
+- Create: `app/api/study/notify-new-material/route.ts`
+- File: wherever material approval is confirmed in the admin flow
+
+When a material is approved (status flips to `approved: true`):
+- Trigger the new route which:
+  - Finds all users whose `study_preferences.department_id` matches the material's `department_id` AND `level` matches (or is null)
+  - Inserts a `notifications` row for each: `{ type: 'study_new_material', title: 'New material in your department', body: '{material.title} — {material.course_code}', href: '/study/materials/{material.id}' }`
+- Cap at 200 notifications per approval to avoid spam
+- Use the admin Supabase client — this is a server-side route
+- Wrap the entire notification loop in try/catch — notification failure must never block material approval
 
 ---
 
 ## 🟡 IMPORTANT — Implement After Criticals
 
-**FIX 8 — Create rider dashboard: `/rider/my-deliveries`**
-Create file: `app/rider/my-deliveries/page.tsx`
+**FIX 8 — Promote search bar above the fold on Study Home**
+File: `app/study/_components/StudyHomeClient.tsx`
 
-This is a client component. Flow:
-- Ask the rider to enter their phone number (same lookup pattern as `/rider/status/page.tsx`)
-- Fetch all `delivery_requests` where `rider_id` matches their rider row
-- Show each delivery card with: dropoff address, order_id, current status
-- Render one-tap status update buttons:
-  - If `status === 'accepted'` → show "Mark as Picked Up" button → updates to `picked_up`
-  - If `status === 'picked_up'` → show "Mark as Delivered" button → updates to `delivered`
-- Use the browser Supabase client — this is client-side
-- Match the existing card/button design system in the codebase exactly
-- Add a link to this page from `/rider/status/page.tsx`: "View my deliveries →"
+Move `UnifiedSearch` to be the very first element inside the page body — above the streak card, above the For You section, above everything except the page header. On mobile this means it's visible without any scroll. Add placeholder text: "Search courses, past questions, topics..."
 
 ---
 
-**FIX 9 — Add vendor rider assignment UI to order card**
-File: `app/vendor/orders/page.tsx`
+**FIX 9 — Auto-filter Q&A forum to student's department on load**
+File: `app/study/questions/QuestionsClient.tsx`
 
-For delivery orders where `status === 'ready'` and no `rider_id` is assigned on the linked `delivery_request`:
-- Show a compact "Assign a rider" section below the order details
-- Fetch available riders in any zone (`is_available === true`, `verified === true`) — max 5 results
-- Show each as a pill with name, zone, and a WhatsApp button (pre-filled message: "Hi [name], I have a delivery at Jabumarket. Dropoff: [delivery_address]. Can you take it?")
-- After vendor contacts a rider off-app, show a simple "Confirm rider" dropdown to select which rider picked it up
-- On confirm, update `delivery_requests.rider_id` and `delivery_requests.status` to `accepted`
-- Use the admin client in an API route for this update — not client-side
+On component mount, if `study_preferences` has `department_id` and no URL filters are set:
+- Apply `department_id` and `level` as default filters
+- Update the URL: `/study/questions?dept={department_id}&level={level}`
+- Show a chip: "Filtered to your department · Show all" that clears filters
+- Do NOT lock the filter — students must be able to browse all departments
 
 ---
 
-**FIX 10 — Add delivery status chain to buyer order card**
-File: `app/my-orders/page.tsx` or its order card component
+**FIX 10 — Surface difficulty on practice set cards and add difficulty filter**
+Files:
+- `app/study/practice/PracticeHomeClient.tsx` or the practice set card component
+- The filter bar on the practice home
 
-For `order_type === 'delivery'` orders:
-- Fetch the linked `delivery_requests` row via `order_id`
-- Show an additional status chain below the order status:
-  - Open → Rider assigned → Picked up → Delivered
-- Map `delivery_requests.status` values to plain English:
-  - `open` → "Looking for a rider"
-  - `accepted` → "Rider assigned"
-  - `picked_up` → "Rider picked up your order"
-  - `delivered` → "Delivered ✓"
-- Set up a Realtime subscription on the `delivery_requests` row for live updates
-- For `order_type === 'pickup'` orders, hide this section entirely
+On each practice set card, add a difficulty badge:
+- `easy` → green pill "Easy"
+- `medium` → amber pill "Medium"  
+- `hard` → red pill "Hard"
+- `null` → no badge
+
+Add a difficulty filter to the practice home filter bar alongside the existing course/level filters. Filter options: All / Easy / Medium / Hard. Apply via URL param `?difficulty=easy`.
 
 ---
 
-**FIX 11 — Add delivery availability badge to food vendor cards**
-File: `app/food/FoodVendorGrid.tsx` or the vendor card component
+**FIX 11 — Wire streak feedback into practice results screen**
+File: The practice results/submission screen component
 
-Fetch `accepts_delivery` alongside existing vendor fields. When `accepts_delivery === true` and vendor is open, show a small delivery badge on the vendor card:
+After a student submits a practice attempt:
+- Fetch their current streak from `study_daily_activity` where `activity_date = today`
+- If `did_practice` just became true for the first time today (the attempt they just submitted), show:
+  ```
+  🔥 {streak_count}-day streak — keep it going!
+  ```
+  as a highlighted banner at the top of the results screen
+- If streak is 1 (first day): "You started a streak today — come back tomorrow!"
+- If streak >= 7: "🔥 {n}-day streak — you're on a roll!"
+- This is read-only — just fetch and display, don't update streak here (that should already happen on submission)
+
+---
+
+**FIX 12 — Connect tutors to Q&A "no answer" state**
+Files:
+- `app/study/questions/[id]/page.tsx` or the question detail component
+- The "no answers yet" empty state component
+
+When a question has `answers_count === 0`:
+- Below the "No answers yet" empty state, add: "Need help now? Find a tutor for this course →"
+- Link to `/study/tutors?course={question.course_code}` (or `/study/tutors` if no course code)
+- Also add a tutor link from the practice results screen when score < 50%: "Struggling? Connect with a tutor for {course_code} →"
+
+---
+
+**FIX 13 — Trigger AI summary on material approval**
+Files:
+- Wherever material approval happens in the admin flow (likely `app/study-admin/` or an API route)
+- `app/api/ai/summarize/route.ts` (already exists — just call it)
+- Material detail page — display the summary
+
+Step 1: In the material approval flow, after setting `approved: true`, call `/api/ai/summarize` with the `material_id`. Store the result in `study_materials.ai_summary`.
+
+Step 2: In the material detail page, if `material.ai_summary` is not null, render it in a card:
 ```tsx
-<span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
-  Delivery available
-</span>
+<div className="rounded-2xl border bg-amber-50 p-4">
+  <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-2">AI Summary</p>
+  <p className="text-sm text-zinc-700">{material.ai_summary}</p>
+</div>
 ```
-When `accepts_delivery === false`, show nothing — don't show a "no delivery" badge, just absence of the green one.
+If null, render nothing — no placeholder.
 
 ---
 
-**FIX 12 — Add rider authentication to availability toggle**
-File: `app/rider/status/page.tsx`
+**FIX 14 — Show rep application decision reason on rejection**
+File: `app/study/apply-rep/page.tsx` or the rep status component
 
-The phone-number lookup currently has no auth. Add a simple PIN step:
-- After finding the rider by phone, show a PIN input (4 digits)
-- Store a hashed PIN on the `riders` table — add column: `pin_hash text`
-- On first login (no PIN set), prompt rider to create a PIN
-- Validate PIN before allowing any status changes
-- This doesn't need full Supabase auth — a bcrypt-hashed PIN stored on the row is sufficient for now
-- Create migration: `supabase/migrations/[timestamp]_riders_pin_hash.sql`
+When `study_rep_applications.status === 'rejected'` AND `decision_reason` is not null:
+- Show the reason clearly: "Your application was not approved. Reason: {decision_reason}"
+- Add a "Apply again" button that resets the form — pre-fill their previous faculty/department/level selections
+- When `status === 'pending'`, show: "Your application is under review. This usually takes 2-3 working days."
+
+---
+
+**FIX 15 — Add download count and vote count to all material cards**
+File: The `MaterialCard` component (wherever it renders in lists)
+
+Always show:
+- `{m.downloads} downloads` — as a small stat below the material type badge
+- `{m.up_votes}` upvotes — only if > 0, shown as a green thumbs-up count
+- For high-download materials (> 50), add a "Popular" badge in amber
+Remove the conditional that only shows downloads for trending items — it should always be visible as social proof.
 
 ---
 
 ## 🟢 POLISH — Do These Last
 
-**FIX 13 — Clarify "Delivery Agents" vs "Transport" in explore tabs**
-File: wherever the `/explore` tabs are rendered
+**FIX 16 — Smarter CTA on onboarding completion screen**
+File: The Step 4 / completion screen of `/study/onboarding`
 
-Add a subtitle or tooltip under each tab label:
-- "Delivery Agents" → subtitle: "For food and marketplace item delivery on campus"
-- "Transport" → subtitle: "For moving goods off-campus or between locations"
-
----
-
-**FIX 14 — Make delivery address copyable on vendor order card**
-File: `app/vendor/orders/page.tsx`
-
-Wrap the delivery address text in a button that copies to clipboard on tap. Show a "Copied!" toast on success. Use the existing toast library.
+Instead of three equal-weight flat cards, make the CTA dynamic:
+- If `practice_sets_count > 0`: hero CTA → "Start practising ({n} sets available)" → `/study/practice`
+- Else if `materials_count > 0`: hero CTA → "Browse materials ({n} available)" → `/study/materials`
+- Else: hero CTA → "Explore Study Hub" → `/study`
+- Secondary CTA always: "Ask a question" → `/study/questions/new`
+- Tertiary: "Upload materials" → `/study/upload`
 
 ---
 
-**FIX 15 — Add empty state for buyer when no rider is assigned yet**
-File: `app/my-orders/page.tsx`
+**FIX 17 — Show up to 3 active sessions in the Continue card**
+File: `app/study/_components/ContinueCard.tsx`
 
-When `order_type === 'delivery'` and `delivery_requests.status === 'open'`, show a coaching message below the order card:
-```
-"Your vendor is arranging a rider. You'll see updates here once one is assigned."
-```
-Style it as an amber info banner matching the existing design system.
+Instead of fetching one latest attempt, fetch up to 3 in-progress attempts (`status === 'in_progress'`), ordered by `updated_at` descending. Render each as a compact row in the card. If only 1: current behaviour. If 2+: stack them in the card with course code and progress visible per row.
+
+---
+
+**FIX 18 — Add "next action" CTAs to practice results screen**
+File: The practice results/submission screen
+
+After the score, weak questions, and streak feedback, add a "What next?" section with:
+- "Retry weak questions" → `/study/practice/{set_id}?due=1` (only if weak questions exist)
+- "Browse materials for {course_code}" → `/study/materials?course={course_code}`
+- "Try another set" → `/study/practice` 
+Each as a bordered card/button — equal weight, student picks their path.
+
+---
+
+**FIX 19 — Compact activity grid on home streak card**
+File: `app/study/_components/StudyHomeClient.tsx` or the streak card component
+
+Below the streak count on the home streak card, add a compact 2-row × 14-column dot grid showing the last 28 days of `study_daily_activity`. Each day is a small dot:
+- `did_practice === true` → filled dot in primary color
+- `did_practice === false` → empty dot in zinc-200
+- Today → outlined dot with a ring
+Fetch from `study_daily_activity` where `user_id = me` and `activity_date >= 28 days ago`. This is a read-only display — no new data writes.
+
+---
+
+**FIX 20 — Fold AI Study Plan into Practice Home as a widget**
+Files:
+- `app/study/practice/PracticeHomeClient.tsx` (add suggested session widget)
+- Keep `/study/ai-plan` as-is — don't remove it
+
+Add a "Suggested for today" widget at the top of the practice home that calls the same Gemini endpoint as the AI plan but returns a single focused session recommendation: "Based on your weak areas in CSC 201, try this 10-question set." Link directly to the recommended set. Show this only if the student has at least one completed attempt and at least one weak question flagged. If not, hide the widget entirely.
 
 ---
 
@@ -224,14 +269,18 @@ Style it as an amber info banner matching the existing design system.
 1. Read `CLAUDE.md` before starting
 2. Read every file before editing it — never assume structure
 3. Use the correct Supabase client — browser for client components, server for RSCs, admin for privileged writes
-4. Never use `any` for new TypeScript code — define proper types for all new data shapes
+4. Never use `any` for new TypeScript — define proper types for all new data shapes
 5. All new `Link` hrefs must point to pages that actually exist or that you're creating in this sprint
 6. After each fix confirm: which files were changed, what was added, what was removed
 7. Do not combine unrelated edits into a single file change
-8. Migrations go in `supabase/migrations/` with timestamp prefix — list them all at the start so I can run them in order before you implement the UI changes that depend on them
-9. Never touch RLS policies, existing DB schema beyond the specified migrations, or any system outside the delivery scope
+8. Run migrations before implementing any UI that depends on them
+9. Never touch RLS policies or any system outside the Study Hub scope
 10. If a component you need to edit doesn't exist yet, create it — don't skip
+11. Every empty state must have a coaching action — never leave a blank screen
+12. Every new data-fetching component needs a loading skeleton and an error state
 
-**Implement in order 1–15. Run all migrations first. Confirm each fix before moving to the next.**
+**Implement in order 1–20. Criticals first. Confirm each fix before moving to the next.**
 
-**The goal: A student orders jollof rice, selects delivery, pays the correct fee, and can track their order from 'Preparing' all the way to 'Delivered' — entirely inside Jabu Market."**
+**The goal: A 200L Engineering student opens Study Hub, finds a past question for their exact course in under 5 taps, practices MCQs, sees their due questions on the home screen every day, and has a reason to come back tomorrow — without needing WhatsApp or Google Drive for anything Study Hub covers."**
+
+---

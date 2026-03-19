@@ -616,6 +616,12 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                       onAnswerAdded={(a) => setAnswers([a])}
                     />
                   )}
+                  <Link
+                    href={`/study/tutors${question?.course_code ? `?course=${encodeURIComponent(question.course_code)}` : ""}`}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Need help now? Find a tutor for this course →
+                  </Link>
                 </>
               ) : (
                 <>

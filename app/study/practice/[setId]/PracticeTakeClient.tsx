@@ -27,6 +27,7 @@ import {
 import { Card, EmptyState } from "../../_components/StudyUI";
 import { cn, msToClock, normalize } from "@/lib/utils";
 import { usePracticeEngine } from "./usePracticeEngine";
+import { supabase } from "@/lib/supabase";
 
 type AnyOption = {
   id: string;
@@ -297,6 +298,32 @@ export default function PracticeTakeClient() {
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     };
   }, [submitted, finalizing, stats.correct, stats.total]);
+
+  // Streak feedback — fetched once when results appear
+  const [streakCount, setStreakCount] = useState<number | null>(null);
+  const streakFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!submitted || finalizing || streakFetchedRef.current) return;
+    streakFetchedRef.current = true;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const { data } = await supabase
+          .from("study_daily_activity")
+          .select("streak_count, did_practice")
+          .eq("user_id", user.id)
+          .eq("activity_date", today)
+          .maybeSingle();
+        if (data?.did_practice && typeof data?.streak_count === "number") {
+          setStreakCount(data.streak_count);
+        }
+      } catch {
+        // silent
+      }
+    })();
+  }, [submitted, finalizing]);
 
   const total = stats.total;
   const isLast = questions.length > 0 && idx >= questions.length - 1;
@@ -692,6 +719,69 @@ if (err || !meta) {
               </div>
             </Card>
           ) : null}
+
+          {/* Streak feedback */}
+          {streakCount !== null && (
+            <div className={cn(
+              "rounded-3xl border p-4",
+              streakCount >= 7
+                ? "border-amber-300/50 bg-amber-50 dark:bg-amber-950/20"
+                : "border-border bg-background"
+            )}>
+              <p className="text-sm font-extrabold text-foreground">
+                {streakCount === 1
+                  ? "You started a streak today — come back tomorrow!"
+                  : streakCount >= 7
+                  ? `${streakCount}-day streak — you're on a roll!`
+                  : `${streakCount}-day streak — keep it going!`}
+              </p>
+            </div>
+          )}
+
+          {/* What next? */}
+          <div className="rounded-3xl border border-border bg-background p-4">
+            <p className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground mb-3">What next?</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {weakSummary && weakSummary.some((r) => !r.wasCorrect) && (
+                <Link
+                  href={`/study/practice/${setId}?due=1`}
+                  className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-semibold text-foreground">Retry weak questions</p>
+                </Link>
+              )}
+              {meta?.course_code && (
+                <Link
+                  href={`/study/materials?course=${encodeURIComponent(meta.course_code)}`}
+                  className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-semibold text-foreground">Browse materials for {meta.course_code}</p>
+                </Link>
+              )}
+              <Link
+                href="/study/practice"
+                className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <GraduationCap className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-semibold text-foreground">Try another set</p>
+              </Link>
+            </div>
+          </div>
+
+          {/* Tutor prompt for low scores */}
+          {stats.total > 0 && stats.correct / stats.total < 0.5 && (
+            <div className="text-sm text-muted-foreground text-center mt-2">
+              Struggling?{" "}
+              <Link
+                href={`/study/tutors${meta?.course_code ? `?course=${encodeURIComponent(meta.course_code)}` : ""}`}
+                className="underline underline-offset-2 font-semibold text-foreground hover:opacity-80"
+              >
+                Connect with a tutor{meta?.course_code ? ` for ${meta.course_code}` : ""} →
+              </Link>
+            </div>
+          )}
 
           {/* GPA calculator prompt */}
           {stats.correct > 0 && (

@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import StudyTabs from "../_components/StudyTabs";
 import { Card, EmptyState } from "../_components/StudyUI";
 import { getAuthedUserId, toggleSaved } from "@/lib/studySaved";
+import { StudyPrefsProvider, useStudyPrefs } from "../_components/StudyPrefsContext";
 import {
   ArrowLeft,
   ArrowRight,
@@ -215,10 +216,11 @@ function QuestionCard({
   );
 }
 
-export default function QuestionsClient() {
+function QuestionsInner() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
+  const { prefs } = useStudyPrefs();
 
   // URL params
   const qParam = sp.get("q") ?? "";
@@ -226,6 +228,28 @@ export default function QuestionsClient() {
   const levelParam = (sp.get("level") ?? "") as LevelKey;
   const unsolvedParam = sp.get("unsolved") === "1";
   const sortParam = (sp.get("sort") ?? "newest") as SortKey;
+
+  // Auto-apply level from prefs on first load if not already set
+  const autoAppliedRef = useRef(false);
+  const [autoFilteredLevel, setAutoFilteredLevel] = useState<string | null>(null);
+  useEffect(() => {
+    if (autoAppliedRef.current) return;
+    autoAppliedRef.current = true;
+    if (!levelParam && prefs?.level) {
+      const lvl = String(prefs.level);
+      setAutoFilteredLevel(lvl);
+      router.replace(
+        buildHref(pathname, {
+          q: qParam || null,
+          course: courseParam || null,
+          level: lvl,
+          unsolved: unsolvedParam ? 1 : null,
+          sort: sortParam !== "newest" ? sortParam : null,
+        })
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs]);
 
   // local inputs (debounced -> URL)
   const [q, setQ] = useState(qParam);
@@ -553,6 +577,33 @@ export default function QuestionsClient() {
           Ask
         </Link>
       </div>
+
+      {/* Dept-level auto-filter chip */}
+      {autoFilteredLevel && levelParam === autoFilteredLevel && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground">
+            Filtered to Level {autoFilteredLevel}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setAutoFilteredLevel(null);
+              router.replace(
+                buildHref(pathname, {
+                  q: qParam || null,
+                  course: courseParam || null,
+                  level: null,
+                  unsolved: unsolvedParam ? 1 : null,
+                  sort: sortParam !== "newest" ? sortParam : null,
+                })
+              );
+            }}
+            className="text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Show all
+          </button>
+        </div>
+      )}
 
       {/* Header card */}
       <div className="rounded-3xl border border-border bg-background p-4">
@@ -901,5 +952,13 @@ export default function QuestionsClient() {
         />
       ) : null}
     </div>
+  );
+}
+
+export default function QuestionsClient() {
+  return (
+    <StudyPrefsProvider>
+      <QuestionsInner />
+    </StudyPrefsProvider>
   );
 }

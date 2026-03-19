@@ -72,6 +72,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await notifyMaterialApproved(id, String(row.title), String(row.uploader_id));
     }
 
+    // Fire department notifications — fire-and-forget, never blocks approval
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+      fetch(`${baseUrl}/api/study/notify-new-material`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ material_id: id }),
+      }).catch(() => {});
+    } catch {}
+
+    // Fire AI summary generation — fire-and-forget, never blocks approval
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+      fetch(`${baseUrl}/api/ai/summarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ material_id: id }),
+      }).catch(() => {});
+    } catch {}
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     const status = Number(e?.status) || 500;

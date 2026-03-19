@@ -11,6 +11,7 @@ import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsConte
 import { ForYouSection, MaterialCard, Section, Skeleton, type MaterialMini, type Chips } from "./_components/ForYouSection";
 import { ContinueCard } from "./_components/ContinueCard";
 import { StreakSection } from "./_components/StreakSection";
+import { DueTodayWidget } from "./_components/DueTodayWidget";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
@@ -180,6 +181,8 @@ function StudyHomeInner({
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={rep.status} />
 
+      <UnifiedSearch placeholder="Search courses, past questions, topics…" />
+
       {/* Semester mismatch banner */}
       {semesterPrompt.show && (
         <div className="sticky top-[49px] z-20 -mx-4 flex items-center justify-between gap-3 border-b border-amber-200/60 bg-amber-50 px-4 py-2.5 dark:border-amber-800/40 dark:bg-amber-950/40">
@@ -246,6 +249,8 @@ function StudyHomeInner({
 
       <StreakSection />
 
+      {userId && <DueTodayWidget userId={userId} />}
+
       {/* Welcome + chips */}
       <Card className="rounded-3xl">
         <div className="flex items-start justify-between gap-3">
@@ -295,9 +300,7 @@ function StudyHomeInner({
         </div>
 
         <div className="mt-4">
-          <UnifiedSearch placeholder="Search materials, courses, Q&A, practice…" />
-
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             {([
               {
                 label: "Past Questions",

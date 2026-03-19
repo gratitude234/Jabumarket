@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "../_components/StudyTabs";
 import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
+import { RequestCourseModal } from "../_components/RequestCourseModal";
 import {
   ArrowLeft,
   ArrowRight,
@@ -858,6 +859,101 @@ function CreateSetDrawer({
   );
 }
 
+// ─── "Suggested for today" widget ────────────────────────────────────────────
+
+function SuggestedTodayWidget() {
+  const [suggestion, setSuggestion] = React.useState<{
+    courseCode: string;
+    setId: string;
+    setTitle: string;
+  } | null>(null);
+  const [checked, setChecked] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+
+        // Check if user has any completed attempts
+        const { data: attempts } = await supabase
+          .from("study_practice_attempts")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "submitted")
+          .limit(1);
+        if (!attempts?.length || cancelled) return;
+
+        // Find courses with most weak questions due
+        const { data: weakRows } = await supabase
+          .from("study_weak_questions")
+          .select("course_code")
+          .eq("user_id", user.id)
+          .is("graduated_at", null)
+          .limit(50);
+        if (!weakRows?.length || cancelled) return;
+
+        // Find the course code with the most weak questions
+        const counts: Record<string, number> = {};
+        for (const r of weakRows as any[]) {
+          const c = r?.course_code;
+          if (c) counts[c] = (counts[c] ?? 0) + 1;
+        }
+        const topCourse = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+        if (!topCourse || cancelled) return;
+
+        // Find a published quiz set for that course
+        const { data: sets } = await supabase
+          .from("study_quiz_sets")
+          .select("id, title")
+          .eq("course_code", topCourse)
+          .eq("published", true)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (!sets?.length || cancelled) return;
+
+        const set = (sets as any[])[0];
+        setSuggestion({ courseCode: topCourse, setId: set.id, setTitle: set.title ?? "Practice set" });
+      } catch {
+        // silent
+      } finally {
+        if (!cancelled) setChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!checked || !suggestion) return null;
+
+  return (
+    <div className="rounded-3xl border border-border bg-background p-4">
+      <div className="flex items-start gap-3">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground">Suggested for today</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">
+            Based on your weak areas in {suggestion.courseCode}, try this set.
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground truncate">{suggestion.setTitle}</p>
+          <Link
+            href={`/study/practice/${encodeURIComponent(suggestion.setId)}`}
+            className={cn(
+              "mt-3 inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline",
+              "hover:opacity-90",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            Start <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PracticeHomeClient() {
   const router = useRouter();
   const pathname = usePathname();
@@ -881,6 +977,7 @@ export default function PracticeHomeClient() {
   // Local state
   const [q, setQ] = useState(qParam);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   // Preview sheet
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -1235,7 +1332,8 @@ export default function PracticeHomeClient() {
 
       let query = supabase.from("study_quiz_sets").select(selectFields, { count: "exact" });
 
-      if (publishedOnly) query = query.eq("published", true);
+      // Always filter to published sets — unpublished sets are not accessible to students
+      query = query.eq("published", true);
 
       const qNorm = normalizeQuery(qParam);
       if (qNorm) {
@@ -1461,6 +1559,9 @@ export default function PracticeHomeClient() {
     // FIX: prevent any horizontal overflow across the whole page
     <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-28 md:pb-6">
       <StudyTabs />
+
+      {/* Suggested for today widget */}
+      <SuggestedTodayWidget />
 
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
@@ -1855,21 +1956,34 @@ export default function PracticeHomeClient() {
                   title="No practice sets found"
                   description={
                     hasAnyFilters
-                      ? "Try clearing filters or searching a different course/topic."
-                      : "No sets have been published yet. Check Materials or come back later."
+                      ? "No content yet for this course. Help us grow — request it."
+                      : "No sets have been published yet. Request content or check Materials."
                   }
                   action={
-                    <Link
-                      href="/study/materials"
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
-                        "hover:opacity-90",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                      )}
-                    >
-                      <Flame className="h-4 w-4" />
-                      Browse Materials
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRequestModalOpen(true)}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+                          "hover:opacity-90",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        )}
+                      >
+                        Request this course
+                      </button>
+                      <Link
+                        href="/study/materials"
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground no-underline",
+                          "hover:bg-secondary/50",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        )}
+                      >
+                        <Flame className="h-4 w-4" />
+                        Browse Materials
+                      </Link>
+                    </div>
                   }
                 />
               </div>
@@ -2199,6 +2313,13 @@ export default function PracticeHomeClient() {
         onClose={() => setCreateOpen(false)}
         repScope={repScope}
         onCreated={(id) => setToast(`Set created — redirecting to editor…`)}
+      />
+
+      {/* Request course modal */}
+      <RequestCourseModal
+        open={requestModalOpen}
+        onClose={() => setRequestModalOpen(false)}
+        initialCourseCode={courseParam}
       />
 
       {/* Toast */}
