@@ -53,7 +53,8 @@ export async function POST(req: Request) {
         body: 'Your existing order is not affected — they are still preparing it.',
         href: '/my-orders',
       }))
-    ).catch(() => {});
+    );
+    // swallow — notification failure must not break the pause response
 
     // Also post a message in each active conversation so it appears in chat
     const convMessages = activeOrders
@@ -66,7 +67,9 @@ export async function POST(req: Request) {
       }));
 
     if (convMessages.length > 0) {
-      await admin.from('messages').insert(convMessages).catch(() => {});
+      try {
+        await admin.from('messages').insert(convMessages);
+      } catch (_) {}
     }
 
     return NextResponse.json({ ok: true, notified: buyerIds.length });
