@@ -3,7 +3,8 @@
 import React, { useState, useCallback } from "react";
 import { Card, PageHeader } from "@/app/study/_components/StudyUI";
 
-const STEPS = ["paste", "meta", "preview", "sql"];
+const STEPS = ["paste", "meta", "preview", "sql"] as const;
+type Step = typeof STEPS[number];
 
 const STEP_LABELS = {
   paste: "01 — Paste Text",
@@ -23,7 +24,7 @@ function genUUID() {
   });
 }
 
-function StepIndicator({ current }: { current: string }) {
+function StepIndicator({ current }: { current: Step }) {
   return (
     <div className="flex gap-0 mb-8">
       {STEPS.map((s, i) => {
