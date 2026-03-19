@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { notifyRepsNewPendingMaterial } from "@/lib/studyNotify";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,27 @@ export async function POST(req: Request) {
 
     const admin = createSupabaseAdminClient();
 
+    // Resolve whether the uploader is an active rep/librarian.
+    // Reps bypass the approval queue — their uploads are auto-approved.
+    const { data: repRow } = await admin
+      .from("study_reps")
+      .select("user_id, role, department_id, faculty_id")
+      .eq("user_id", userId)
+      .eq("active", true)
+      .maybeSingle();
+
+    const isRep = !!repRow;
+
+    // Also honour study_admins as auto-approvers
+    const { data: adminRow } = await admin
+      .from("study_admins")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const autoApprove = isRep || !!adminRow;
+    const nowIso = new Date().toISOString();
+
     // 1) Verify course exists
     const { data: courseRow, error: courseErr } = await admin
       .from("study_courses")
@@ -103,7 +125,9 @@ export async function POST(req: Request) {
         course_id,
         title,
         session,
-        approved: false,
+        approved: autoApprove,
+        approved_by: autoApprove ? userId : null,
+        approved_at: autoApprove ? nowIso : null,
         material_type,
         downloads: 0,
         file_hash: file_hash || null,
@@ -200,12 +224,25 @@ export async function POST(req: Request) {
       return jsonError("Signed upload response missing token/path", 500, "SIGN_UPLOAD_FAILED");
     }
 
+    // For non-rep uploads: notify reps of the course's department so they
+    // can review from the study-admin panel. Fire-and-forget — never blocks.
+    if (!autoApprove && material_id) {
+      notifyRepsNewPendingMaterial({
+        materialId: material_id,
+        title,
+        courseCode: String((courseRow as any)?.course_code ?? ""),
+        departmentId: (courseRow as any)?.department_id ?? null,
+        uploaderEmail: uploader_email,
+      }).catch(() => {});
+    }
+
     return NextResponse.json({
       ok: true,
       material_id,
       bucket: BUCKET,
       path: signedPath,
       token,
+      auto_approved: autoApprove,
     });
   } catch (e: any) {
     const code = typeof e?.code === "string" ? e.code : undefined;

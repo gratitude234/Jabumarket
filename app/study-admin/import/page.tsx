@@ -416,7 +416,7 @@ export default function MCQImporter() {
       if (!response.ok) throw new Error(data.error || "Parse failed");
       setQuestions(data.questions);
     } catch (e) {
-      setParseError("Parsing failed: " + e.message);
+      setParseError("Parsing failed: " + (e instanceof Error ? e.message : String(e)));
       setStep("meta");
     } finally {
       setParsing(false);

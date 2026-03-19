@@ -145,3 +145,71 @@ export async function notifyUpvoteMilestone({
     // notification failure must never break the upvote flow
   }
 }
+// ─── New pending material (student upload) ────────────────────────────────────
+
+/**
+ * Notify all active reps and librarians in the material's department that a
+ * student has submitted a material pending their review.
+ *
+ * Called only for non-rep uploads (reps are auto-approved and skip the queue).
+ * Fire-and-forget — errors are swallowed so a notification failure never
+ * blocks the upload response.
+ */
+export async function notifyRepsNewPendingMaterial({
+  materialId,
+  title,
+  courseCode,
+  departmentId,
+  uploaderEmail,
+}: {
+  materialId: string;
+  title: string;
+  courseCode: string;
+  departmentId: string | null;
+  uploaderEmail: string | null;
+}): Promise<void> {
+  try {
+    const admin = createSupabaseAdminClient();
+
+    // Find active reps/librarians scoped to this department.
+    // If no department_id is known, fall back to notifying super admins only.
+    let repQuery = admin
+      .from("study_reps")
+      .select("user_id")
+      .eq("active", true);
+
+    if (departmentId) {
+      repQuery = repQuery.eq("department_id", departmentId);
+    }
+
+    const { data: reps } = await repQuery;
+
+    // Also get study_admins (super admins always see pending queue)
+    const { data: superAdmins } = await admin
+      .from("study_admins")
+      .select("user_id");
+
+    const recipientIds = new Set<string>();
+    for (const r of (reps ?? []) as { user_id: string }[]) recipientIds.add(r.user_id);
+    for (const a of (superAdmins ?? []) as { user_id: string }[]) recipientIds.add(a.user_id);
+
+    if (recipientIds.size === 0) return;
+
+    const shortTitle = title.length > 55 ? title.slice(0, 52).trimEnd() + "…" : title;
+    const uploaderHint = uploaderEmail ? ` from ${uploaderEmail.split("@")[0]}` : "";
+
+    const notifications = [...recipientIds].map((uid) => ({
+      user_id: uid,
+      type: "study_material_pending",
+      title: `New material pending review`,
+      body: `${courseCode ? `[${courseCode}] ` : ""}${shortTitle}${uploaderHint} — needs your approval.`,
+      href: `/study-admin/materials`,
+      is_read: false,
+    }));
+
+    // Insert in one batch
+    await admin.from("notifications").insert(notifications);
+  } catch {
+    // notification failure must never block uploads
+  }
+}

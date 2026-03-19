@@ -69,7 +69,8 @@ type UploadInitResponse =
       material_id: string;
       bucket: string;
       path: string;
-      token: string; // for uploadToSignedUrl
+      token: string;
+      auto_approved: boolean;
     }
   | {
       ok: false;
@@ -509,7 +510,7 @@ export default function UploadMaterialsPage() {
         throw new Error(friendlyError(initRes.code, initRes.message));
       }
 
-      const { bucket, path, token, material_id } = initRes;
+      const { bucket, path, token, material_id, auto_approved } = initRes;
 
       setUploadProgress(0);
       const { error: uploadErr } = await (supabase.storage.from(bucket) as any).uploadToSignedUrl(
@@ -527,7 +528,12 @@ export default function UploadMaterialsPage() {
       if (uploadErr) throw new Error((uploadErr as any).message || "File upload failed.");
       setUploadProgress(100);
 
-      setBanner({ type: "success", text: "Uploaded! Your material is pending review." });
+      setBanner({
+        type: "success",
+        text: auto_approved
+          ? "✅ Uploaded and live! Your material is now visible to students."
+          : "📬 Uploaded! Your material is in the review queue — a rep will approve it shortly.",
+      });
 
       // best-effort completion ping
       try {
@@ -688,6 +694,20 @@ export default function UploadMaterialsPage() {
         <>
           {/* Quick summary (mobile-first): show selected course at top once picked */}
           {selectedCourse ? <Card className="p-4 sm:hidden">{SelectedCourseChip}</Card> : null}
+
+          {/* Info banner: explain queue to non-reps */}
+          {!isRep && (
+            <div className="flex items-start gap-3 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/30">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="text-sm text-amber-900 dark:text-amber-200">
+                <span className="font-semibold">Your upload will be reviewed before going live.</span>{" "}
+                A course rep or librarian will approve it — usually within 24 hours. You can track your uploads in{" "}
+                <Link href="/study/materials/my" className="underline underline-offset-2">
+                  My uploads
+                </Link>.
+              </div>
+            </div>
+          )}
 
           {/* Step 1: Select course */}
           <Card className="p-5" id="course-picker">
