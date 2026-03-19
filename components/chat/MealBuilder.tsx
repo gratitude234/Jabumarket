@@ -521,7 +521,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
     );
   }
 
-  if (status === 'error' || (!categories.length && status !== 'loading')) {
+  if (status === 'error' || !categories.length) {
     return (
       <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
         {error ?? 'Menu unavailable'}
