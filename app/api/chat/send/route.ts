@@ -91,20 +91,21 @@ export async function POST(req: Request) {
         .update({
           last_message_at: new Date().toISOString(),
           last_message_preview: body.body.trim().slice(0, 100),
-          vendor_unread: supabase.rpc as any, // incremented below via raw SQL fallback
         })
         .eq('id', body.conversation_id);
 
       // Increment vendor_unread
-      await admin.rpc('increment_vendor_unread' as any, {
-        convo_id: body.conversation_id,
-      }).catch(() => {
+      try {
+        await admin.rpc('increment_vendor_unread' as any, {
+          convo_id: body.conversation_id,
+        });
+      } catch {
         // If RPC doesn't exist yet, do it manually
-        admin
+        await admin
           .from('conversations')
           .update({ last_message_at: new Date().toISOString() })
           .eq('id', body.conversation_id);
-      });
+      }
 
       return NextResponse.json({ ok: true, message: msg });
     }
