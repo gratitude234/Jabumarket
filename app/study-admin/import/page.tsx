@@ -188,7 +188,7 @@ function QuestionCard({ q, idx, onChange, onDelete }: { q: Question; idx: number
     const opts = q.options.map((o, i) => i === oi ? { ...o, [k]: v } : o);
     onChange({ ...q, options: opts });
   };
-  const setCorrect = (oi) => {
+  const setCorrect = (oi: number) => {
     const opts = q.options.map((o, i) => ({ ...o, is_correct: i === oi }));
     onChange({ ...q, options: opts });
   };
@@ -251,10 +251,10 @@ function QuestionCard({ q, idx, onChange, onDelete }: { q: Question; idx: number
 }
 
 function StepPreview({ questions, setQuestions, onNext, onBack, parsing }: { questions: Question[]; setQuestions: React.Dispatch<React.SetStateAction<Question[]>>; onNext: () => void; onBack: () => void; parsing: boolean }) {
-  const update = useCallback((i, q) => {
+  const update = useCallback((i: number, q: Question) => {
     setQuestions(qs => qs.map((x, j) => j === i ? q : x));
   }, [setQuestions]);
-  const del = (i) => setQuestions(qs => qs.filter((_, j) => j !== i));
+  const del = (i: number) => setQuestions(qs => qs.filter((_, j) => j !== i));
 
   const issues = questions.filter(q => !q.options.some(o => o.is_correct)).length;
 
@@ -340,9 +340,9 @@ function StepSQL({ sql, onBack }: { sql: string; onBack: () => void }) {
 function buildSQL(meta: MetaState, questions: Question[]) {
   const setId = genUUID();
   const now = new Date().toISOString();
-  const esc = (s) => (s || "").replace(/'/g, "''");
+  const esc = (s: string) => (s || "").replace(/'/g, "''");
 
-  const lines = [];
+  const lines: string[] = [];
   lines.push(`-- ============================================================`);
   lines.push(`-- Jabumarket Quiz Import`);
   lines.push(`-- Generated: ${now}`);

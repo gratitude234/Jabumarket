@@ -37,31 +37,15 @@ type UserPrefs = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const ADJECTIVES = [
-  "Swift", "Bright", "Bold", "Keen", "Sharp", "Brave", "Calm", "Clear",
-  "Deep", "Fair", "Fine", "Firm", "Free", "Full", "Grand", "Great",
-  "High", "Just", "Kind", "Loud", "Pure", "Rare", "Rich", "Safe",
-  "Soft", "Sure", "True", "Vast", "Warm", "Wide", "Wise", "Young",
-];
-const NOUNS = [
-  "Eagle", "Hawk", "Bear", "Wolf", "Lion", "Lynx", "Deer", "Crane",
-  "Dove", "Finch", "Kite", "Lark", "Pike", "Rook", "Teal", "Wren",
-  "Fox", "Stag", "Colt", "Bard", "Sage", "Monk", "Scribe", "Scout",
-  "Guide", "Pilot", "Ranger", "Warden", "Knight", "Herald", "Envoy", "Steward",
-];
+/** user_id → display name (full_name from profiles, fallback to email prefix) */
+type ProfileMap = Record<string, string>;
 
-function toAlias(userId: string): string {
-  const raw = userId.replace(/-/g, "");
-  const tail = raw.slice(-8);
-  const num = parseInt(tail, 16);
-  const adj = ADJECTIVES[num % ADJECTIVES.length];
-  const noun = NOUNS[Math.floor(num / ADJECTIVES.length) % NOUNS.length];
-  const tag = tail.slice(-4).toUpperCase();
-  return `${adj} ${noun} #${tag}`;
+function displayName(userId: string, email: string, profileMap: ProfileMap): string {
+  return profileMap[userId] ?? email?.split("@")[0] ?? "Anonymous";
 }
 
-function initials(alias: string): string {
-  const parts = alias.split(" ");
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
   const a = parts[0]?.[0] ?? "?";
   const b = parts[1]?.[0] ?? "";
   return (a + b).toUpperCase();
@@ -133,6 +117,7 @@ async function fetchLeaderboard(scope: Scope): Promise<{
   userPrefs: UserPrefs | null;
   scopeLabel: string;
   outsideTopNRow: { row: LeaderRow; rank: number } | null;
+  profileMap: ProfileMap;
 }> {
   const supabase = await createSupabaseServerClient();
 
@@ -196,7 +181,7 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     const viewMissing =
       leaderboardResult.error.code === "42P01" ||
       leaderboardResult.error.message.toLowerCase().includes("study_leaderboard_v");
-    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel, outsideTopNRow: null };
+    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel, outsideTopNRow: null, profileMap: {} };
     throw new Error(leaderboardResult.error.message);
   }
 
@@ -220,6 +205,22 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     }
   }
 
+  // Bulk-fetch real names from profiles for all visible user_ids
+  const allIds = [
+    ...rows.map((r) => r.user_id),
+    ...(outsideTopNRow ? [outsideTopNRow.row.user_id] : []),
+  ];
+  const profileMap: ProfileMap = {};
+  if (allIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id,full_name")
+      .in("id", allIds);
+    for (const p of (profiles ?? []) as { id: string; full_name: string | null }[]) {
+      if (p.full_name?.trim()) profileMap[p.id] = p.full_name.trim();
+    }
+  }
+
   return {
     rows,
     viewMissing: false,
@@ -227,6 +228,7 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     userPrefs,
     scopeLabel,
     outsideTopNRow,
+    profileMap,
   };
 }
 
@@ -285,15 +287,14 @@ function ScopeTabs({
 
 // ─── Sub-components (unchanged from original) ─────────────────────────────────
 
-function YourRankCard({ row, rank }: { row: LeaderRow; rank: number }) {
-  const alias = toAlias(row.user_id);
+function YourRankCard({ row, rank, name }: { row: LeaderRow; rank: number; name: string }) {
   return (
     <div className="rounded-3xl border-2 border-foreground bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-muted-foreground">Your rank</p>
           <p className="mt-1 text-2xl font-extrabold text-foreground">#{rank}</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{alias}</p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{name}</p>
           <p className="mt-1 text-sm font-extrabold text-foreground">
             {row.points.toLocaleString("en-NG")}{" "}
             <span className="font-normal text-muted-foreground">pts</span>
@@ -314,12 +315,13 @@ function PodiumCard({
   row,
   rank,
   isCurrentUser,
+  name,
 }: {
   row: LeaderRow;
   rank: 1 | 2 | 3;
   isCurrentUser: boolean;
+  name: string;
 }) {
-  const alias = toAlias(row.user_id);
   const iconBg =
     rank === 1
       ? "bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800"
@@ -329,6 +331,7 @@ function PodiumCard({
 
   return (
     <div
+      id={isCurrentUser ? "my-rank" : undefined}
       className={cn(
         "rounded-3xl border bg-card p-4 shadow-sm",
         isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
@@ -344,7 +347,7 @@ function PodiumCard({
               </span>
             )}
           </div>
-          <p className="mt-1 truncate text-base font-extrabold text-foreground">{alias}</p>
+          <p className="mt-1 truncate text-base font-extrabold text-foreground">{name}</p>
           <p className="mt-1 text-sm font-semibold text-foreground">
             {row.points.toLocaleString("en-NG")}{" "}
             <span className="text-muted-foreground font-normal">pts</span>
@@ -390,14 +393,16 @@ function RankRow({
   row,
   rank,
   isCurrentUser,
+  name,
 }: {
   row: LeaderRow;
   rank: number;
   isCurrentUser: boolean;
+  name: string;
 }) {
-  const alias = toAlias(row.user_id);
   return (
     <details
+      id={isCurrentUser ? "my-rank" : undefined}
       className={cn(
         "group rounded-2xl border bg-card transition-colors",
         isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
@@ -411,12 +416,12 @@ function RankRow({
       >
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-background text-sm font-extrabold text-foreground">
-            {initials(alias)}
+            {initials(name)}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="truncate text-sm font-semibold text-foreground">
-                #{rank} · {alias}
+                #{rank} · {name}
               </p>
               {isCurrentUser && (
                 <span className="shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
@@ -446,6 +451,48 @@ function RankRow({
   );
 }
 
+// ─── Sticky rank anchor bar ───────────────────────────────────────────────────
+// Visible to logged-in users who have earned points. Stays pinned below the
+// top nav while scrolling. Clicking it jumps to #my-rank in the list.
+
+function StickyRankBar({
+  rank,
+  points,
+  name,
+}: {
+  rank: number;
+  points: number;
+  name: string;
+}) {
+  return (
+    <div className="sticky top-16 z-30">
+      <a
+        href="#my-rank"
+        className={cn(
+          "flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-background/90 px-4 py-2.5 shadow-sm backdrop-blur",
+          "text-sm font-semibold text-foreground no-underline hover:bg-secondary/60 transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        )}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-primary/10 text-[11px] font-extrabold text-primary">
+            {initials(name)}
+          </span>
+          <span className="truncate">
+            <span className="text-muted-foreground">You · </span>
+            {name}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-xs">
+          <span className="font-extrabold text-foreground">#{rank}</span>
+          <span className="text-muted-foreground">{points.toLocaleString("en-NG")} pts</span>
+          <span className="text-muted-foreground">↓ Jump</span>
+        </div>
+      </a>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function LeaderboardPage({
@@ -464,6 +511,7 @@ export default async function LeaderboardPage({
   let userPrefs: UserPrefs | null = null;
   let scopeLabel = "All of JABU";
   let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
+  let profileMap: ProfileMap = {};
 
   try {
     const result = await fetchLeaderboard(scope);
@@ -473,6 +521,7 @@ export default async function LeaderboardPage({
     userPrefs = result.userPrefs;
     scopeLabel = result.scopeLabel;
     outsideTopNRow = result.outsideTopNRow;
+    profileMap = result.profileMap;
   } catch (e: any) {
     fetchError = e?.message ?? "Failed to load leaderboard";
   }
@@ -486,6 +535,13 @@ export default async function LeaderboardPage({
   const myRow = myRankIndex >= 0 ? rows[myRankIndex] : null;
   const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
   const showYourRankCard = myRow !== null && myRank !== null && myRank > 3;
+
+  const activeUserRow = myRow ?? outsideTopNRow?.row ?? null;
+  const activeUserRank = myRank ?? outsideTopNRow?.rank ?? null;
+  const myName = activeUserRow
+    ? displayName(activeUserRow.user_id, activeUserRow.email, profileMap)
+    : null;
+  const showStickyBar = !!currentUserId && !!activeUserRow && !!activeUserRank && !fetchError && !viewMissing;
 
   // Show a hint when dept/level scope finds no one (user is alone or prefs missing)
   const scopeEmpty = !fetchError && rows.length === 0 && scope !== "all";
@@ -532,9 +588,6 @@ export default async function LeaderboardPage({
                 Points: accepted (×5) + answer (×2) + question (×1) + upvote (×1) + practice (×1)
               </span>
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Names are anonymised — tap any row to see how points were earned.
-            </p>
           </div>
           <div className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-background">
             <Trophy className="h-6 w-6 text-foreground" />
@@ -564,12 +617,16 @@ export default async function LeaderboardPage({
       {/* Scope tab bar */}
       <ScopeTabs scope={scope} userPrefs={userPrefs} />
 
-      {/* User rank summary line */}
-      {currentUserId && !fetchError && !viewMissing ? (
+      {/* Sticky rank anchor bar */}
+      {showStickyBar && myName && activeUserRank && activeUserRow ? (
+        <StickyRankBar
+          rank={activeUserRank}
+          points={activeUserRow.points}
+          name={myName}
+        />
+      ) : currentUserId && !fetchError && !viewMissing && !activeUserRow ? (
         <p className="text-sm text-muted-foreground">
-          {myRow || outsideTopNRow
-            ? `Your rank: #${myRank ?? outsideTopNRow?.rank} · ${(myRow ?? outsideTopNRow?.row)?.points.toLocaleString("en-NG")} points`
-            : "You haven't earned any points yet — answer a question to get started."}
+          You haven&apos;t earned any points yet — answer a question to get started.
         </p>
       ) : null}
 
@@ -591,7 +648,7 @@ export default async function LeaderboardPage({
 
       {/* Your rank card */}
       {showYourRankCard && myRow && myRank ? (
-        <YourRankCard row={myRow} rank={myRank} />
+        <YourRankCard row={myRow} rank={myRank} name={myName ?? ""} />
       ) : null}
 
       {myRow && myRank && myRank <= 3 ? (
@@ -645,6 +702,7 @@ export default async function LeaderboardPage({
               row={r}
               rank={(i + 1) as 1 | 2 | 3}
               isCurrentUser={r.user_id === currentUserId}
+              name={displayName(r.user_id, r.email, profileMap)}
             />
           ))}
         </div>
@@ -661,6 +719,7 @@ export default async function LeaderboardPage({
                 row={r}
                 rank={i + 4}
                 isCurrentUser={r.user_id === currentUserId}
+                name={displayName(r.user_id, r.email, profileMap)}
               />
             ))}
           </div>
@@ -671,6 +730,7 @@ export default async function LeaderboardPage({
                 row={outsideTopNRow.row}
                 rank={outsideTopNRow.rank}
                 isCurrentUser
+                name={displayName(outsideTopNRow.row.user_id, outsideTopNRow.row.email, profileMap)}
               />
             </div>
           )}
@@ -682,6 +742,7 @@ export default async function LeaderboardPage({
               row={outsideTopNRow.row}
               rank={outsideTopNRow.rank}
               isCurrentUser
+              name={displayName(outsideTopNRow.row.user_id, outsideTopNRow.row.email, profileMap)}
             />
           </div>
         </div>
