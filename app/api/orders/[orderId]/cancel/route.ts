@@ -63,23 +63,28 @@ export async function POST(
 
     // ── Post cancellation message in conversation ─────────────────────────────
     if (order.conversation_id) {
-      await admin.from('messages').insert({
-        conversation_id: order.conversation_id,
-        sender_id: user.id,
-        body: '❌ Order cancelled by customer',
-        type: 'text',
-      }).catch(() => {});
+      try {
+        await admin.from('messages').insert({
+          conversation_id: order.conversation_id,
+          sender_id: user.id,
+          body: '❌ Order cancelled by customer',
+          type: 'text',
+        });
+      } catch (_) {}
 
-      await admin.from('conversations')
-        .update({
-          last_message_preview: '❌ Order cancelled by customer',
-          last_message_at: new Date().toISOString(),
-        })
-        .eq('id', order.conversation_id)
-        .catch(() => {});
+      try {
+        await admin.from('conversations')
+          .update({
+            last_message_preview: '❌ Order cancelled by customer',
+            last_message_at: new Date().toISOString(),
+          })
+          .eq('id', order.conversation_id);
+      } catch (_) {}
 
       // Increment vendor unread so they see the cancellation
-      await admin.rpc('increment_vendor_unread' as any, { convo_id: order.conversation_id }).catch(() => {});
+      try {
+        await admin.rpc('increment_vendor_unread' as any, { convo_id: order.conversation_id });
+      } catch (_) {}
     }
 
     // ── Notify vendor ─────────────────────────────────────────────────────────
@@ -90,13 +95,15 @@ export async function POST(
       .single();
 
     if (vendor?.user_id) {
-      await admin.from('notifications').insert({
-        user_id: vendor.user_id,
-        type: 'order_cancelled',
-        title: 'Order cancelled',
-        body: `A ₦${order.total.toLocaleString()} order was cancelled before you accepted it.`,
-        href: '/vendor/orders',
-      }).catch(() => {});
+      try {
+        await admin.from('notifications').insert({
+          user_id: vendor.user_id,
+          type: 'order_cancelled',
+          title: 'Order cancelled',
+          body: `A ₦${order.total.toLocaleString()} order was cancelled before you accepted it.`,
+          href: '/vendor/orders',
+        });
+      } catch (_) {}
     }
 
     return NextResponse.json({ ok: true });
