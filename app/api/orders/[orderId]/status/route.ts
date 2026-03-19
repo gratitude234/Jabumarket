@@ -107,60 +107,71 @@ export async function PATCH(
     // Requires eta_ready_at TIMESTAMPTZ column on orders table.
     // Wrapped separately so a missing column never breaks the main update.
     if (eta && newStatus === 'preparing') {
-      await admin
-        .from('orders')
-        .update({ eta_ready_at: new Date(Date.now() + eta * 60 * 1000).toISOString() })
-        .eq('id', orderId)
-        .catch(() => {});
+      try {
+        await admin
+          .from('orders')
+          .update({ eta_ready_at: new Date(Date.now() + eta * 60 * 1000).toISOString() })
+          .eq('id', orderId);
+      } catch (_) {}
     }
 
     const msgBody = buildStatusMessage(newStatus, order.order_type ?? 'pickup', eta);
 
     // Post status message in conversation
     if (order.conversation_id) {
-      await admin.from('messages').insert({
-        conversation_id: order.conversation_id,
-        sender_id: user.id,
-        body: msgBody,
-        type: 'text',
-      }).catch(() => {});
+      try {
+        await admin.from('messages').insert({
+          conversation_id: order.conversation_id,
+          sender_id: user.id,
+          body: msgBody,
+          type: 'text',
+        });
+      } catch (_) {}
 
-      await admin.from('conversations')
-        .update({ last_message_at: new Date().toISOString(), last_message_preview: msgBody })
-        .eq('id', order.conversation_id)
-        .catch(() => {});
+      try {
+        await admin.from('conversations')
+          .update({ last_message_at: new Date().toISOString(), last_message_preview: msgBody })
+          .eq('id', order.conversation_id);
+      } catch (_) {}
 
-      await admin.rpc('increment_buyer_unread' as any, { convo_id: order.conversation_id }).catch(() => {});
+      try {
+        await admin.rpc('increment_buyer_unread' as any, { convo_id: order.conversation_id });
+      } catch (_) {}
     }
 
     // Notify buyer — href goes to /my-orders so they see order tracking, not just chat
-    await admin.from('notifications').insert({
-      user_id: order.buyer_id,
-      type: 'order_status',
-      title: STATUS_TITLES[newStatus] ?? `Order ${newStatus}`,
-      body: msgBody,
-      href: `/my-orders`,
-    }).catch(() => {});
+    try {
+      await admin.from('notifications').insert({
+        user_id: order.buyer_id,
+        type: 'order_status',
+        title: STATUS_TITLES[newStatus] ?? `Order ${newStatus}`,
+        body: msgBody,
+        href: `/my-orders`,
+      });
+    } catch (_) {}
 
     // When delivered: send a second notification prompting the buyer to leave a review.
     // Fire-and-forget — a review failure must never break the status update.
     if (newStatus === 'delivered') {
-      const { data: vendorRow } = await admin
-        .from('vendors')
-        .select('name')
-        .eq('id', order.vendor_id)
-        .maybeSingle()
-        .catch(() => ({ data: null }));
+      let vendorName = 'the vendor';
+      try {
+        const { data: vendorRow } = await admin
+          .from('vendors')
+          .select('name')
+          .eq('id', order.vendor_id)
+          .maybeSingle();
+        vendorName = vendorRow?.name ?? vendorName;
+      } catch (_) {}
 
-      const vendorName = vendorRow?.name ?? 'the vendor';
-
-      await admin.from('notifications').insert({
-        user_id: order.buyer_id,
-        type: 'review_prompt',
-        title: 'How was your order?',
-        body: `Leave a quick rating for ${vendorName} — it helps other students.`,
-        href: `/vendors/${order.vendor_id}?review=1`,
-      }).catch(() => {});
+      try {
+        await admin.from('notifications').insert({
+          user_id: order.buyer_id,
+          type: 'review_prompt',
+          title: 'How was your order?',
+          body: `Leave a quick rating for ${vendorName} — it helps other students.`,
+          href: `/vendors/${order.vendor_id}?review=1`,
+        });
+      } catch (_) {}
     }
 
     return NextResponse.json({ ok: true, order: updatedOrder });
