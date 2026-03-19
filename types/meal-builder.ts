@@ -222,3 +222,13 @@ export function withLegacyFields(payload: OrderPayload): OrderPayload {
     extras:   get('optional_multi'),
   };
 }
+// Human-readable text summary of an order payload — used for message body / notifications
+export function orderPayloadToText(payload: OrderPayload): string {
+  if (!Array.isArray(payload.lines) || payload.lines.length === 0) {
+    return `Meal order — ₦${payload.total?.toLocaleString() ?? 0}`;
+  }
+  const items = payload.lines
+    .map((l) => `${l.emoji ?? ''} ${l.name}${l.qty > 1 ? ` ×${l.qty}` : ''}`.trim())
+    .join(', ');
+  return `🛒 ${items} — ₦${payload.total.toLocaleString()}`;
+}
