@@ -1205,7 +1205,7 @@ export default async function ExplorePage({
         {/* Recent searches — shown when no active query */}
         <RecentSearchesBar
           q={q}
-          buildHref={(s) => buildExploreHref({ ...activeFilters, q: s, page: 1 })}
+          activeFilters={activeFilters}
         />
 
         {/* Active filter chips row */}
