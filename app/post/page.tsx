@@ -626,6 +626,7 @@ export default function PostPage() {
 
       try {
         window.localStorage.removeItem(DRAFT_KEY);
+        window.localStorage.setItem('jm_has_listed', '1');
       } catch {}
 
       setPostedId(created?.id ?? null);

@@ -3,24 +3,38 @@
 // — Caching (PWA offline support)
 // — Web Push notifications
 
-const CACHE_NAME = 'jabumarket-v1';
+const params = new URLSearchParams(self.location.search)
+const CACHE_NAME = 'jabumarket-' + (params.get('v') ?? 'dev')
 
-// Assets to pre-cache on install
-const PRECACHE_URLS = [
-  '/',
-  '/explore',
-  '/food',
-  '/study',
-  '/offline',
-];
+// Only precache the offline fallback — it's static and safe to cache
+const PRECACHE_URLS = ['/offline']
 
-// ── Install: pre-cache shell pages ───────────────────────────────────────────
+// Routes that must always go to the network (never cached)
+const NETWORK_ONLY = [
+  '/api/',
+  '/auth/',
+  '/me',
+  '/me/',
+  '/inbox',
+  '/inbox/',
+  '/my-orders',
+  '/my-listings',
+  '/saved',
+  '/notifications',
+  '/vendor/',
+  '/vendor',
+  '/rider/',
+  '/study-admin/',
+  '/admin/',
+]
+
+// ── Install: pre-cache static fallback ───────────────────────────────────────
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
-  );
-  self.skipWaiting();
-});
+  )
+  self.skipWaiting()
+})
 
 // ── Activate: clean up old caches ────────────────────────────────────────────
 self.addEventListener('activate', (e) => {
@@ -28,98 +42,115 @@ self.addEventListener('activate', (e) => {
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
-  );
-  self.clients.claim();
-});
+  )
+  self.clients.claim()
+})
 
-// ── Fetch: network-first for API/auth, cache-first for static assets ─────────
-self.addEventListener('fetch', (e) => {
-  const { request } = e;
-  const url = new URL(request.url);
-
-  // Skip non-GET and cross-origin requests
-  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-
-  // Network-only: API routes, auth, and real-time data
-  if (
-    url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/auth/') ||
-    url.searchParams.has('_rsc')
-  ) {
-    return;
+// ── Cache size helper ─────────────────────────────────────────────────────────
+async function trimCache(cacheName, maxItems) {
+  const cache = await caches.open(cacheName)
+  const keys = await cache.keys()
+  if (keys.length > maxItems) {
+    await cache.delete(keys[0])
+    await trimCache(cacheName, maxItems)
   }
+}
+
+// ── Fetch: network-first for pages, cache-first for static assets ─────────────
+self.addEventListener('fetch', (e) => {
+  const { request } = e
+  const url = new URL(request.url)
+
+  const isNetworkOnly = NETWORK_ONLY.some(p =>
+    url.pathname === p ||
+    url.pathname.startsWith(p)
+  ) || url.searchParams.has('_rsc')
+
+  if (request.method !== 'GET' ||
+      url.origin !== self.location.origin ||
+      isNetworkOnly) return
 
   // Cache-first for static assets (_next/static)
   if (url.pathname.startsWith('/_next/static/')) {
     e.respondWith(
       caches.match(request).then((cached) => {
-        if (cached) return cached;
+        if (cached) return cached
         return fetch(request).then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return res;
-        });
+          const clone = res.clone()
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, clone)
+            trimCache(CACHE_NAME, 60)
+          })
+          return res
+        })
       })
-    );
-    return;
+    )
+    return
   }
 
   // Network-first for pages — fall back to cache, then /offline
   e.respondWith(
     fetch(request)
       .then((res) => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        return res;
+        const clone = res.clone()
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, clone)
+          trimCache(CACHE_NAME, 60)
+        })
+        return res
       })
       .catch(() =>
         caches.match(request).then((cached) => cached || caches.match('/offline'))
       )
-  );
-});
+  )
+})
 
 // ── Push event ────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'New order', body: '', icon: '/favicon.ico', data: {} };
+  let data = { title: 'New notification', body: '', data: {} }
 
   try {
     if (event.data) {
-      const parsed = event.data.json();
-      data = { ...data, ...parsed };
+      const parsed = event.data.json()
+      data = { ...data, ...parsed }
     }
   } catch {}
 
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body:     data.body,
-      icon:     data.icon ?? '/favicon.ico',
-      badge:    '/favicon.ico',
-      tag:      'new-order',
+      icon:     data.icon  ?? '/icon-192.png',
+      badge:    data.badge ?? '/icon-192.png',
+      tag:      data.tag   ?? `jabu-${Date.now()}`,
       renotify: true,
       vibrate:  [200, 100, 200],
       data:     data.data ?? {},
     })
-  );
-});
+  )
+})
 
 // ── Notification click ────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  const targetUrl = event.notification.data?.href ?? '/vendor/orders';
+  event.notification.close()
+  const targetUrl = event.notification.data?.href ?? '/'
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes('/vendor') && 'focus' in client) {
-          client.focus();
-          client.navigate?.(targetUrl);
-          return;
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => {
+        const existing = clients.find(c => c.url.startsWith(self.location.origin))
+        if (existing) {
+          existing.focus()
+          return existing.navigate(targetUrl)
         }
-      }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
-      }
-    })
-  );
-});
+        return self.clients.openWindow(targetUrl)
+      })
+  )
+})
+
+// ── Message handler (SW updates) ─────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})

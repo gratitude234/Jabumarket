@@ -98,7 +98,7 @@ function SingleQtyStep({ cat, selectedId, selectedQty, onSelect, onInc, onDec }:
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-zinc-900">
-                How many {selected.unit_name}s?
+                How many {selected.unit_name}?
               </p>
               <p className="text-xs text-zinc-500">
                 ₦{selected.price_per_unit.toLocaleString()} × {selectedQty} = ₦{(selected.price_per_unit * selectedQty).toLocaleString()}
@@ -112,10 +112,12 @@ function SingleQtyStep({ cat, selectedId, selectedQty, onSelect, onInc, onDec }:
   );
 }
 
-function MultiQtyStep({ cat, quantities, onQtyChange }: {
+function MultiQtyStep({ cat, quantities, onQtyChange, canAdvance }: {
   cat: MenuCategoryInfo; quantities: Record<string, number>;
   onQtyChange: (id: string, qty: number) => void;
+  canAdvance: boolean;
 }) {
+  const totalQty = Object.values(quantities).reduce((s, q) => s + q, 0);
   return (
     <div className="space-y-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -143,6 +145,9 @@ function MultiQtyStep({ cat, quantities, onQtyChange }: {
           );
         })}
       </div>
+      {!canAdvance && totalQty === 0 && (
+        <p className="text-xs text-amber-600 font-medium">Select at least one item to continue</p>
+      )}
     </div>
   );
 }
@@ -267,13 +272,14 @@ function FulfillmentStep({ orderType, deliveryAddress, onOrderTypeChange, onAddr
   );
 }
 
-function ReviewStep({ builder, onSend, sending, sent, vendorName, onGoToOrders, vendorClosed, deliveryFee }: {
+function ReviewStep({ builder, onSend, sending, sent, vendorName, onGoToOrders, vendorClosed, deliveryFee, submitError }: {
   builder: ReturnType<typeof useMealBuilder>;
   onSend: () => void; sending: boolean; sent: boolean;
   vendorName?: string;
   onGoToOrders: () => void;
   vendorClosed?: boolean;
   deliveryFee?: number;
+  submitError?: string | null;
 }) {
   const { categories, state, itemsById, total, goToStep } = builder;
   const effectiveDeliveryFee = state.orderType === 'delivery' ? (deliveryFee ?? 0) : 0;
@@ -467,6 +473,11 @@ function ReviewStep({ builder, onSend, sending, sent, vendorName, onGoToOrders, 
           ? 'Vendor is closed — check back later'
           : <><Check className="h-4 w-4" /> Place order</>}
       </button>
+      {submitError && (
+        <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+          {submitError}
+        </p>
+      )}
     </div>
   );
 }
@@ -484,6 +495,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
   } = builder;
 
   const [draftBannerDismissed, setDraftBannerDismissed] = useState(false);
+  const [confirmStartOver, setConfirmStartOver] = useState(false);
   const showDraftBanner = draftRestored && !draftBannerDismissed;
 
   const isStepDone = (s: string): boolean => {
@@ -538,7 +550,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
     <div className="rounded-3xl border border-zinc-200 bg-white shadow-sm">
       {/* Header — hidden after order is placed */}
       {!isSent && (
-        <div className="rounded-t-3xl bg-zinc-900 px-4 pt-3 pb-0">
+        <div className="sticky top-0 z-10 rounded-t-3xl bg-zinc-900 px-4 pt-3 pb-0">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-white">Build your meal</p>
@@ -569,13 +581,20 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
       {showDraftBanner && !isSent && (
         <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-4 py-2">
           <p className="text-xs font-medium text-amber-800">Previous selections restored</p>
-          <button
-            type="button"
-            onClick={() => { discardDraft(); setDraftBannerDismissed(true); }}
-            className="text-xs font-medium text-amber-600 hover:text-amber-900"
-          >
-            Start over
-          </button>
+          {confirmStartOver ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-700">Sure?</span>
+              <button type="button" onClick={() => { discardDraft(); setDraftBannerDismissed(true); }}
+                className="text-xs font-semibold text-red-600 hover:text-red-800">Yes, clear</button>
+              <button type="button" onClick={() => setConfirmStartOver(false)}
+                className="text-xs font-medium text-amber-600 hover:text-amber-900">Keep</button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirmStartOver(true)}
+              className="text-xs font-medium text-amber-600 hover:text-amber-900">
+              Start over
+            </button>
+          )}
         </div>
       )}
 
@@ -592,23 +611,27 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
         </div>
       )}
       {!isSent && (
-        <div className="flex overflow-x-auto border-b border-zinc-100 scrollbar-none">
-        {steps.map((s, i) => {
-          const done = isStepDone(s) && i !== stepIndex;
-          const active = s === step;
-          return (
-            <button key={s} type="button" onClick={() => goToStep(s)}
-              className={cn(
-                'flex-shrink-0 border-b-2 px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-all',
-                active  ? 'border-zinc-900 text-zinc-900' :
-                done    ? 'border-transparent text-emerald-600' :
-                          'border-transparent text-zinc-400'
-              )}>
-              {done ? '✓ ' : ''}{getStepLabel(s)}
-            </button>
-          );
-        })}
-      </div>
+        <div className="relative border-b border-zinc-100">
+          <div className="flex overflow-x-auto scrollbar-none">
+          {steps.map((s, i) => {
+            const done = isStepDone(s) && i !== stepIndex;
+            const active = s === step;
+            return (
+              <button key={s} type="button" onClick={() => goToStep(s)}
+                className={cn(
+                  'flex-shrink-0 border-b-2 px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-all',
+                  active  ? 'border-zinc-900 text-zinc-900' :
+                  done    ? 'border-transparent text-emerald-600' :
+                            'border-transparent text-zinc-400'
+                )}>
+                {done ? '✓ ' : ''}{getStepLabel(s)}
+              </button>
+            );
+          })}
+        </div>
+          {/* Right fade to signal more tabs */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent" />
+        </div>
       )}
 
       {/* Step body */}
@@ -634,6 +657,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
             onGoToOrders={() => router.push('/my-orders')}
             vendorClosed={vendorClosed}
             deliveryFee={deliveryFee}
+            submitError={error}
           />
         )}
 
@@ -651,7 +675,8 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
 
         {currentCat && currentCat.stepType === 'required_multi_qty' && (
           <MultiQtyStep cat={currentCat} quantities={cs.quantities}
-            onQtyChange={(id, qty) => setMultiQty(currentCat.name, id, qty)} />
+            onQtyChange={(id, qty) => setMultiQty(currentCat.name, id, qty)}
+            canAdvance={canAdvance} />
         )}
 
         {currentCat && currentCat.stepType === 'optional_single' && (

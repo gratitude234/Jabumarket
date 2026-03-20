@@ -259,9 +259,8 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
     const cs = state.categories[step];
     if (!cs) return false;
 
-    if (isOptionalStep(cat.stepType)) {
-      return cs.skipped || cs.selectedId !== null || cs.selectedIds.length > 0 || Object.values(cs.quantities).some((q) => q > 0);
-    }
+    // Optional steps never block progression — user can move on without selecting or skipping
+    if (isOptionalStep(cat.stepType)) return true;
     switch (cat.stepType) {
       case 'required_single':     return cs.selectedId !== null;
       case 'required_single_qty': return cs.selectedId !== null;
@@ -284,8 +283,8 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
 
   const goToStep = useCallback((s: string) => {
     const idx = steps.indexOf(s);
-    if (idx !== -1 && idx <= stepIndex) setStep(s);
-  }, [steps, stepIndex]);
+    if (idx !== -1) setStep(s);
+  }, [steps]);
 
   // Category state updater
   const updateCat = useCallback((catName: string, updater: (cs: CategoryState) => CategoryState) => {
@@ -381,9 +380,9 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
       onOrderSent?.({ order_id: json.order_id, conversation_id: json.conversation_id });
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong');
-      setStatus('error');
+      setStatus('ready'); // stay on review — don't blow up the whole wizard
     }
-  }, [categories, itemsById, state, vendorId, status, onOrderSent]);
+  }, [categories, itemsById, state, vendorId, status, deliveryFee, onOrderSent]);
 
   return {
     categories,

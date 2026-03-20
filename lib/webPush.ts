@@ -18,7 +18,8 @@
 //     console.log('VAPID_PRIVATE_KEY=' + priv.slice(-32).toString('base64url'));
 //   "
 
-import { createSign, createCipheriv, randomBytes, createECDH } from 'crypto';
+import { createSign, createCipheriv, randomBytes, createECDH } from 'crypto'
+import { createSupabaseAdminClient } from './supabase/admin'
 
 export type PushSubscription = {
   endpoint: string;
@@ -199,7 +200,51 @@ export async function sendPush(
     if (res.status === 410 || res.status === 404) return false;
     return res.ok || res.status === 201;
   } catch (err) {
-    console.error('[webPush] sendPush error:', err);
-    return false;
+    console.error('[webPush] sendPush error:', err)
+    return false
+  }
+}
+
+/**
+ * Send a Web Push notification to all devices of a given user.
+ * Automatically removes expired subscriptions (410/404 responses).
+ * Never throws — push is fire-and-forget.
+ */
+export async function sendUserPush(
+  userId: string,
+  payload: PushPayload & { tag?: string; href?: string }
+): Promise<void> {
+  try {
+    const admin = createSupabaseAdminClient()
+    const { data: subs } = await admin
+      .from('user_push_subscriptions')
+      .select('endpoint, p256dh, auth')
+      .eq('user_id', userId)
+
+    if (!subs?.length) return
+
+    const results = await Promise.allSettled(
+      subs.map(sub =>
+        sendPush(
+          { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+          { ...payload, data: { href: payload.href ?? '/', tag: payload.tag } }
+        )
+      )
+    )
+
+    // Remove expired subscriptions (sendPush returns false for 410/404)
+    const expired = subs.filter((_, i) => {
+      const r = results[i]
+      return r.status === 'fulfilled' && r.value === false
+    })
+
+    if (expired.length) {
+      await admin
+        .from('user_push_subscriptions')
+        .delete()
+        .in('endpoint', expired.map(s => s.endpoint))
+    }
+  } catch {
+    // Never throw — push is fire-and-forget
   }
 }

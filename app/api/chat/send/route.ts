@@ -2,7 +2,7 @@
 // Authenticated endpoint — buyer sends a message or a meal order
 
 import { NextResponse } from 'next/server';
-
+import { sendUserPush } from '@/lib/webPush';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
@@ -123,6 +123,13 @@ export async function POST(req: Request) {
             body: body.body.trim().slice(0, 80),
             href: `/inbox/${body.conversation_id}`,
           });
+
+          void sendUserPush(vendor.user_id, {
+            title: 'New message',
+            body: body.body.trim().slice(0, 80),
+            href: `/inbox/${body.conversation_id}`,
+            tag: `msg-${body.conversation_id}`,
+          })
         }
       } catch { /* never block the message send */ }
 
