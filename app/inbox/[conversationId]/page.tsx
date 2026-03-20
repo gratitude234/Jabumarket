@@ -567,7 +567,7 @@ export default function ConversationPage() {
           />
           <button
             type="button"
-            onClick={send}
+            onClick={() => send()}
             disabled={!body.trim() || sending}
             className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Send message"
