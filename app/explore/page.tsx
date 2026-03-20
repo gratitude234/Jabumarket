@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, ListingType, ListingCondition, RiderRow, CourierRow } from "@/lib/types";
 import { LISTING_CONDITION_LABELS } from "@/lib/types";
+import { timeAgo } from "@/lib/utils";
 import ListingImage from "@/components/ListingImage";
 import { Search, ArrowRight, ArrowLeft, UtensilsCrossed, CheckCircle2, Circle, Bookmark } from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
