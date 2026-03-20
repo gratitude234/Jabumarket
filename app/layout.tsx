@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppChrome from "@/components/layout/AppChrome";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import PWAInstallProvider from "@/components/PWAInstallProvider";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -45,7 +46,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute -bottom-52 -left-52 h-[36rem] w-[36rem] rounded-full bg-accent/10 blur-3xl" />
         </div>
 
-        <AppChrome>{children}</AppChrome>
+        <PWAInstallProvider>
+          <AppChrome>{children}</AppChrome>
+        </PWAInstallProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

@@ -6,6 +6,7 @@ import TopNav from "@/components/layout/TopNav";
 import BottomNav from "@/components/layout/BottomNav";
 import MobileTopBar from "@/components/layout/MobileTopBar";
 import { subscribeToPush } from "@/components/ServiceWorkerRegister";
+import PWAInstallBanner from "@/components/PWAInstallBanner";
 
 const APP_CONTAINER =
   "mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl lg:px-8";
@@ -100,6 +101,8 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
+
+      <PWAInstallBanner />
 
       {/* Notification permission prompt */}
       {showNotifPrompt && !updateWorker && (
