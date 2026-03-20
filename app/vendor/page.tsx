@@ -5,7 +5,7 @@
 // - Post-approval guided onboarding checklist
 // - Normal dashboard once set up
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -524,7 +524,7 @@ function GoOfflineModal({
   );
 }
 
-export default function VendorDashboardPage() {
+function VendorDashboardPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const justApplied = sp.get('applied') === '1';
@@ -915,5 +915,12 @@ function QuickLink({ href, icon, label }: { href: string; icon: React.ReactNode;
       </span>
       <ArrowRight className="h-4 w-4 text-zinc-400" />
     </Link>
+  );
+}
+export default function VendorDashboardPage() {
+  return (
+    <Suspense>
+      <VendorDashboardPageInner />
+    </Suspense>
   );
 }
