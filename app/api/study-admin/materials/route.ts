@@ -67,6 +67,7 @@ export async function GET(req: Request) {
           "id",
           "title",
           "material_type",
+          "department",
           "session",
           "file_url",
           "file_path",

@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Heart,
   BarChart2,
+  ArrowUp,
 } from "lucide-react";
 
 type Tab = "active" | "sold" | "inactive";
@@ -175,6 +176,8 @@ export default function MyListingsPage() {
   const [hasMore, setHasMore] = useState(false);
 
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+  const [bumpingId, setBumpingId] = useState<string | null>(null);
+  const [bumpMessages, setBumpMessages] = useState<Record<string, string>>({});
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ListingRow | null>(null);
@@ -443,6 +446,37 @@ export default function MyListingsPage() {
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleBump(listingId: string) {
+    if (bumpingId) return;
+    setBumpingId(listingId);
+    setBumpMessages((prev) => ({ ...prev, [listingId]: "" }));
+    try {
+      const res = await fetch("/api/marketplace/bump-listing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listing_id: listingId }),
+      });
+      const json = await res.json() as { ok: boolean; code?: string; message?: string; next_bump_at?: string };
+      if (!json.ok) {
+        if (json.code === "TOO_SOON" && json.next_bump_at) {
+          const nextTime = new Date(json.next_bump_at).toLocaleString("en-NG", {
+            month: "short", day: "2-digit", hour: "numeric", minute: "2-digit",
+          });
+          setBumpMessages((prev) => ({ ...prev, [listingId]: `Next bump available ${nextTime}` }));
+        } else {
+          setBumpMessages((prev) => ({ ...prev, [listingId]: json.message ?? "Bump failed." }));
+        }
+        return;
+      }
+      setBumpMessages((prev) => ({ ...prev, [listingId]: "Bumped to top ✓" }));
+      setTimeout(() => setBumpMessages((prev) => ({ ...prev, [listingId]: "" })), 3000);
+    } catch {
+      setBumpMessages((prev) => ({ ...prev, [listingId]: "Bump failed." }));
+    } finally {
+      setBumpingId(null);
     }
   }
 
@@ -764,6 +798,17 @@ export default function MyListingsPage() {
                       {l.status === "active" ? (
                         <>
                           <button
+                            onClick={() => handleBump(l.id)}
+                            disabled={bumpingId === l.id}
+                            className={cx(
+                              "inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50",
+                              bumpingId === l.id && "opacity-60"
+                            )}
+                          >
+                            <ArrowUp className="h-4 w-4" />
+                            Bump ↑
+                          </button>
+                          <button
                             onClick={() => updateStatus(l.id, "sold")}
                             disabled={busy}
                             className={cx(
@@ -808,6 +853,9 @@ export default function MyListingsPage() {
                         Delete
                       </button>
                     </div>
+                    {bumpMessages[l.id] ? (
+                      <p className="mt-1 text-xs text-zinc-500">{bumpMessages[l.id]}</p>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -910,6 +958,17 @@ export default function MyListingsPage() {
 
                       {l.status === "active" ? (
                         <>
+                          <button
+                            onClick={() => handleBump(l.id)}
+                            disabled={bumpingId === l.id}
+                            className={cx(
+                              "inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-50",
+                              bumpingId === l.id && "opacity-60"
+                            )}
+                          >
+                            <ArrowUp className="h-4 w-4" />
+                            Bump ↑
+                          </button>
                           <button
                             onClick={() => updateStatus(l.id, "sold")}
                             disabled={busy}

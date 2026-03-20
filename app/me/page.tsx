@@ -156,7 +156,7 @@ function MeInner() {
         supabase
           .from("study_materials")
           .select("id", { count: "exact", head: true })
-          .eq("uploaded_by", user.id),
+          .eq("uploader_id", user.id),
       ]);
 
       if (!mounted) return;

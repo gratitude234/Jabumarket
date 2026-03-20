@@ -245,7 +245,7 @@ function InlinePreview({
   title: string;
   kind: "pdf" | "image" | "other";
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   if (kind === "other" || !url) return null;
 
@@ -863,11 +863,11 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
         </div>
 
         {/* Action buttons */}
-        <div className="mt-5 flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex items-center gap-2 overflow-x-auto">
           <button
             type="button" onClick={handleToggleSave} disabled={saving}
             className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               saved ? "border-border bg-secondary text-foreground" : "border-border/60 bg-background text-foreground hover:bg-secondary/50",
               saving ? "opacity-70" : ""
@@ -897,7 +897,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             download
             onClick={(e) => { if (!hasFile) { e.preventDefault(); return; } handleDownload(); }}
             className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold no-underline transition",
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold no-underline transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               !hasFile
                 ? "pointer-events-none border-border/60 bg-muted text-muted-foreground"
@@ -912,7 +912,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             type="button"
             onClick={handleShare}
             className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border/60 bg-background px-4 py-3 text-sm font-semibold transition",
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border/60 bg-background px-4 py-3 text-sm font-semibold transition",
               "hover:bg-secondary/50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             )}
@@ -937,13 +937,15 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       )}
 
       {/* ── AI Summarize ── */}
-      <AiSummarizeCard
-        materialId={m.id}
-        title={title}
-        description={m.description}
-        courseCode={course?.course_code}
-        materialType={m.material_type}
-      />
+      <div className="pl-14">
+        <AiSummarizeCard
+          materialId={m.id}
+          title={title}
+          description={m.description}
+          courseCode={course?.course_code}
+          materialType={m.material_type}
+        />
+      </div>
 
       {/* Stats + uploader */}
       <MaterialRating
@@ -952,46 +954,54 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
         initialDown={m.down_votes ?? 0}
       />
 
-      {/* Downloads + uploader + status */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Downloads</p>
-          <p className="mt-1 text-2xl font-extrabold text-foreground">{downloads.toLocaleString("en-NG")}</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Uploaded by</p>
-          <p className="mt-1 text-sm font-extrabold text-foreground truncate">
-            {obfuscateEmail(m.uploader_email)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Status</p>
-          <p className={cn("mt-1 text-sm font-extrabold", m.verified ? "text-emerald-700" : "text-foreground")}>
-            {m.verified ? "Verified ✓" : m.approved ? "Approved" : "Pending"}
-          </p>
+      {/* About this material */}
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <p className="mb-3 text-xs font-semibold text-muted-foreground">About this material</p>
+        <div className="grid grid-cols-2 gap-4">
+          {/* Course */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground">Course</p>
+            {course ? (
+              <>
+                <p className="mt-1 text-sm font-extrabold text-foreground">{course.course_code}</p>
+                {course.course_title ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{course.course_title}</p>
+                ) : null}
+                <Link
+                  href={`/study/courses/${encodeURIComponent(course.course_code)}`}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-foreground hover:underline"
+                >
+                  View course page <ArrowRight className="h-3 w-3" />
+                </Link>
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">—</p>
+            )}
+          </div>
+
+          {/* Level */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground">Level</p>
+            <p className="mt-1 text-sm font-extrabold text-foreground">
+              {course?.level ? `${course.level}L` : "—"}
+            </p>
+          </div>
+
+          {/* Uploaded by */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground">Uploaded by</p>
+            <p className="mt-1 text-sm font-extrabold text-foreground truncate">
+              {m.uploader_email ? obfuscateEmail(m.uploader_email) : "A student"}
+            </p>
+          </div>
+
+          {/* Downloads */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground">Downloads</p>
+            <p className="mt-1 text-2xl font-extrabold text-foreground">{downloads.toLocaleString("en-NG")}</p>
+          </div>
         </div>
       </div>
-
-      {/* Course context */}
-      {course ? (
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-muted-foreground">Course</p>
-          <p className="mt-1 text-base font-extrabold text-foreground">{course.course_code}</p>
-          {course.course_title ? (
-            <p className="mt-0.5 text-sm text-muted-foreground">{course.course_title}</p>
-          ) : null}
-          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            {course.faculty ? <span>{course.faculty}</span> : null}
-            {course.department ? <span>· {course.department}</span> : null}
-          </div>
-          <Link
-            href={`/study/courses/${encodeURIComponent(course.course_code)}`}
-            className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-foreground hover:underline"
-          >
-            View course page <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      ) : null}
 
       {/* Report */}
       <div className="rounded-2xl border border-border bg-background p-3 text-center">

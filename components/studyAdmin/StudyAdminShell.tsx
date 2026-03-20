@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, FileText, Inbox, LayoutDashboard, UserCheck2 } from "lucide-react";
+import { ShieldCheck, FileText, Inbox, LayoutDashboard, UserCheck2, Upload, History, BookOpen } from "lucide-react";
 import type React from "react";
 
 function NavItem({
@@ -56,6 +56,9 @@ export default function StudyAdminShell({ children }: { children: React.ReactNod
               label="Rep Apps"
               icon={<UserCheck2 className="h-4 w-4" />}
             />
+            <NavItem href="/study-admin/upload" label="Upload Materials" icon={<Upload className="h-4 w-4" />} />
+            <NavItem href="/study-admin/history" label="History" icon={<History className="h-4 w-4" />} />
+            <NavItem href="/study-admin/courses" label="Courses" icon={<BookOpen className="h-4 w-4" />} />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -70,7 +73,7 @@ export default function StudyAdminShell({ children }: { children: React.ReactNod
 
         {/* Mobile nav */}
         <div className="sm:hidden">
-          <div className="mx-auto flex max-w-6xl gap-2 px-4 pb-3">
+          <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-3">
             <NavItem href="/study-admin" label="Dashboard" icon={<LayoutDashboard className="h-4 w-4" />} />
             <NavItem href="/study-admin/materials" label="Materials" icon={<FileText className="h-4 w-4" />} />
             <NavItem href="/study-admin/requests" label="Requests" icon={<Inbox className="h-4 w-4" />} />
@@ -79,6 +82,9 @@ export default function StudyAdminShell({ children }: { children: React.ReactNod
               label="Rep Apps"
               icon={<UserCheck2 className="h-4 w-4" />}
             />
+            <NavItem href="/study-admin/upload" label="Upload" icon={<Upload className="h-4 w-4" />} />
+            <NavItem href="/study-admin/history" label="History" icon={<History className="h-4 w-4" />} />
+            <NavItem href="/study-admin/courses" label="Courses" icon={<BookOpen className="h-4 w-4" />} />
           </div>
         </div>
       </header>

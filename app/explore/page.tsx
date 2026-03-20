@@ -5,15 +5,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, ListingType, ListingCondition, RiderRow, CourierRow } from "@/lib/types";
 import { LISTING_CONDITION_LABELS } from "@/lib/types";
 import ListingImage from "@/components/ListingImage";
-import { Search, ArrowRight, ArrowLeft } from "lucide-react";
+import { Search, ArrowRight, ArrowLeft, UtensilsCrossed, CheckCircle2, Circle, Bookmark } from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
+import RecentSearchesBar from "@/components/explore/RecentSearchesBar";
 import ExploreNavProgress from "@/components/explore/ExploreNavProgress";
 import PriceRangeSlider from "@/components/explore/PriceRangeSlider";
 import VendorsClient from "@/app/vendors/VendorsClient";
 import DeliveryClient from "@/app/delivery/DeliveryClient";
 import CouriersClient from "@/app/couriers/CouriersClient";
+import FoodPageShell from "@/app/food/FoodPageShell";
+import type { FoodVendorData } from "@/app/food/FoodVendorGrid";
+import { isOpenNow } from "@/lib/vendorSchedule";
+import { cn } from "@/lib/utils";
 
-type ExploreTab = "listings" | "vendors" | "delivery" | "transport";
+type ExploreTab = "listings" | "vendors" | "delivery" | "transport" | "food";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -73,8 +78,10 @@ function clampPage(n: number) {
 const CATEGORIES = [
   "Phones",
   "Laptops",
+  "Electronics",
   "Fashion",
   "Provisions",
+  "Books & Stationery",
   "Food",
   "Beauty",
   "Services",
@@ -115,6 +122,7 @@ export default async function ExplorePage({
     min_price?: string;
     max_price?: string;
     negotiable?: string;
+    open?: string;
   };
 
   // ── Tab routing ──────────────────────────────────────────────────────────
@@ -245,6 +253,199 @@ export default async function ExplorePage({
     );
   }
 
+  if (activeTab === "food") {
+    const onlyOpen = sp.open === "1";
+
+    const { data: { user } } = await supabase.auth.getUser();
+    let isAlreadyVendor = false;
+    if (user) {
+      const { data: existingVendor } = await supabase
+        .from("vendors")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("vendor_type", "food")
+        .maybeSingle();
+      isAlreadyVendor = !!existingVendor;
+    }
+
+    const { data: vendors } = await supabase
+      .from("vendors")
+      .select("id, name, description, avatar_url, opens_at, closes_at, accepts_orders, accepts_delivery, day_schedule")
+      .eq("vendor_type", "food")
+      .eq("accepts_orders", true)
+      .or("verified.eq.true,verification_status.eq.verified")
+      .order("name", { ascending: true });
+
+    const list = vendors ?? [];
+
+    if (list.length === 0) {
+      return (
+        <div className="space-y-4">
+          <ExploreTabs active="food" />
+          <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
+            <div>
+              <h1 className="text-xl font-bold text-zinc-900">Order Food</h1>
+              <p className="mt-1 text-sm text-zinc-500">Pick a vendor and build your meal</p>
+            </div>
+            <div className="rounded-3xl border bg-white p-8 text-center">
+              <UtensilsCrossed className="mx-auto mb-3 h-10 w-10 text-zinc-300" />
+              <p className="font-semibold text-zinc-900">No food vendors available right now</p>
+              <p className="mt-1 text-sm text-zinc-500">Check back later!</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const vendorIds = list.map((v) => v.id);
+
+    const [reviewsRes, menuRes] = await Promise.all([
+      supabase.from("vendor_reviews").select("vendor_id, rating").in("vendor_id", vendorIds),
+      supabase
+        .from("vendor_menu_items")
+        .select("vendor_id, name, emoji, stock_count")
+        .in("vendor_id", vendorIds)
+        .eq("active", true)
+        .order("sort_order", { ascending: true })
+        .limit(60),
+    ]);
+
+    const ratingsMap: Record<string, { avg: number; count: number }> = {};
+    for (const r of reviewsRes.data ?? []) {
+      const e = ratingsMap[r.vendor_id];
+      ratingsMap[r.vendor_id] = e
+        ? { avg: (e.avg * e.count + r.rating) / (e.count + 1), count: e.count + 1 }
+        : { avg: r.rating, count: 1 };
+    }
+
+    const menuMap: Record<string, Array<{ name: string; emoji: string; stock_count: number | null }>> = {};
+    for (const item of menuRes.data ?? []) {
+      if (!menuMap[item.vendor_id]) menuMap[item.vendor_id] = [];
+      if (menuMap[item.vendor_id].length < 4)
+        menuMap[item.vendor_id].push({
+          name: item.name,
+          emoji: item.emoji ?? "🍽",
+          stock_count: (item as any).stock_count ?? null,
+        });
+    }
+
+    const openCount = list.filter((v) => isOpenNow(v) === true).length;
+    const filteredList = onlyOpen ? list.filter((v) => isOpenNow(v) === true) : list;
+
+    function formatHour(time: string | null | undefined): string {
+      if (!time) return "";
+      const [h, m] = time.split(":");
+      const hour = parseInt(h, 10);
+      const minute = m ?? "00";
+      const suffix = hour >= 12 ? "pm" : "am";
+      const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      return minute === "00" ? `${display}${suffix}` : `${display}:${minute}${suffix}`;
+    }
+
+    return (
+      <div className="space-y-4">
+        <ExploreTabs active="food" />
+        <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-bold text-zinc-900">Order Food</h1>
+              <p className="mt-1 text-sm text-zinc-500">
+                {openCount > 0
+                  ? `${openCount} vendor${openCount !== 1 ? "s" : ""} open now`
+                  : "Pick a vendor and build your meal"}
+              </p>
+            </div>
+
+            {user && (
+              <Link
+                href="/my-orders"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground no-underline hover:bg-secondary/50"
+              >
+                My Orders
+              </Link>
+            )}
+
+            <Link
+              href={onlyOpen ? "/explore?tab=food" : "/explore?tab=food&open=1"}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-medium transition",
+                onlyOpen
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+              )}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Open now
+              {openCount > 0 && !onlyOpen && (
+                <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
+                  {openCount}
+                </span>
+              )}
+            </Link>
+          </div>
+
+          <FoodPageShell
+            vendors={filteredList.map((v) => {
+              const rating = ratingsMap[v.id];
+              const menuItems = menuMap[v.id] ?? [];
+              const open = isOpenNow(v);
+              const hours =
+                v.opens_at && v.closes_at
+                  ? `${formatHour(v.opens_at)} – ${formatHour(v.closes_at)}`
+                  : null;
+              return {
+                id: v.id, name: v.name, description: v.description,
+                avatar_url: v.avatar_url, opens_at: v.opens_at, closes_at: v.closes_at,
+                open, hours, rating: rating ?? null, menuItems,
+                day_schedule: (v as any).day_schedule ?? null,
+                accepts_delivery: (v as any).accepts_delivery ?? null,
+              } satisfies FoodVendorData;
+            })}
+            emptyNode={
+              filteredList.length === 0 ? (
+                <div className="rounded-3xl border bg-white p-8 text-center">
+                  <Circle className="mx-auto mb-3 h-8 w-8 text-zinc-300" />
+                  <p className="font-semibold text-zinc-900">No vendors open right now</p>
+                  <p className="mt-1 text-sm text-zinc-500">Check back during meal times.</p>
+                  <Link
+                    href="/explore?tab=food"
+                    className="mt-4 inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+                  >
+                    View all vendors
+                  </Link>
+                </div>
+              ) : null
+            }
+          />
+
+          {user && !isAlreadyVendor && (
+            <div className="mt-2 rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-xl">
+                  🍽
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-zinc-900">Run a canteen or food stall?</p>
+                  <p className="mt-0.5 text-xs text-zinc-500 leading-relaxed">
+                    Students order through the app. You see a live queue, set your own hours, and get push alerts — no WhatsApp chaos.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/vendor/register"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-900 py-2.5 text-sm font-semibold text-white no-underline hover:bg-zinc-700"
+              >
+                Sell food on Jabumarket
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const qRaw = (sp.q ?? "").trim();
   const q = qRaw; // keep original for UI
   const type = (sp.type ?? "all") as "all" | ListingType;
@@ -367,7 +568,7 @@ export default async function ExplorePage({
   const showingTo = Math.min(total, to + 1);
 
   // Secondary fetches: vendor trust signals + listing stats — parallel, small queries.
-  type VendorSnippet = { id: string; name: string | null; verified: boolean; verification_status: string | null };
+  type VendorSnippet = { id: string; name: string | null; verified: boolean; verification_status: string | null; vendor_type: string | null; avatar_url: string | null };
   let vendorMap: Record<string, VendorSnippet> = {};
   let statsMap: Record<string, { views: number; saves: number }> = {};
 
@@ -381,7 +582,7 @@ export default async function ExplorePage({
       Promise.resolve(
         supabase
           .from("vendors")
-          .select("id, name, verified, verification_status")
+          .select("id, name, verified, verification_status, vendor_type, avatar_url")
           .in("id", vendorIds)
           .then(({ data }) => {
             for (const v of data ?? []) vendorMap[v.id] = v as VendorSnippet;
@@ -865,7 +1066,7 @@ export default async function ExplorePage({
                 type="submit"
                 className="h-10 rounded-xl bg-black px-4 text-sm font-medium text-white hover:bg-zinc-800"
               >
-                Go
+                Search
               </button>
             </div>
           </form>
@@ -1000,9 +1201,15 @@ export default async function ExplorePage({
           </MobileFilterSheet>
         </div>
 
+        {/* Recent searches — shown when no active query */}
+        <RecentSearchesBar
+          q={q}
+          buildHref={(s) => buildExploreHref({ ...activeFilters, q: s, page: 1 })}
+        />
+
         {/* Active filter chips row */}
         {hasAnyFilter ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-2 -mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
             {q ? <ActiveChip label={`“${q}”`} href={clearSearchHref} /> : null}
 
             {type !== "all" ? (
@@ -1177,13 +1384,20 @@ function ActiveChip({ href, label }: { href: string; label: string }) {
   );
 }
 
+const CONDITION_BADGE: Record<string, { label: string; cls: string }> = {
+  new:         { label: 'New',         cls: 'bg-emerald-500 text-white' },
+  fairly_used: { label: 'Fairly used', cls: 'bg-amber-400 text-white' },
+  used:        { label: 'Used',        cls: 'bg-zinc-500 text-white' },
+  for_parts:   { label: 'For parts',   cls: 'bg-red-500 text-white' },
+};
+
 function ListingCard({
   listing,
   vendor,
   stats,
 }: {
   listing: ListingRow;
-  vendor: { id: string; name: string | null; verified: boolean; verification_status: string | null } | null;
+  vendor: { id: string; name: string | null; verified: boolean; verification_status: string | null; vendor_type: string | null; avatar_url: string | null } | null;
   stats: { views: number; saves: number } | null;
 }) {
   const priceText =
@@ -1221,7 +1435,7 @@ function ListingCard({
           ].join(" ")}
         />
 
-        {/* Status / New badge */}
+        {/* Status / New / Verified badge — top-left */}
         {isSold ? (
           <div className="absolute left-3 top-3">
             <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">
@@ -1240,14 +1454,25 @@ function ListingCard({
               NEW
             </span>
           </div>
+        ) : isVerified ? (
+          <div className="absolute left-3 top-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-bold text-white">
+              ✓ Verified
+            </span>
+          </div>
         ) : null}
 
-        {/* Price badge */}
-        <div className="absolute bottom-3 left-3">
-          <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-zinc-900 backdrop-blur">
-            {priceText}
-          </span>
-        </div>
+        {/* Condition badge — top-right */}
+        {listing.condition && CONDITION_BADGE[listing.condition] && (
+          <div className="absolute right-3 top-3">
+            <span className={cn(
+              'rounded-full px-2.5 py-1 text-[10px] font-bold',
+              CONDITION_BADGE[listing.condition].cls
+            )}>
+              {CONDITION_BADGE[listing.condition].label}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2 p-3">
@@ -1263,12 +1488,16 @@ function ListingCard({
             </span>
           ) : null}
 
-          {listing.negotiable ? (
-            <span className="sm:ml-auto shrink-0 rounded-full bg-black px-2 py-1 text-xs font-semibold text-white">
-              Negotiable
-            </span>
-          ) : null}
         </div>
+
+        <p className="text-base font-bold text-zinc-900">
+          {priceText}
+          {listing.negotiable && (
+            <span className="ml-2 text-xs font-normal text-zinc-500">
+              · Negotiable
+            </span>
+          )}
+        </p>
 
         <div>
           <p className="line-clamp-2 text-sm font-semibold text-zinc-900">
@@ -1283,10 +1512,21 @@ function ListingCard({
         {/* Vendor trust row */}
         {vendor?.name ? (
           <div className="flex items-center gap-1.5">
+            {vendor.avatar_url ? (
+              <img
+                src={vendor.avatar_url}
+                alt=""
+                className="h-6 w-6 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold text-zinc-600">
+                {(vendor.name ?? 'V')[0].toUpperCase()}
+              </div>
+            )}
             <span className="truncate text-xs text-zinc-500">{vendor.name}</span>
-            {isVerified && (
-              <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                ✓ Verified
+            {vendor.vendor_type === "mall" && (
+              <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                Shop
               </span>
             )}
           </div>
@@ -1295,11 +1535,13 @@ function ListingCard({
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
           <span className="truncate">{listing.location ?? "—"}</span>
           <div className="flex shrink-0 items-center gap-2">
-            {stats && stats.saves > 0 ? (
-              <span className="text-zinc-400">{stats.saves} saved</span>
-            ) : null}
+            {stats && stats.saves > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                🔖 {stats.saves}
+              </span>
+            )}
             <span>
-              {listing.created_at ? new Date(listing.created_at).toLocaleDateString("en-NG") : ""}
+              {listing.created_at ? timeAgo(listing.created_at) : ""}
             </span>
           </div>
         </div>
@@ -1310,11 +1552,12 @@ function ListingCard({
 
 // ─── Explore Tab Bar ──────────────────────────────────────────────────────────
 
-const EXPLORE_TABS: { key: ExploreTab; label: string; emoji: string; desc: string }[] = [
-  { key: "listings", label: "Listings", emoji: "🏷️", desc: "Products & services" },
-  { key: "vendors", label: "Vendors", emoji: "🏪", desc: "Campus shops" },
-  { key: "delivery", label: "Delivery", emoji: "🛵", desc: "For food and marketplace item delivery on campus" },
-  { key: "transport", label: "Transport", emoji: "🚗", desc: "Moving goods off-campus or between locations" },
+const EXPLORE_TABS: { key: ExploreTab; label: string; emoji: string }[] = [
+  { key: "listings",  label: "Listings",  emoji: "🏷️" },
+  { key: "vendors",   label: "Vendors",   emoji: "🏪" },
+  { key: "food",      label: "Food",      emoji: "🍽️" },
+  { key: "delivery",  label: "Delivery",  emoji: "🛵" },
+  { key: "transport", label: "Transport", emoji: "🚗" },
 ];
 
 function ExploreTabs({ active }: { active: ExploreTab }) {
@@ -1328,17 +1571,14 @@ function ExploreTabs({ active }: { active: ExploreTab }) {
               key={tab.key}
               href={tab.key === "listings" ? "/explore" : `/explore?tab=${tab.key}`}
               className={[
-                "flex items-center gap-2 whitespace-nowrap rounded-2xl border px-4 py-2.5 text-sm font-medium no-underline transition-colors",
+                "flex items-center gap-2 whitespace-nowrap rounded-2xl border px-3 py-2 text-sm font-medium no-underline transition-colors",
                 isActive
                   ? "border-zinc-900 bg-zinc-900 text-white"
                   : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
               ].join(" ")}
             >
               <span className="text-base leading-none">{tab.emoji}</span>
-              <span>
-                {tab.label}
-                <span className="block text-[10px] font-normal mt-0.5 opacity-70">{tab.desc}</span>
-              </span>
+              <span>{tab.label}</span>
             </Link>
           );
         })}

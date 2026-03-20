@@ -410,11 +410,11 @@ function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) 
             type="button"
             onClick={() => onChange(it.k)}
             className={cn(
-              "inline-flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition",
+              "inline-flex shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               active
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
             )}
           >
             {it.icon}
@@ -1880,10 +1880,11 @@ export default function PracticeHomeClient() {
       {/* RECENT VIEW */}
       {viewParam === "recent" ? (
         recentAttempts.length === 0 ? (
+          <div className="pl-14">
           <EmptyState
             icon={<History className="h-5 w-5" />}
-            title="No recent attempts yet"
-            description="Start any practice set and your recent attempts will show here."
+            title="No recent activity"
+            description="Sets you've recently attempted will appear here."
             action={
               <Link
                 href="/study/materials"
@@ -1898,6 +1899,7 @@ export default function PracticeHomeClient() {
               </Link>
             }
           />
+          </div>
         ) : (
           <div className="space-y-3">
             {recentAttempts.map((a) => (
@@ -1950,28 +1952,34 @@ export default function PracticeHomeClient() {
                 ))}
               </>
             ) : visibleSets.length === 0 ? (
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 pl-14">
                 <EmptyState
                   icon={<BookOpen className="h-5 w-5" />}
-                  title="No practice sets found"
+                  title={
+                    viewParam === "for_you"
+                      ? "No sets for your department yet"
+                      : "No practice sets published yet"
+                  }
                   description={
-                    hasAnyFilters
-                      ? "No content yet for this course. Help us grow — request it."
-                      : "No sets have been published yet. Request content or check Materials."
+                    viewParam === "for_you"
+                      ? "For you shows practice sets matched to your department and level. Browse All sets or request content below."
+                      : "Check back soon, or request content for your course."
                   }
                   action={
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setRequestModalOpen(true)}
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
-                          "hover:opacity-90",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                        )}
-                      >
-                        Request this course
-                      </button>
+                      {courseParam ? (
+                        <button
+                          type="button"
+                          onClick={() => setRequestModalOpen(true)}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+                            "hover:opacity-90",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          )}
+                        >
+                          Request this course
+                        </button>
+                      ) : null}
                       <Link
                         href="/study/materials"
                         className={cn(

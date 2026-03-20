@@ -26,8 +26,10 @@ import {
 const CATEGORIES = [
   "Phones",
   "Laptops",
+  "Electronics",
   "Fashion",
   "Provisions",
+  "Books & Stationery",
   "Food",
   "Beauty",
   "Services",
@@ -563,34 +565,14 @@ export default function EditListingPage() {
 
       if (error) throw error;
 
-      // If price dropped, notify everyone who saved this listing
+      // If price dropped, fire-and-forget notification to saved-listing users
       const oldPrice = original.price;
-      if (
-        priceInt !== null &&
-        oldPrice !== null &&
-        priceInt < oldPrice
-      ) {
-        try {
-          // Get all users who saved this listing
-          const { data: saveRows } = await supabase
-            .from("listing_saves")
-            .select("user_id")
-            .eq("listing_id", id);
-
-          if (saveRows && saveRows.length > 0) {
-            const listingTitle = title.trim() || "A saved listing";
-            const notifications = saveRows.map((row: any) => ({
-              user_id: row.user_id,
-              type: "price_drop",
-              title: "Price dropped!",
-              body: `${listingTitle}: ${formatNaira(oldPrice)} → ${formatNaira(priceInt)}`,
-              href: `/listing/${id}`,
-            }));
-            await supabase.from("notifications").insert(notifications);
-          }
-        } catch {
-          // Notification failure is non-fatal — don't block the save
-        }
+      if (priceInt !== null && oldPrice !== null && priceInt < oldPrice) {
+        void fetch("/api/marketplace/price-drop-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listing_id: id, old_price: oldPrice, new_price: priceInt }),
+        }).catch(() => {});
       }
 
       setToast("success", "Saved ✅ Redirecting…");

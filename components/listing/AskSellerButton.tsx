@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { MessageCircle, Loader2, Tag, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ export default function AskSellerButton({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authWall, setAuthWall] = useState(false);
 
   // Offer panel state
   const [offerOpen, setOfferOpen] = useState(false);
@@ -54,7 +56,7 @@ export default function AskSellerButton({
   async function openConversation(): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      router.push(`/login?next=/listing/${listingId}`);
+      setAuthWall(true);
       return null;
     }
 
@@ -82,6 +84,17 @@ export default function AskSellerButton({
         .maybeSingle();
       return retry?.id ?? null;
     }
+
+    // Fire-and-forget: notify seller of first contact (new conversation only)
+    void fetch("/api/marketplace/notify-seller", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: created.id,
+        listing_id: listingId,
+        vendor_id: vendorId,
+      }),
+    }).catch(() => {});
 
     return created.id;
   }
@@ -115,7 +128,7 @@ export default function AskSellerButton({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        router.push(`/login?next=/listing/${listingId}`);
+        setAuthWall(true);
         return;
       }
 
@@ -284,6 +297,37 @@ export default function AskSellerButton({
               : <><Tag className="h-4 w-4" /> Send offer</>
             }
           </button>
+        </div>
+      )}
+
+      {/* Auth wall — shown instead of redirecting when user is not logged in */}
+      {authWall && (
+        <div className="rounded-2xl border bg-zinc-50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-zinc-900">
+              Sign in to message this seller
+            </p>
+            <button type="button" onClick={() => setAuthWall(false)}>
+              <X className="h-4 w-4 text-zinc-400" />
+            </button>
+          </div>
+          <p className="text-xs text-zinc-600">
+            Create a free account in under a minute. No spam.
+          </p>
+          <div className="flex gap-2">
+            <Link
+              href={`/signup?next=/listing/${listingId}`}
+              className="flex-1 rounded-2xl bg-black px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              Sign up free
+            </Link>
+            <Link
+              href={`/login?next=/listing/${listingId}`}
+              className="flex-1 rounded-2xl border bg-white px-4 py-2.5 text-center text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+            >
+              Log in
+            </Link>
+          </div>
         </div>
       )}
 

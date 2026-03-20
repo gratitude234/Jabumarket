@@ -6,6 +6,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import AskSellerButton from "@/components/listing/AskSellerButton";
+import RequestCallbackButton from "@/components/listing/RequestCallbackButton";
+import { VendorRatingBadge } from "@/components/vendor/VendorReviews";
 import BackButton from "@/components/listing/BackButton";
 import {
   ListingContactActions,
@@ -13,9 +15,8 @@ import {
   ShareButton,
 } from "@/components/listing/ListingStatsClient";
 import ListingGallery from "@/components/listing/ListingGallery";
-import { getWhatsAppLink } from "@/lib/whatsapp";
 import ListingImage from "@/components/ListingImage";
-import { ArrowLeft, BadgeCheck, Clock, Eye, MapPin, Truck, Bookmark } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Clock, Eye, MapPin, Truck, Bookmark } from "lucide-react";
 
 function formatNaira(amount: number) {
   return `₦${amount.toLocaleString("en-NG")}`;
@@ -34,10 +35,6 @@ function formatDateTime(iso?: string | null) {
   } catch {
     return "";
   }
-}
-
-function cleanDigits(value: string | null | undefined) {
-  return String(value ?? "").replace(/[^\d]/g, "");
 }
 
 function isFoodLike(listing: ListingRow, vendor?: VendorRow | null) {
@@ -176,16 +173,6 @@ export default async function ListingPage({
   const isActive = listing.status === "active";
   const isVerified = Boolean(vendor?.verified);
 
-  const whatsappRaw = String(vendor?.whatsapp ?? "");
-  const phoneRaw = cleanDigits(vendor?.phone);
-  const contactPhone = phoneRaw || cleanDigits(vendor?.whatsapp);
-
-  const waText = `Hi, I'm interested in: ${listing.title} (on Jabumarket). Is it still available?`;
-  const waLink = getWhatsAppLink(whatsappRaw, waText);
-
-  const hasWhatsApp = Boolean(waLink);
-  const hasPhone = contactPhone.length >= 8;
-
   const postedAt = formatDateTime(listing.created_at);
 
   const priceText =
@@ -271,15 +258,51 @@ export default async function ListingPage({
     similar = (fallback2 ?? []) as ListingRow[];
   }
 
-  // Fetch view count (non-blocking — don't fail page if missing)
-  const { data: statsData } = await supabase
-    .from("listing_stats")
-    .select("views, saves")
-    .eq("listing_id", listing.id)
-    .maybeSingle();
+  // Fetch view count + more-from-seller + similar items — all in parallel
+  const [statsRes, moreFromSellerRes, similarItemsRes, soldSimilarRes] = await Promise.all([
+    supabase
+      .from("listing_stats")
+      .select("views, saves")
+      .eq("listing_id", listing.id)
+      .maybeSingle(),
+    listing.vendor_id
+      ? supabase
+          .from("listings")
+          .select("id, title, price, price_label, category, image_url, negotiable, status")
+          .eq("vendor_id", listing.vendor_id)
+          .neq("id", listing.id)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(4)
+      : Promise.resolve({ data: [] }),
+    categorySafe
+      ? supabase
+          .from("listings")
+          .select("id, title, price, price_label, category, image_url, negotiable, status")
+          .eq("category", categorySafe)
+          .neq("id", listing.id)
+          .neq("vendor_id", listing.vendor_id ?? "")
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(4)
+      : Promise.resolve({ data: [] }),
+    isSold && categorySafe
+      ? supabase
+          .from("listings")
+          .select("id, title, price, price_label, category, image_url, negotiable")
+          .eq("category", categorySafe)
+          .eq("status", "active")
+          .neq("id", listing.id)
+          .order("created_at", { ascending: false })
+          .limit(4)
+      : Promise.resolve({ data: [] }),
+  ]);
 
-  const viewCount: number = (statsData as any)?.views ?? 0;
-  const saveCount: number = (statsData as any)?.saves ?? 0;
+  const viewCount: number = (statsRes.data as any)?.views ?? 0;
+  const saveCount: number = (statsRes.data as any)?.saves ?? 0;
+  const moreFromSeller = (moreFromSellerRes.data ?? []) as ListingRow[];
+  const similarItems = (similarItemsRes.data ?? []) as ListingRow[];
+  const soldSimilar = (soldSimilarRes.data ?? []) as { id: string; title: string; price: number | null; price_label: string | null; image_url: string | null }[];
 
   // ✅ Improved share link & message (absolute URL + helpful details)
   const origin = await getSiteOrigin();
@@ -300,7 +323,6 @@ export default async function ListingPage({
   ].filter(Boolean) as string[];
 
   const shareText = shareTextLines.join("\n");
-  const waShareLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
 
   const desc = String(listing.description ?? "").trim();
   const longDesc = desc.length > 220;
@@ -518,14 +540,65 @@ export default async function ListingPage({
         <div className="lg:col-span-2 space-y-4 min-w-0">
           <div className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
             {isSold ? (
-              <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
-                <p className="text-sm font-semibold text-red-700">
-                  This listing is sold
-                </p>
-                <p className="text-xs text-red-700/80">
-                  Browse similar items below or return to Explore.
-                </p>
-              </div>
+              <>
+                <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2">
+                  <p className="text-sm font-semibold text-red-700">
+                    This listing is sold
+                  </p>
+                  <p className="text-xs text-red-700/80">
+                    Browse similar items below or return to Explore.
+                  </p>
+                </div>
+
+                <div className="mb-4 rounded-3xl border bg-zinc-50 p-4">
+                  <p className="text-sm font-semibold text-zinc-900">
+                    This item has been sold
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    Looking for something similar?
+                  </p>
+                  <Link
+                    href={`/explore?category=${encodeURIComponent(listing.category ?? "")}`}
+                    className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 no-underline"
+                  >
+                    Browse {listing.category ?? "similar"} listings
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+
+                  {soldSimilar.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      {soldSimilar.map((s) => (
+                        <Link
+                          key={s.id}
+                          href={`/listing/${s.id}`}
+                          className="overflow-hidden rounded-2xl border bg-white hover:bg-zinc-50 no-underline"
+                        >
+                          <div className="aspect-[4/3] bg-zinc-100">
+                            {s.image_url && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={s.image_url}
+                                alt={s.title ?? ""}
+                                className="h-full w-full object-cover"
+                              />
+                            )}
+                          </div>
+                          <div className="p-2">
+                            <p className="line-clamp-1 text-xs font-semibold text-zinc-900">
+                              {s.title}
+                            </p>
+                            <p className="text-xs font-bold text-zinc-900">
+                              {s.price !== null
+                                ? `₦${s.price.toLocaleString("en-NG")}`
+                                : s.price_label ?? "Contact"}
+                            </p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : isInactive ? (
               <div className="mb-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2">
                 <p className="text-sm font-semibold text-zinc-800">
@@ -629,32 +702,82 @@ export default async function ListingPage({
               )}
             </div>
 
+            {/* Seller info card */}
+            {vendor ? (
+              <div className="mt-4 rounded-2xl border bg-zinc-50 p-3">
+                <p className="mb-2 text-xs font-semibold text-zinc-500">Sold by</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/vendors/${vendor.id}`}
+                    className="text-sm font-semibold text-zinc-900 no-underline hover:underline"
+                  >
+                    {vendor.name ?? "Vendor"}
+                  </Link>
+
+                  {isVerified ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                      <BadgeCheck className="h-3 w-3" />
+                      Verified
+                    </span>
+                  ) : null}
+
+                  {vendor.vendor_type === "mall" ? (
+                    <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                      Campus Shop
+                    </span>
+                  ) : vendor.vendor_type === "student" ? (
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-700">
+                      Student seller
+                    </span>
+                  ) : vendor.vendor_type === "other" ? (
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-700">
+                      Vendor
+                    </span>
+                  ) : null}
+
+                  <VendorRatingBadge vendorId={vendor.id} />
+                </div>
+
+                <Link
+                  href={`/vendors/${vendor.id}#reviews`}
+                  className="mt-2 inline-flex text-xs font-medium text-zinc-600 no-underline hover:text-zinc-900"
+                >
+                  View all reviews →
+                </Link>
+              </div>
+            ) : null}
+
             {/* Contact / share */}
             <ListingContactActions
               listingId={listing.id}
-              isSold={isSold}
-              isActive={isActive}
-              hasWhatsApp={hasWhatsApp}
-              hasPhone={hasPhone}
-              waLink={waLink}
-              contactPhone={contactPhone}
               shareTitle={shareTitle}
               shareText={shareText}
               shareUrl={listingUrl}
               variant="desktop"
             />
 
-            {/* In-app message */}
+            {/* In-app message + callback */}
             {listing.vendor_id ? (
-              <AskSellerButton
-                listingId={listing.id}
-                vendorId={listing.vendor_id}
-                listingTitle={listing.title ?? undefined}
-                listingPrice={listing.price}
-                negotiable={listing.negotiable ?? false}
-                isSold={isSold}
-                className="mt-2"
-              />
+              <>
+                <AskSellerButton
+                  listingId={listing.id}
+                  vendorId={listing.vendor_id}
+                  listingTitle={listing.title ?? undefined}
+                  listingPrice={listing.price}
+                  negotiable={listing.negotiable ?? false}
+                  isSold={isSold}
+                  className="mt-2"
+                />
+                {!isSold ? (
+                  <div className="mt-2">
+                    <RequestCallbackButton
+                      vendorId={listing.vendor_id}
+                      listingId={listing.id}
+                      listingTitle={listing.title ?? undefined}
+                    />
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             {/* Delivery CTA — available on all active listings */}
@@ -689,6 +812,76 @@ export default async function ListingPage({
               <li>Report suspicious listings to help keep the market safe.</li>
             </ul>
           </div>
+
+          {/* More from this seller */}
+          {moreFromSeller.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-end justify-between gap-2">
+                <p className="text-sm font-semibold text-zinc-900">More from {vendor?.name ?? "this seller"}</p>
+                {vendor ? (
+                  <Link href={`/vendors/${vendor.id}`} className="text-xs font-medium text-zinc-600 no-underline hover:underline">
+                    View all
+                  </Link>
+                ) : null}
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {moreFromSeller.map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/listing/${s.id}`}
+                    className="min-w-[140px] overflow-hidden rounded-2xl border bg-white no-underline shadow-sm hover:bg-zinc-50"
+                  >
+                    <div className="relative h-28 w-full bg-zinc-100 overflow-hidden">
+                      {s.image_url ? (
+                        <ListingImage src={s.image_url} alt={s.title ?? ""} className="h-full w-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="p-2">
+                      <p className="line-clamp-2 text-xs font-semibold text-zinc-900">{s.title ?? "Listing"}</p>
+                      <p className="mt-1 text-xs font-bold text-zinc-900">
+                        {s.price !== null ? `₦${s.price.toLocaleString("en-NG")}` : s.price_label?.trim() || "—"}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Similar items */}
+          {similarItems.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-end justify-between gap-2">
+                <p className="text-sm font-semibold text-zinc-900">Similar items</p>
+                {categorySafe ? (
+                  <Link href={`/explore?category=${encodeURIComponent(categorySafe)}`} className="text-xs font-medium text-zinc-600 no-underline hover:underline">
+                    See more
+                  </Link>
+                ) : null}
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {similarItems.map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/listing/${s.id}`}
+                    className="min-w-[140px] overflow-hidden rounded-2xl border bg-white no-underline shadow-sm hover:bg-zinc-50"
+                  >
+                    <div className="relative h-28 w-full bg-zinc-100 overflow-hidden">
+                      {s.image_url ? (
+                        <ListingImage src={s.image_url} alt={s.title ?? ""} className="h-full w-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="p-2">
+                      <p className="line-clamp-2 text-xs font-semibold text-zinc-900">{s.title ?? "Listing"}</p>
+                      <p className="mt-1 text-xs font-bold text-zinc-900">
+                        {s.price !== null ? `₦${s.price.toLocaleString("en-NG")}` : s.price_label?.trim() || "—"}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -697,27 +890,32 @@ export default async function ListingPage({
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
           <ListingContactActions
             listingId={listing.id}
-            isSold={isSold}
-            isActive={isActive}
-            hasWhatsApp={hasWhatsApp}
-            hasPhone={hasPhone}
-            waLink={waLink}
-            contactPhone={contactPhone}
             shareTitle={shareTitle}
             shareText={shareText}
             shareUrl={listingUrl}
             variant="mobile"
           />
           {listing.vendor_id ? (
-            <AskSellerButton
-              listingId={listing.id}
-              vendorId={listing.vendor_id}
-              listingTitle={listing.title ?? undefined}
-              listingPrice={listing.price}
-              negotiable={listing.negotiable ?? false}
-              isSold={isSold}
-              className="mt-2"
-            />
+            <>
+              <AskSellerButton
+                listingId={listing.id}
+                vendorId={listing.vendor_id}
+                listingTitle={listing.title ?? undefined}
+                listingPrice={listing.price}
+                negotiable={listing.negotiable ?? false}
+                isSold={isSold}
+                className="mt-2"
+              />
+              {!isSold ? (
+                <div className="mt-2">
+                  <RequestCallbackButton
+                    vendorId={listing.vendor_id}
+                    listingId={listing.id}
+                    listingTitle={listing.title ?? undefined}
+                  />
+                </div>
+              ) : null}
+            </>
           ) : null}
           {!isSold && isActive ? (
             <Link

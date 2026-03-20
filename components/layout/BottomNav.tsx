@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, BookOpen, MessageCircle, User, Plus, Store, UtensilsCrossed } from "lucide-react";
+import { Home, Search, BookOpen, MessageCircle, User, Plus, Store } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -145,7 +145,6 @@ export default function BottomNav() {
   const studentItems = [
     { href: "/",        label: "Home",     icon: Home,            badge: null },
     { href: "/explore", label: "Explore",  icon: Search,          badge: null },
-    { href: "/food",    label: "Food",     icon: UtensilsCrossed, badge: null },
     { href: "/study",   label: "Study",    icon: BookOpen,        badge: null },
     {
       href: "/inbox",

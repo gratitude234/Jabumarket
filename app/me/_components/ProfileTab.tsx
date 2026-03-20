@@ -163,7 +163,7 @@ export default function ProfileTab({
   /* ----------------------------- Study profile --------------------------- */
   type Semester = "first" | "second" | "summer";
   type FacultyRow = { id: string; name: string; sort_order?: number | null };
-  type DeptRow = { id: string; faculty_id: string; display_name?: string | null; official_name?: string | null; sort_order?: number | null };
+  type DeptRow = { id: string; faculty_id: string; name: string; sort_order?: number | null };
 
   const [studyLoading, setStudyLoading] = useState(true);
   const [faculties, setFaculties] = useState<FacultyRow[]>([]);
@@ -247,7 +247,7 @@ export default function ProfileTab({
 
       const depRes = await supabase
         .from("study_departments")
-        .select("id,faculty_id,display_name,official_name,sort_order")
+        .select("id,faculty_id,name,sort_order")
         .eq("faculty_id", studyForm.faculty_id)
         .eq("is_active", true)
         .order("sort_order", { ascending: true });
@@ -291,7 +291,7 @@ export default function ProfileTab({
 
       const selectedDepartment = manualMode
         ? studyForm.department.trim()
-        : String(selectedDeptRow?.display_name || selectedDeptRow?.official_name || "").trim();
+        : String(selectedDeptRow?.name || "").trim();
 
       const payload: any = {
         user_id: user.id,
@@ -661,7 +661,7 @@ export default function ProfileTab({
                     </option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {String(d.display_name || d.official_name || "").trim()}
+                        {String(d.name || "").trim()}
                       </option>
                     ))}
                   </select>

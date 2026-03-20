@@ -8,14 +8,14 @@ import {
   ArrowLeft,
   BadgeCheck,
   MapPin,
-  Phone,
-  MessageCircle,
   Share2,
   ArrowRight,
   Search,
 } from "lucide-react";
 import VendorReviews, { VendorRatingBadge } from "@/components/vendor/VendorReviews";
 import FoodOrderCTA from "@/components/vendor/FoodOrderCTA";
+import AskSellerButton from "@/components/listing/AskSellerButton";
+import RequestCallbackButton from "@/components/listing/RequestCallbackButton";
 
 type SortKey = "newest" | "price_asc" | "price_desc";
 
@@ -23,12 +23,6 @@ function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
   if (!Number.isFinite(n)) return "₦0";
   return `₦${n.toLocaleString("en-NG")}`;
-}
-
-function getWhatsAppLink(phone: string, text: string) {
-  const safe = phone.replace(/[^\d]/g, "");
-  const msg = encodeURIComponent(text);
-  return `https://wa.me/${safe}?text=${msg}`;
 }
 
 function escapeLike(input: string) {
@@ -208,13 +202,6 @@ export default async function VendorProfilePage({
   const isVerified =
     (vendor as any).verification_status === "verified" || vendor.verified === true;
   const isClosed = vendor.vendor_type === "food" && isOpenNow(vendor) === false;
-  const safeWA = String(vendor.whatsapp ?? "").trim().replace(/[^\d]/g, "");
-  const safePhone = String(vendor.phone ?? "").trim().replace(/[^\d]/g, "");
-  const hasWA = safeWA.length >= 8;
-  const hasPhone = safePhone.length >= 8;
-
-  const waText = `Hi ${name}, I found your shop on JABU Market. Please I’m interested in your listings.`;
-  const waLink = hasWA ? getWhatsAppLink(safeWA, waText) : "";
 
   const shopShareUrl = `/vendors/${vendor.id}`;
 
@@ -299,31 +286,20 @@ export default async function VendorProfilePage({
                   Share
                 </Link>
 
-                {hasPhone ? (
-                  <a
-                    href={`tel:+${safePhone}`}
-                    className="inline-flex items-center gap-2 rounded-2xl border bg-white px-3 py-2 text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
-                  >
-                    <Phone className="h-4 w-4" />
-                    Call
-                  </a>
+                {listings[0]?.id ? (
+                  <>
+                    <AskSellerButton
+                      listingId={listings[0].id}
+                      vendorId={vendor.id}
+                      listingTitle={listings[0].title ?? undefined}
+                      listingPrice={listings[0].price}
+                    />
+                    <RequestCallbackButton
+                      vendorId={vendor.id}
+                      listingId={listings[0].id}
+                    />
+                  </>
                 ) : null}
-
-                {hasWA ? (
-                  <a
-                    href={waLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 rounded-2xl bg-black px-3 py-2 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    WhatsApp
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-2 rounded-2xl bg-zinc-100 px-3 py-2 text-sm font-semibold text-zinc-500">
-                    WhatsApp N/A
-                  </span>
-                )}
               </div>
             </div>
 
@@ -483,46 +459,37 @@ export default async function VendorProfilePage({
       {/* Mobile sticky action bar (kept above your bottom nav) */}
       <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 px-4">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white/90 p-2 shadow-lg backdrop-blur">
-          <div className="grid grid-cols-3 gap-2">
+          {listings[0]?.id ? (
+            <div className="flex flex-col gap-2">
+              <AskSellerButton
+                listingId={listings[0].id}
+                vendorId={vendor.id}
+                listingTitle={listings[0].title ?? undefined}
+                listingPrice={listings[0].price}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <RequestCallbackButton
+                  vendorId={vendor.id}
+                  listingId={listings[0].id}
+                />
+                <Link
+                  href={shopShareUrl}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 no-underline"
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share
+                </Link>
+              </div>
+            </div>
+          ) : (
             <Link
               href={shopShareUrl}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 no-underline"
-              title="Copy link from address bar to share"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 no-underline"
             >
               <Share2 className="h-4 w-4" />
               Share
             </Link>
-
-            {hasPhone ? (
-              <a
-                href={`tel:+${safePhone}`}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-900 no-underline"
-              >
-                <Phone className="h-4 w-4" />
-                Call
-              </a>
-            ) : (
-              <span className="inline-flex items-center justify-center rounded-2xl border bg-white px-3 py-3 text-sm font-semibold text-zinc-400">
-                Call
-              </span>
-            )}
-
-            {hasWA ? (
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-3 text-sm font-semibold text-white no-underline"
-              >
-                <MessageCircle className="h-4 w-4" />
-                WhatsApp
-              </a>
-            ) : (
-              <span className="inline-flex items-center justify-center rounded-2xl bg-zinc-100 px-3 py-3 text-sm font-semibold text-zinc-500">
-                WhatsApp N/A
-              </span>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </div>

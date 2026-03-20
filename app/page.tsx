@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   BookOpen,
+  Bookmark,
+  Cpu,
   FileText,
   MessageCircleQuestion,
   Search,
@@ -83,8 +85,10 @@ type VendorPreview = {
 const categories = [
   { name: "Phones", icon: Smartphone, href: "/explore?category=Phones" },
   { name: "Laptops", icon: Laptop, href: "/explore?category=Laptops" },
+  { name: "Electronics", icon: Cpu, href: "/explore?category=Electronics" },
   { name: "Fashion", icon: Shirt, href: "/explore?category=Fashion" },
   { name: "Provisions", icon: ShoppingBasket, href: "/explore?category=Provisions" },
+  { name: "Books & Stationery", icon: BookOpen, href: "/explore?category=Books+%26+Stationery" },
   { name: "Food", icon: UtensilsCrossed, href: "/food" },
   { name: "Beauty", icon: Sparkles, href: "/explore?category=Beauty" },
   { name: "Services", icon: Wrench, href: "/explore?category=Services&type=service" },
@@ -198,7 +202,7 @@ export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
 
   // Run queries in parallel (faster TTFB)
-  const [latestListingsRes, featuredVendorsRes] = await Promise.all([
+  const [latestListingsRes, featuredVendorsRes, featuredListingsRes] = await Promise.all([
     supabase
       .from("listings")
       .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
@@ -215,19 +219,33 @@ export default async function HomePage() {
       .order("avatar_url", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(18), // fetch 18, re-rank client-side below
+    supabase
+      .from("listings")
+      .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
+      .eq("featured", true)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(6),
   ]);
 
   const listings = ((latestListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
   const rawVendors = ((featuredVendorsRes.data ?? []) as (VendorPreview & { avatar_url?: string | null })[]).filter(Boolean);
+  const featuredListings = ((featuredListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
 
-  // Fetch rating summaries for homepage vendors in parallel
+  // Fetch rating summaries for homepage vendors + listing stats — parallel
   const homepageVendorIds = rawVendors.map((v) => v.id);
-  const { data: homepageReviews } = homepageVendorIds.length > 0
-    ? await supabase
-        .from("vendor_reviews")
-        .select("vendor_id, rating")
-        .in("vendor_id", homepageVendorIds)
-    : { data: [] };
+  const homepageListingIds = listings.map((l) => l.id);
+
+  const [homepageReviewsRes, homepageStatsRes] = await Promise.all([
+    homepageVendorIds.length > 0
+      ? supabase.from("vendor_reviews").select("vendor_id, rating").in("vendor_id", homepageVendorIds)
+      : { data: [] as { vendor_id: string; rating: number }[] },
+    homepageListingIds.length > 0
+      ? supabase.from("listing_stats").select("listing_id, saves").in("listing_id", homepageListingIds)
+      : { data: [] as { listing_id: string; saves: number }[] },
+  ]);
+
+  const homepageReviews = homepageReviewsRes.data;
 
   // Build rating map
   const homeRatingMap: Record<string, { avg: number; count: number }> = {};
@@ -236,6 +254,12 @@ export default async function HomePage() {
     homeRatingMap[r.vendor_id] = e
       ? { avg: (e.avg * e.count + r.rating) / (e.count + 1), count: e.count + 1 }
       : { avg: r.rating, count: 1 };
+  }
+
+  // Build listing saves map
+  const homeSavesMap: Record<string, number> = {};
+  for (const s of homepageStatsRes.data ?? []) {
+    homeSavesMap[s.listing_id] = Number(s.saves ?? 0);
   }
 
   // Quality score: has reviews (2pts) + has avatar (1pt) — pick top 6
@@ -488,6 +512,77 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* FEATURED LISTINGS */}
+      {featuredListings.length > 0 ? (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Featured listings"
+            subtitle="Handpicked listings from the marketplace."
+            href="/explore"
+            cta="See all"
+            icon={<Star className="h-4 w-4 text-amber-500" />}
+          />
+          <ScrollRow>
+            {featuredListings.map((l) => {
+              const title = l.title ?? "Untitled listing";
+              const img = (l.image_url ?? "").trim();
+              const showImg = img.length > 0;
+
+              return (
+                <Link
+                  key={l.id}
+                  href={`/listing/${l.id}`}
+                  className="group min-w-[280px] overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
+                >
+                  <div className="relative h-36 w-full bg-zinc-100">
+                    {showImg ? (
+                      <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                        <ImageIcon className="h-6 w-6" />
+                      </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
+                    <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                      {l.category ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.category}</span> : null}
+                    </div>
+                    <div className="absolute right-3 top-3">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
+                        <Star className="h-2.5 w-2.5 fill-white" />
+                        Featured
+                      </span>
+                    </div>
+                    <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white">
+                      {l.created_at ? timeAgo(l.created_at) : ""}
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-zinc-900">{title}</div>
+                        {l.location ? (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-zinc-600">
+                            <MapPin className="h-3.5 w-3.5" />
+                            <span className="truncate">{l.location}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 rounded-2xl bg-zinc-100 px-3 py-2 text-sm font-bold text-zinc-900">
+                        {l.price ? `₦${l.price.toLocaleString("en-NG")}` : l.price_label?.trim() || "Contact"}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
+                      <span className="font-medium">View details</span>
+                      <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </ScrollRow>
+        </section>
+      ) : null}
+
       {/* LATEST LISTINGS */}
       <section className="space-y-3">
         <SectionHeader
@@ -542,7 +637,6 @@ export default async function HomePage() {
                     <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
                       {l.category ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.category}</span> : null}
                       {l.listing_type ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.listing_type}</span> : null}
-                      {l.negotiable ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">Negotiable</span> : null}
                     </div>
                     <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white">
                       {l.created_at ? timeAgo(l.created_at) : ""}
@@ -567,12 +661,25 @@ export default async function HomePage() {
                         </div>
                       </div>
 
-                      <PriceChip price={l.price} priceLabel={l.price_label} />
+                      <p className="shrink-0 text-base font-bold text-zinc-900">
+                        {l.price !== null ? formatNaira(l.price) : (l.price_label ?? "Contact")}
+                        {l.negotiable && (
+                          <span className="ml-1.5 text-xs font-normal text-zinc-500">· Negotiable</span>
+                        )}
+                      </p>
                     </div>
 
                     <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
                       <span className="font-medium">View details</span>
-                      <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                      <div className="flex items-center gap-2">
+                        {(homeSavesMap[l.id] ?? 0) > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-zinc-600">
+                            <Bookmark className="h-3 w-3" />
+                            {homeSavesMap[l.id]}
+                          </span>
+                        ) : null}
+                        <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                      </div>
                     </div>
                   </div>
                 </Link>

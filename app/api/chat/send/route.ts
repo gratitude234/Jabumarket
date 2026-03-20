@@ -107,6 +107,25 @@ export async function POST(req: Request) {
           .eq('id', body.conversation_id);
       }
 
+      // Notify vendor of new message
+      try {
+        const { data: vendor } = await admin
+          .from('vendors')
+          .select('user_id')
+          .eq('id', convo.vendor_id)
+          .single();
+
+        if (vendor?.user_id && vendor.user_id !== user.id) {
+          await admin.from('notifications').insert({
+            user_id: vendor.user_id,
+            type: 'new_message',
+            title: 'New message from a buyer',
+            body: body.body.trim().slice(0, 80),
+            href: `/inbox/${body.conversation_id}`,
+          });
+        }
+      } catch { /* never block the message send */ }
+
       return NextResponse.json({ ok: true, message: msg });
     }
 

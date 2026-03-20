@@ -32,6 +32,7 @@ type MaterialItem = {
   id: string;
   title: string | null;
   material_type: MaterialType;
+  department: string | null;
   session: string | null;
   file_url: string | null;
   file_path: string | null;
@@ -403,6 +404,11 @@ export default function StudyAdminMaterialsPage() {
                     <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
                       {m.study_courses.course_code}
                     </span>
+                    {m.department ? (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+                        {m.department}
+                      </span>
+                    ) : null}
                     <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
                       {m.study_courses.level}L · {m.study_courses.semester}
                     </span>

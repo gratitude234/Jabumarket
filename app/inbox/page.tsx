@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft,
+  ArrowRight,
   MessageCircle,
   ShoppingBag,
   Store,
@@ -260,23 +261,28 @@ export default function InboxPage() {
         </div>
       ) : conversations.length === 0 ? (
         <div className="rounded-3xl border bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-zinc-100">
-            <MessageCircle className="h-7 w-7 text-zinc-300" />
-          </div>
-          <p className="text-sm font-semibold text-zinc-900">
+          <MessageCircle className="mx-auto h-10 w-10 text-zinc-300" />
+          <p className="mt-3 text-sm font-semibold text-zinc-900">
             {tab === "buying" ? "No conversations yet" : "No enquiries yet"}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-sm text-zinc-600">
             {tab === "buying"
-              ? "Find a listing you like and tap \"Message seller\" to start a chat."
-              : "When buyers message you about your listings, they'll show here."}
+              ? "Find something you like and tap \"Message seller\" to start chatting."
+              : "When buyers message you about your listings, they'll appear here."}
           </p>
-          {tab === "buying" && (
+          {tab === "buying" ? (
             <Link
               href="/explore"
-              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-xs font-semibold text-white no-underline hover:bg-zinc-800"
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
             >
-              Browse listings
+              Browse listings <ArrowRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <Link
+              href="/post"
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-zinc-800"
+            >
+              Post a listing <ArrowRight className="h-4 w-4" />
             </Link>
           )}
         </div>

@@ -253,12 +253,12 @@ export default function ConversationPage() {
     scrollToBottom(messages.length <= 1 ? "instant" : "smooth");
   }, [messages.length]);
 
-  async function send() {
-    const text = body.trim();
+  async function send(chipText?: string) {
+    const text = (chipText ?? body).trim();
     if (!text || sending || !userId || !meta) return;
 
     setSending(true);
-    setBody("");
+    if (!chipText) setBody("");
 
     // Optimistic insert
     const optimisticId = `opt-${Date.now()}`;
@@ -515,6 +515,25 @@ export default function ConversationPage() {
           />
         </div>
       )}
+
+      {/* Quick reply chips — only shown when conversation has no messages */}
+      {messages.length === 0 ? (
+        <div className="bg-white px-4 pt-3 pb-0">
+          <div className="flex flex-wrap gap-2">
+            {["Is this still available?", "Can you do lower?", "Where can we meet?"].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => send(chip)}
+                disabled={sending}
+                className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Input bar */}
       <div className="border-t bg-white px-4 py-3">

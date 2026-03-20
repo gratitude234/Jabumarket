@@ -40,7 +40,7 @@ export default function HeaderCard(props: {
           {props.avatarText}
         </div>
         <Link
-          href="/settings"
+          href="/me?tab=account"
           className="inline-flex items-center gap-1.5 rounded-xl border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"
         >
           <Settings className="h-3.5 w-3.5" />

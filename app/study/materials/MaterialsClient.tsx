@@ -447,14 +447,12 @@ function MaterialCard({
   saved,
   saving,
   onToggleSave,
-  onPreview,
   onDownload,
 }: {
   m: MaterialRow;
   saved: boolean;
   saving: boolean;
   onToggleSave: () => void;
-  onPreview: () => void;
   onDownload: () => void;
 }) {
   const title = (m.title ?? "Untitled material").trim() || "Untitled material";
@@ -498,7 +496,8 @@ function MaterialCard({
   const isFeatured = !!m.featured;
 
   return (
-    <Card className="rounded-3xl p-4">
+    <Card className="rounded-3xl p-4 cursor-pointer">
+      <Link href={`/study/materials/${m.id}`} className="block no-underline">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -558,6 +557,7 @@ function MaterialCard({
           {badgeIcon}
         </div>
       </div>
+      </Link>
 
       <div className="mt-4 flex items-center gap-2">
         <button
@@ -579,21 +579,17 @@ function MaterialCard({
           <span className="hidden sm:inline">{saved ? "Saved" : "Save"}</span>
         </button>
 
-        <button
-          type="button"
-          onClick={onPreview}
-          disabled={disabled}
+        <Link
+          href={`/study/materials/${m.id}`}
           className={cn(
-            "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+            "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition no-underline",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            disabled
-              ? "cursor-not-allowed bg-muted text-muted-foreground border-border/60"
-              : "bg-secondary text-foreground border-border hover:opacity-90"
+            "bg-secondary text-foreground border-border hover:opacity-90"
           )}
         >
           <BookOpen className="h-4 w-4" />
           {kind === "other" ? "Open" : "Preview"}
-        </button>
+        </Link>
 
         <a
           href={href}
@@ -742,7 +738,7 @@ export default function MaterialsClient() {
   const mineOnly = useMemo(() => {
     if (mineExplicitOn) return true;
     if (mineExplicitOff) return false;
-    return prefsLoaded && !!myBadge;
+    return false;
   }, [mineExplicitOn, mineExplicitOff, prefsLoaded, myBadge]);
 
   const filtersKey = useMemo(() => {
@@ -1195,7 +1191,7 @@ export default function MaterialsClient() {
     setQ("");
     router.replace(
       buildHref(pathname, {
-        mine: mineParam ? mineParam : null,
+        mine: mineOnly ? "0" : (mineParam || null),
       })
     );
   }
@@ -1275,32 +1271,6 @@ export default function MaterialsClient() {
           Back
         </Link>
 
-        {/* Context-aware: approved reps get Upload, others get Contribute */}
-        {repStatus === "approved" ? (
-          <Link
-            href="/study/materials/upload"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
-              "hover:opacity-90",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            )}
-          >
-            <UploadCloud className="h-4 w-4" />
-            Upload
-          </Link>
-        ) : repStatus !== null ? (
-          <Link
-            href="/study/apply-rep"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
-              "hover:bg-secondary/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            )}
-          >
-            <UploadCloud className="h-4 w-4" />
-            {repStatus === "pending" ? "Pending" : repStatus === "rejected" ? "Reapply" : "Contribute"}
-          </Link>
-        ) : null}
       </div>
 
       <Card className="rounded-3xl">
@@ -1366,21 +1336,6 @@ export default function MaterialsClient() {
         </Chip>
       </div>
 
-      {/* Dept auto-filter chip */}
-      {mineOnly && !mineExplicitOff && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>
-            Showing results for your department
-          </span>
-          <button
-            type="button"
-            onClick={openFilters}
-            className="font-semibold text-foreground underline underline-offset-2 hover:opacity-70 focus-visible:outline-none"
-          >
-            Change
-          </button>
-        </div>
-      )}
 
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
       <div className="sticky top-16 z-30">
@@ -1419,14 +1374,29 @@ export default function MaterialsClient() {
               <SlidersHorizontal className="h-4 w-4" />
               Filters
             </button>
+            {materials.length > 0 ? (
+              <Link
+                href="/study/materials/upload"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
+                  "hover:bg-secondary/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                )}
+              >
+                <UploadCloud className="h-4 w-4" />
+                + Upload
+              </Link>
+            ) : null}
           </div>
 
           {hasAnyFilters ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-muted-foreground">
-                Showing <span className="text-foreground">{showingFrom}</span>–<span className="text-foreground">{showingTo}</span> of{" "}
-                <span className="text-foreground">{total}</span>
-              </p>
+              {total > 0 && (
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Showing <span className="text-foreground">{showingFrom}</span>–<span className="text-foreground">{showingTo}</span> of{" "}
+                  <span className="text-foreground">{total}</span>
+                </p>
+              )}
               <button
                 type="button"
                 onClick={clearAll}
@@ -1446,7 +1416,32 @@ export default function MaterialsClient() {
             </p>
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto pl-16">
+            {mineOnly && !mineExplicitOff && scopeDept ? (
+              <Chip
+                active
+                onClick={() =>
+                  router.replace(
+                    buildHref(pathname, {
+                      q: qParam || null,
+                      level: levelParam || null,
+                      semester: semesterParam || null,
+                      faculty: facultyParam || null,
+                      dept: deptParam || null,
+                      course: courseParam || null,
+                      session: sessionParam || null,
+                      type: typeParam !== "all" ? typeParam : null,
+                      sort: sortParam !== "newest" ? sortParam : null,
+                      verified: verifiedOnly ? "1" : null,
+                      featured: featuredOnly ? "1" : null,
+                      mine: "0",
+                    })
+                  )
+                }
+              >
+                {scopeDept} <X className="h-4 w-4" />
+              </Chip>
+            ) : null}
             {typeParam !== "all" ? (
               <Chip
                 active
@@ -1499,7 +1494,7 @@ export default function MaterialsClient() {
               </Chip>
             ) : null}
 
-            <span className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
+            <span className="ml-auto shrink-0 inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
               <Sparkles className="h-4 w-4" />
               {activeSortLabel}
             </span>
@@ -1532,21 +1527,35 @@ export default function MaterialsClient() {
           <div className="sm:col-span-2">
             <EmptyState
               icon={<FileText className="h-5 w-5" />}
-              title="No content yet for this course"
-              description="Help us grow — request it and we’ll notify you when content is available."
+              title={
+                courseParam
+                  ? `No materials for ${courseParam} yet`
+                  : (levelParam || deptParam)
+                  ? "No materials found"
+                  : "No materials yet"
+              }
+              description={
+                courseParam
+                  ? "Help us grow — request it and we’ll notify you when content is available."
+                  : (levelParam || deptParam)
+                  ? "Try adjusting your filters, or upload the first one."
+                  : "Be the first to upload study materials for your department."
+              }
               action={
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRequestModalOpen(true)}
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
-                      "hover:opacity-90",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    )}
-                  >
-                    Request this course
-                  </button>
+                  {courseParam ? (
+                    <button
+                      type="button"
+                      onClick={() => setRequestModalOpen(true)}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-semibold text-foreground",
+                        "hover:opacity-90",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      )}
+                    >
+                      Request this course
+                    </button>
+                  ) : null}
                   <Link
                     href="/study/materials/upload"
                     className={cn(
@@ -1570,7 +1579,6 @@ export default function MaterialsClient() {
               saved={savedIds.has(m.id)}
               saving={savingId === m.id}
               onToggleSave={() => onToggleMaterialSave(m.id)}
-              onPreview={() => onPreviewMaterial(m)}
               onDownload={() => {
                 if (!m.file_url) return;
                 bumpDownloads(m.id);

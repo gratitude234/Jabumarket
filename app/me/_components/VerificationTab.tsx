@@ -335,6 +335,18 @@ export default function VerificationTab({
         </div>
       ) : null}
 
+      <div className="rounded-2xl border bg-zinc-50 p-4">
+        <p className="text-sm font-semibold text-zinc-900">
+          Why get verified?
+        </p>
+        <ul className="mt-2 space-y-1.5 text-sm text-zinc-600">
+          <li>✓ Verified badge on all your listings</li>
+          <li>✓ Appear higher in search results</li>
+          <li>✓ Buyers trust verified sellers more</li>
+          <li>✓ Priority support from the Jabumarket team</li>
+        </ul>
+      </div>
+
       <Stepper step={step} req={req} vendor={vendor} />
 
       <div className="rounded-2xl border p-3">

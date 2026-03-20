@@ -4,16 +4,19 @@
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
   AlertTriangle,
   ArrowLeft,
   Camera,
   CheckCircle2,
+  ChevronDown,
   Image as ImageIcon,
   Loader2,
   Phone,
   Save,
+  Share2,
   Store,
   X,
   RefreshCcw,
@@ -24,8 +27,10 @@ import {
 const CATEGORIES = [
   "Phones",
   "Laptops",
+  "Electronics",
   "Fashion",
   "Provisions",
+  "Books & Stationery",
   "Food",
   "Beauty",
   "Services",
@@ -219,11 +224,19 @@ export default function PostPage() {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const titleRef = useRef<HTMLElement>(null);
+  const conditionRef = useRef<HTMLElement>(null);
+  const descRef = useRef<HTMLElement>(null);
+  const photoRef = useRef<HTMLElement>(null);
+  const priceRef = useRef<HTMLElement>(null);
 
   const [progress, setProgress] = useState(0);
   const progressTimerRef = useRef<number | null>(null);
 
   const [postedId, setPostedId] = useState<string | null>(null);
+  const [published, setPublished] = useState<{
+    id: string; title: string; category: string;
+  } | null>(null);
 
   const [draftFound, setDraftFound] = useState(false);
   const [showDraftModal, setShowDraftModal] = useState(false);
@@ -259,7 +272,7 @@ export default function PostPage() {
 
   const canPublish = useMemo(() => {
     if (title.trim().length < MIN_TITLE) return false;
-    if (imageFiles.length === 0) return false;
+    if (listingType === "product" && imageFiles.length === 0) return false;
 
     if (listingType === "service" && description.trim().length < MIN_DESC_SERVICE) {
       return false;
@@ -432,7 +445,7 @@ export default function PostPage() {
     const next: Record<string, string> = {};
     setBanner(null);
 
-    if (imageFiles.length === 0) next.image = "Please add at least one photo.";
+    if (listingType === "product" && imageFiles.length === 0) next.image = "Please add at least one photo.";
 
     if (!title.trim()) next.title = "Title is required.";
     else if (title.trim().length < MIN_TITLE) {
@@ -616,6 +629,9 @@ export default function PostPage() {
       } catch {}
 
       setPostedId(created?.id ?? null);
+      if (created?.id) {
+        setPublished({ id: created.id, title: title.trim(), category });
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to post listing.";
@@ -674,6 +690,7 @@ export default function PostPage() {
     setBanner(null);
     setErrors({});
     setPostedId(null);
+    setPublished(null);
 
     setListingType("product");
     setCategory("Phones");
@@ -799,65 +816,60 @@ export default function PostPage() {
     setShowDraftModal(false);
   }
 
-  if (postedId) {
+  if (published) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
-        <div className="rounded-3xl border bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-zinc-100">
-              <CheckCircle2 className="h-6 w-6 text-zinc-900" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-zinc-900">Listing posted ✅</h1>
-              <p className="mt-1 text-sm text-zinc-600">
-                Your listing is live. You can view it now or post another.
-              </p>
-            </div>
-          </div>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-4 px-4 text-center">
+        <div className="text-4xl">🎉</div>
+        <h1 className="text-xl font-bold text-zinc-900">Your listing is live!</h1>
+        <p className="text-sm text-zinc-600">
+          &ldquo;{published.title}&rdquo; has been posted. Share it to get your first buyer faster.
+        </p>
 
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
-            <button
-              onClick={() => router.push(`/listing/${postedId}`)}
-              className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-            >
-              View listing
-            </button>
-            <button
-              onClick={resetForm}
-              className="rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            >
-              Post another
-            </button>
-          </div>
+        <button
+          type="button"
+          onClick={() => {
+            const url = `${window.location.origin}/listing/${published.id}`;
+            if (navigator.share) {
+              navigator.share({
+                title: published.title,
+                text: `Check out this listing on Jabumarket: ${published.title}`,
+                url,
+              });
+            } else {
+              navigator.clipboard.writeText(url);
+            }
+          }}
+          className="inline-flex items-center gap-2 rounded-2xl bg-black px-6 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+        >
+          <Share2 className="h-4 w-4" />
+          Share this listing
+        </button>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <button
-              onClick={() => router.push("/my-listings")}
-              className="rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            >
-              Go to My Listings
-            </button>
-            <button
-              onClick={() => {
-                const url =
-                  typeof window !== "undefined"
-                    ? `${window.location.origin}/listing/${postedId}`
-                    : `/listing/${postedId}`;
-                navigator.clipboard?.writeText(url).catch(() => {});
-                setBanner("Link copied ✅");
-              }}
-              className="rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            >
-              Copy link
-            </button>
-          </div>
+        <div className="flex gap-3">
+          <Link
+            href={`/listing/${published.id}`}
+            className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 no-underline"
+          >
+            View listing
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              try { window.localStorage.removeItem(DRAFT_KEY); } catch {}
+              resetForm();
+            }}
+            className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            Post another
+          </button>
         </div>
 
-        {banner ? (
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
-            {banner}
-          </div>
-        ) : null}
+        <Link
+          href="/my-listings"
+          className="text-xs text-zinc-500 underline underline-offset-2"
+        >
+          Manage all listings
+        </Link>
       </div>
     );
   }
@@ -1047,13 +1059,163 @@ export default function PostPage() {
         ) : null}
       </div>
 
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+      {/* ── 1) Listing info ─────────────────────────────────── */}
+      <section ref={titleRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <h2 className="text-sm font-semibold text-zinc-900">1) Listing info</h2>
+        <p className="mt-0.5 text-xs text-zinc-600">What are you selling?</p>
+
+        <div className="mt-4">
+          <p className="text-xs font-medium text-zinc-700">Type</p>
+          <div className="mt-2 grid grid-cols-2 rounded-2xl border bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setListingType("product")}
+              className={cn(
+                "rounded-xl px-3 py-2 text-sm font-semibold",
+                listingType === "product"
+                  ? "bg-black text-white"
+                  : "text-zinc-800 hover:bg-zinc-50"
+              )}
+            >
+              Product
+            </button>
+            <button
+              type="button"
+              onClick={() => setListingType("service")}
+              className={cn(
+                "rounded-xl px-3 py-2 text-sm font-semibold",
+                listingType === "service"
+                  ? "bg-black text-white"
+                  : "text-zinc-800 hover:bg-zinc-50"
+              )}
+            >
+              Service
+            </button>
+          </div>
+        </div>
+
+        {/* Task 2 — native select replaces pill grid */}
+        <div className="mt-4">
+          <p className="text-xs font-medium text-zinc-700">Category</p>
+          <div className="relative mt-2">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as typeof category)}
+              className="w-full appearance-none rounded-2xl border bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-black/10"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Pick the best match so buyers find you.
+          </p>
+        </div>
+
+        <div className="mt-4">
+          <label className="text-xs font-medium text-zinc-700">
+            Title <span className="text-red-600">*</span>
+          </label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. iPhone 11 64GB — clean, no issues"
+            className={cn(
+              "mt-1 w-full rounded-2xl border px-3 py-3 text-sm",
+              errors.title && "border-red-300"
+            )}
+          />
+          <div className="mt-1 flex items-center justify-between">
+            {errors.title ? <p className="text-xs text-red-600">{errors.title}</p> : <span />}
+            <p
+              className={cn(
+                "text-[11px]",
+                titleCount < MIN_TITLE ? "text-amber-700" : "text-zinc-500"
+              )}
+            >
+              {titleCount}/{MIN_TITLE}+ recommended
+            </p>
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Short + specific titles get more clicks.
+          </p>
+        </div>
+      </section>
+
+      {/* ── 2) Condition (products only) ────────────────────── */}
+      {listingType === "product" ? (
+        <section ref={conditionRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+          <h2 className="text-sm font-semibold text-zinc-900">2) Condition</h2>
+          <p className="mt-0.5 text-xs text-zinc-600">Helps buyers decide.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CONDITIONS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setCondition(prev => prev === c.value ? null : c.value)}
+                className={cn(
+                  "flex flex-col gap-0.5 rounded-2xl border px-3 py-2.5 text-left transition",
+                  condition === c.value
+                    ? "border-black bg-black text-white"
+                    : "bg-white text-zinc-800 hover:bg-zinc-50"
+                )}
+              >
+                <span className="text-xs font-semibold">{c.label}</span>
+                <span className={cn("text-[11px]", condition === c.value ? "text-zinc-300" : "text-zinc-500")}>
+                  {c.hint}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── 3) Description ──────────────────────────────────── */}
+      <section ref={descRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+        <h2 className="text-sm font-semibold text-zinc-900">3) Description</h2>
+        <div className="mt-3">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Condition, what’s included, any faults, delivery options, etc."
+            className={cn(
+              "mt-1 min-h-[120px] w-full rounded-2xl border px-3 py-3 text-sm",
+              errors.description && "border-red-300"
+            )}
+          />
+          <div className="mt-1 flex items-center justify-between">
+            {errors.description ? (
+              <p className="text-xs text-red-600">{errors.description}</p>
+            ) : (
+              <span />
+            )}
+            {listingType === "service" ? (
+              <p
+                className={cn(
+                  "text-[11px]",
+                  descCount < MIN_DESC_SERVICE ? "text-amber-700" : "text-zinc-500"
+                )}
+              >
+                {descCount}/{MIN_DESC_SERVICE}+ recommended
+              </p>
+            ) : (
+              <p className="text-[11px] text-zinc-500">{descCount} chars</p>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">Good descriptions build trust.</p>
+        </div>
+      </section>
+
+      {/* ── 4) Photos ───────────────────────────────────────── */}
+      <section ref={photoRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">1) Add photos</h2>
+            <h2 className="text-sm font-semibold text-zinc-900">4) Add photos</h2>
             <p className="mt-0.5 text-xs text-zinc-600">
               Up to {MAX_IMAGES} photos — first photo is the cover. Clear photos get
-              more messages.
+              more messages.{listingType === "service" ? " Optional for services." : ""}
             </p>
           </div>
           {imageFiles.length > 0 ? (
@@ -1174,165 +1336,10 @@ export default function PostPage() {
         </p>
       </section>
 
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-sm font-semibold text-zinc-900">2) Details</h2>
-        <p className="mt-0.5 text-xs text-zinc-600">
-          Help buyers understand what you’re offering.
-        </p>
-
-        <div className="mt-4">
-          <p className="text-xs font-medium text-zinc-700">Type</p>
-          <div className="mt-2 grid grid-cols-2 rounded-2xl border bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setListingType("product")}
-              className={cn(
-                "rounded-xl px-3 py-2 text-sm font-semibold",
-                listingType === "product"
-                  ? "bg-black text-white"
-                  : "text-zinc-800 hover:bg-zinc-50"
-              )}
-            >
-              Product
-            </button>
-            <button
-              type="button"
-              onClick={() => setListingType("service")}
-              className={cn(
-                "rounded-xl px-3 py-2 text-sm font-semibold",
-                listingType === "service"
-                  ? "bg-black text-white"
-                  : "text-zinc-800 hover:bg-zinc-50"
-              )}
-            >
-              Service
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-xs font-medium text-zinc-700">Category</p>
-          <div className="mt-2 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-            <style>{`div::-webkit-scrollbar{display:none}`}</style>
-            <div className="flex w-max gap-2">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCategory(c)}
-                  className={cn(
-                    "whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold",
-                    category === c
-                      ? "border-black bg-black text-white"
-                      : "bg-white text-zinc-800 hover:bg-zinc-50"
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            Pick the best match so buyers find you.
-          </p>
-        </div>
-
-        {/* Condition — only shown for products */}
-        {listingType === "product" ? (
-          <div className="mt-4">
-            <p className="text-xs font-medium text-zinc-700">
-              Condition <span className="text-zinc-400">(helps buyers decide)</span>
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {CONDITIONS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setCondition(prev => prev === c.value ? null : c.value)}
-                  className={cn(
-                    "flex flex-col gap-0.5 rounded-2xl border px-3 py-2.5 text-left transition",
-                    condition === c.value
-                      ? "border-black bg-black text-white"
-                      : "bg-white text-zinc-800 hover:bg-zinc-50"
-                  )}
-                >
-                  <span className="text-xs font-semibold">{c.label}</span>
-                  <span className={cn("text-[11px]", condition === c.value ? "text-zinc-300" : "text-zinc-500")}>
-                    {c.hint}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-4">
-          <label className="text-xs font-medium text-zinc-700">
-            Title <span className="text-red-600">*</span>
-          </label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. iPhone 11 64GB — clean, no issues"
-            className={cn(
-              "mt-1 w-full rounded-2xl border px-3 py-3 text-sm",
-              errors.title && "border-red-300"
-            )}
-          />
-          <div className="mt-1 flex items-center justify-between">
-            {errors.title ? <p className="text-xs text-red-600">{errors.title}</p> : <span />}
-            <p
-              className={cn(
-                "text-[11px]",
-                titleCount < MIN_TITLE ? "text-amber-700" : "text-zinc-500"
-              )}
-            >
-              {titleCount}/{MIN_TITLE}+ recommended
-            </p>
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            Short + specific titles get more clicks.
-          </p>
-        </div>
-
-        <div className="mt-3">
-          <label className="text-xs font-medium text-zinc-700">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Condition, what’s included, any faults, delivery options, etc."
-            className={cn(
-              "mt-1 min-h-[120px] w-full rounded-2xl border px-3 py-3 text-sm",
-              errors.description && "border-red-300"
-            )}
-          />
-          <div className="mt-1 flex items-center justify-between">
-            {errors.description ? (
-              <p className="text-xs text-red-600">{errors.description}</p>
-            ) : (
-              <span />
-            )}
-            {listingType === "service" ? (
-              <p
-                className={cn(
-                  "text-[11px]",
-                  descCount < MIN_DESC_SERVICE ? "text-amber-700" : "text-zinc-500"
-                )}
-              >
-                {descCount}/{MIN_DESC_SERVICE}+ recommended
-              </p>
-            ) : (
-              <p className="text-[11px] text-zinc-500">{descCount} chars</p>
-            )}
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">Good descriptions build trust.</p>
-        </div>
-      </section>
-
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
+      <section ref={priceRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">3) Price & location</h2>
+            <h2 className="text-sm font-semibold text-zinc-900">5) Price & location</h2>
             <p className="mt-0.5 text-xs text-zinc-600">Use a numeric price or a label.</p>
           </div>
 
@@ -1548,7 +1555,10 @@ export default function PostPage() {
             </span>
           </div>
           {/* Progress bar */}
-          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+          <p className="text-xs text-zinc-500 mb-2">
+            Listing quality — better listings get more views
+          </p>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-300",
@@ -1562,20 +1572,21 @@ export default function PostPage() {
           {/* Checklist hints */}
           <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1">
             {[
-              { done: imageFiles.length > 0,          label: "Photo" },
-              { done: title.trim().length >= MIN_TITLE, label: "Title" },
-              { done: description.trim().length >= 20,  label: "Description" },
-              { done: !!(priceDigits.trim() || priceLabel.trim()), label: "Price" },
-              { done: !!location.trim(),               label: "Location" },
+              { done: title.trim().length >= MIN_TITLE,            label: "Title",       ref: titleRef },
+              { done: description.trim().length >= 20,             label: "Description", ref: descRef },
+              { done: imageFiles.length > 0,                       label: "Photo",       ref: photoRef },
+              { done: !!(priceDigits.trim() || priceLabel.trim()), label: "Price",       ref: priceRef },
+              { done: !!location.trim(),                           label: "Location",    ref: priceRef },
               ...(listingType === "product"
-                ? [{ done: !!condition, label: "Condition" }]
+                ? [{ done: !!condition, label: "Condition", ref: conditionRef }]
                 : []),
             ].map((item) => (
               <span
                 key={item.label}
+                onClick={() => { if (!item.done) item.ref.current?.scrollIntoView({ behavior: "smooth" }); }}
                 className={cn(
                   "flex items-center gap-1 text-[11px]",
-                  item.done ? "text-emerald-700" : "text-zinc-400"
+                  item.done ? "text-emerald-700" : "text-zinc-400 cursor-pointer hover:text-zinc-600"
                 )}
               >
                 <span className={cn(
