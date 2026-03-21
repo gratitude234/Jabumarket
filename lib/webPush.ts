@@ -15,7 +15,7 @@
 //     const pub = publicKey.export({ type: 'spki', format: 'der' });
 //     const priv = privateKey.export({ type: 'sec1', format: 'der' });
 //     console.log('VAPID_PUBLIC_KEY=' + pub.slice(-65).toString('base64url'));
-//     console.log('VAPID_PRIVATE_KEY=' + priv.slice(-32).toString('base64url'));
+//     console.log('VAPID_PRIVATE_KEY=' + priv.slice(7, 39).toString('base64url'));
 //   "
 
 import { createSign, createCipheriv, randomBytes, createECDH } from 'crypto'
@@ -76,11 +76,11 @@ function buildVapidJwt(endpoint: string, pub: string, priv: string, sub: string)
   const pubRaw = b64uDecode(pub); // 65-byte uncompressed point
 
   const ecPriv = Buffer.concat([
-    Buffer.from('3077', 'hex'),                                      // SEQUENCE
+    Buffer.from('3079', 'hex'),                                      // SEQUENCE (length 121)
     Buffer.from('020101', 'hex'),                                    // INTEGER 1
     Buffer.from('0420', 'hex'), privRaw,                             // OCTET STRING 32
     Buffer.from('a00a', 'hex'), Buffer.from('0608', 'hex'), oid.slice(2), // [0] OID
-    Buffer.from('a142034100', 'hex'), pubRaw,                        // [1] BIT STRING
+    Buffer.from('a144034200', 'hex'), pubRaw,                        // [1] BIT STRING (length 66: 1 unused-bits byte + 65 key bytes)
   ]);
 
   const pem = `-----BEGIN EC PRIVATE KEY-----\n${ecPriv.toString('base64').match(/.{1,64}/g)!.join('\n')}\n-----END EC PRIVATE KEY-----`;
@@ -147,7 +147,7 @@ function encryptPayload(subscription: PushSubscription, body: string): {
   const cek          = hkdf(prk, cekInfo, salt, 16);
   const nonce        = hkdf(prk, nonceInfo, salt, 12);
 
-  // Encrypt: header (2 bytes pad len) + plaintext + padding byte 0x02
+  // Encrypt: plaintext + padding byte 0x02
   const plaintext    = Buffer.concat([Buffer.from(body), Buffer.from([0x02])]);
   const cipher       = createCipheriv('aes-128-gcm', cek, nonce);
   const encrypted    = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);

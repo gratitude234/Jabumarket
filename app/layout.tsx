@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppChrome from "@/components/layout/AppChrome";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
-import PWAInstallProvider from "@/components/PWAInstallProvider";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -18,6 +17,17 @@ export const metadata: Metadata = {
   title: "Jabumarket",
   description: "Buy, sell & find services around JABU.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -46,9 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute -bottom-52 -left-52 h-[36rem] w-[36rem] rounded-full bg-accent/10 blur-3xl" />
         </div>
 
-        <PWAInstallProvider>
-          <AppChrome>{children}</AppChrome>
-        </PWAInstallProvider>
+        <AppChrome>{children}</AppChrome>
         <ServiceWorkerRegister />
       </body>
     </html>

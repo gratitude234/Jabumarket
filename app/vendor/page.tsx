@@ -524,6 +524,115 @@ function GoOfflineModal({
   );
 }
 
+// ── Bank details card ──────────────────────────────────────────────────────────
+
+function BankDetailsCard({ vendor, onSaved }: { vendor: VendorRow; onSaved: (patch: { bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null }) => void }) {
+  const bankName    = (vendor as any).bank_name           as string | null;
+  const accountNum  = (vendor as any).bank_account_number as string | null;
+  const accountName = (vendor as any).bank_account_name   as string | null;
+  const hasBank     = !!(bankName && accountNum && accountName);
+
+  const [editing, setEditing]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [fBankName, setFBankName]     = useState(bankName ?? '');
+  const [fAcctNum, setFAcctNum]       = useState(accountNum ?? '');
+  const [fAcctName, setFAcctName]     = useState(accountName ?? '');
+
+  async function handleSave() {
+    if (fAcctNum && !/^\d{10}$/.test(fAcctNum)) {
+      setError('Account number must be exactly 10 digits.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const res = await fetch('/api/vendor/setup', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bank_name: fBankName.trim() || null,
+        bank_account_number: fAcctNum.trim() || null,
+        bank_account_name: fAcctName.trim() || null,
+      }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!json.ok) { setError(json.message ?? 'Save failed'); return; }
+    onSaved({ bank_name: fBankName.trim() || null, bank_account_number: fAcctNum.trim() || null, bank_account_name: fAcctName.trim() || null });
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-zinc-900">Bank account</p>
+          <button type="button" onClick={() => setEditing(true)}
+            className="text-xs font-semibold text-zinc-500 hover:text-zinc-900">
+            {hasBank ? 'Edit' : 'Add'}
+          </button>
+        </div>
+        {hasBank ? (
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-4 py-3 space-y-0.5">
+            <p className="text-sm font-semibold text-zinc-900">{accountNum}</p>
+            <p className="text-xs text-zinc-600">{accountName}</p>
+            <p className="text-xs text-zinc-400">{bankName}</p>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setEditing(true)}
+            className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-zinc-300 px-4 py-3 text-left hover:border-zinc-400">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-600 text-base">₦</div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-900">Add bank account</p>
+              <p className="text-xs text-zinc-500">Students will transfer to this account when paying</p>
+            </div>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
+      <p className="text-sm font-semibold text-zinc-900">Bank account</p>
+      <input
+        placeholder="Bank name (e.g. GTBank, Access, Opay)"
+        value={fBankName}
+        onChange={e => setFBankName(e.target.value)}
+        className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+      />
+      <input
+        placeholder="Account number (10 digits)"
+        inputMode="numeric"
+        maxLength={10}
+        value={fAcctNum}
+        onChange={e => setFAcctNum(e.target.value.replace(/\D/g, '').slice(0, 10))}
+        className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+      />
+      <input
+        placeholder="Account name (as it appears on your bank)"
+        value={fAcctName}
+        onChange={e => setFAcctName(e.target.value)}
+        className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+      />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-3">
+        <button type="button" onClick={() => { setEditing(false); setError(null); }}
+          className="flex-1 rounded-2xl border border-zinc-200 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50">
+          Cancel
+        </button>
+        <button type="button" onClick={handleSave} disabled={saving}
+          className={cn(
+            'flex-1 rounded-2xl py-2.5 text-sm font-semibold text-white transition-all',
+            saving ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
+          )}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VendorDashboardPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -544,7 +653,7 @@ function VendorDashboardPageInner() {
 
       const { data: v } = await supabase
         .from('vendors')
-        .select('id, user_id, name, description, location, whatsapp, accepts_orders, verification_status, vendor_type, opens_at, closes_at, rejection_reason')
+        .select('id, user_id, name, description, location, whatsapp, accepts_orders, verification_status, vendor_type, opens_at, closes_at, rejection_reason, bank_name, bank_account_number, bank_account_name')
         .eq('user_id', authData.user.id)
         .maybeSingle();
 
@@ -876,6 +985,12 @@ function VendorDashboardPageInner() {
 
       {/* 7-day chart */}
       {weekData.length > 0 && <WeekChart days={weekData} />}
+
+      {/* Bank account */}
+      <BankDetailsCard
+        vendor={vendor}
+        onSaved={(patch) => setVendor((prev) => prev ? { ...prev, ...patch } as VendorRow : prev)}
+      />
 
       {/* Quick links */}
       <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-2">

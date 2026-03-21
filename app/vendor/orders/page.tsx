@@ -23,6 +23,7 @@ type OrderCard = {
   items: OrderPayload;
   total: number;
   status: OrderStatus;
+  payment_status: string;
   pickup_note: string | null;
   order_type: 'pickup' | 'delivery' | null;
   delivery_address: string | null;
@@ -139,6 +140,9 @@ function OrderItem({
   onDecline,
   onReady,
   onDelivered,
+  onVendorConfirmPayment,
+  onPaymentDispute,
+  confirmingPayment,
 }: {
   order: OrderCard;
   acting: boolean;
@@ -146,6 +150,9 @@ function OrderItem({
   onDecline: () => void;
   onReady: () => void;
   onDelivered: () => void;
+  onVendorConfirmPayment: () => void;
+  onPaymentDispute: () => void;
+  confirmingPayment: boolean;
 }) {
   const meta = STATUS_META[order.status] ?? STATUS_META.pending;
   const Icon = meta.icon;
@@ -315,6 +322,41 @@ function OrderItem({
           </Link>
         )}
       </div>
+
+      {/* Payment confirmation — shown when buyer claims they've transferred */}
+      {order.payment_status === 'buyer_confirmed' && (
+        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-900">💸 Buyer says they&apos;ve transferred</p>
+          <p className="text-[11px] text-amber-700">Check your account for ₦{order.total.toLocaleString()}, then confirm or dispute.</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onPaymentDispute}
+              disabled={confirmingPayment}
+              className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Not received
+            </button>
+            <button
+              type="button"
+              onClick={onVendorConfirmPayment}
+              disabled={confirmingPayment}
+              className={cn(
+                'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
+                confirmingPayment ? 'bg-zinc-400' : 'bg-emerald-600 hover:bg-emerald-700'
+              )}
+            >
+              {confirmingPayment ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Confirm payment'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {order.payment_status === 'vendor_confirmed' && (
+        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+          ✅ Payment confirmed
+        </div>
+      )}
 
       {/* Rider assignment — only for delivery orders that are ready */}
       {order.order_type === 'delivery' && order.status === 'ready' && !assigned && (
@@ -582,11 +624,12 @@ export default function VendorOrdersPage() {
   const [historyPage, setHistoryPage]   = useState(0);
   const [historyMore, setHistoryMore]   = useState(false);
   const [historyLoading, setHistLoading]= useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState<string | null>(null);
 
   const loadOrders = useCallback(async (vid: string) => {
     const { data } = await supabase
       .from('orders')
-      .select('id, conversation_id, buyer_id, items, total, status, pickup_note, order_type, delivery_address, created_at')
+      .select('id, conversation_id, buyer_id, items, total, status, payment_status, pickup_note, order_type, delivery_address, created_at')
       .eq('vendor_id', vid)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -598,7 +641,7 @@ export default function VendorOrdersPage() {
     const PAGE = 20;
     const { data } = await supabase
       .from('orders')
-      .select('id, conversation_id, buyer_id, items, total, status, pickup_note, order_type, delivery_address, created_at')
+      .select('id, conversation_id, buyer_id, items, total, status, payment_status, pickup_note, order_type, delivery_address, created_at')
       .eq('vendor_id', vid)
       .in('status', ['delivered', 'cancelled'])
       .order('created_at', { ascending: false })
@@ -705,6 +748,36 @@ export default function VendorOrdersPage() {
     await updateStatus(etaTarget, 'preparing', eta ?? undefined);
     setEtaLoading(false);
     setEtaTarget(null);
+  }
+
+  async function handleVendorConfirm(orderId: string) {
+    setConfirmingPayment(orderId);
+    try {
+      const res  = await fetch(`/api/orders/${orderId}/vendor-confirm-payment`, { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        setOrders((prev) => prev.map((o) =>
+          o.id === orderId ? { ...o, payment_status: 'vendor_confirmed', status: 'preparing' as OrderStatus } : o
+        ));
+      }
+    } finally {
+      setConfirmingPayment(null);
+    }
+  }
+
+  async function handlePaymentDispute(orderId: string) {
+    setConfirmingPayment(orderId);
+    try {
+      const res  = await fetch(`/api/orders/${orderId}/payment-dispute`, { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        setOrders((prev) => prev.map((o) =>
+          o.id === orderId ? { ...o, payment_status: 'unpaid' } : o
+        ));
+      }
+    } finally {
+      setConfirmingPayment(null);
+    }
   }
 
   const liveOrders   = orders.filter((o) => ['pending','confirmed','preparing','ready'].includes(o.status));
@@ -825,6 +898,9 @@ export default function VendorOrdersPage() {
                   onDecline={() => updateStatus(order.id, 'cancelled')}
                   onReady={() => updateStatus(order.id, 'ready')}
                   onDelivered={() => updateStatus(order.id, 'delivered')}
+                  onVendorConfirmPayment={() => handleVendorConfirm(order.id)}
+                  onPaymentDispute={() => handlePaymentDispute(order.id)}
+                  confirmingPayment={confirmingPayment === order.id}
                 />
               ))}
             </div>
@@ -850,6 +926,9 @@ export default function VendorOrdersPage() {
                   onDecline={() => updateStatus(order.id, 'cancelled')}
                   onReady={() => updateStatus(order.id, 'ready')}
                   onDelivered={() => updateStatus(order.id, 'delivered')}
+                  onVendorConfirmPayment={() => handleVendorConfirm(order.id)}
+                  onPaymentDispute={() => handlePaymentDispute(order.id)}
+                  confirmingPayment={confirmingPayment === order.id}
                 />
               ))}
               {historyMore && (

@@ -34,13 +34,18 @@ type OrderEntry = {
   items: OrderPayload;
   total: number;
   status: string;
+  payment_status: string;
+  payment_method: string | null;
   order_type: string;
   delivery_address: string | null;
   pickup_note: string | null;
   created_at: string;
   updated_at: string;
   eta_ready_at: string | null;
-  vendor: { name: string; avatar_url: string | null };
+  vendor: {
+    name: string; avatar_url: string | null;
+    bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null;
+  };
 };
 
 // Realtime payload shape — no vendor join
@@ -383,6 +388,9 @@ export default function MyOrdersPage() {
   const [deliveryStatuses, setDeliveryStatuses] = useState<Record<string, string>>({});
   // Tick every 30s so ETA chips re-compute without a full data refetch
   const [tick, setTick]             = useState(0);
+  // Payment
+  const [copied, setCopied]         = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
@@ -390,7 +398,10 @@ export default function MyOrdersPage() {
   }, []);
 
   // Vendor data is not in realtime payloads — preserve it from REST responses
-  const vendorCacheRef = useRef<Record<string, { name: string; avatar_url: string | null }>>({});
+  const vendorCacheRef = useRef<Record<string, {
+    name: string; avatar_url: string | null;
+    bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null;
+  }>>({});
   // Keep tab accessible inside the realtime callback without re-subscribing
   const tabRef = useRef<Tab>('all');
 
@@ -489,10 +500,12 @@ export default function MyOrdersPage() {
               if (o.id !== row.id) return o;
               return {
                 ...o,
-                status:       row.status,
-                updated_at:   row.updated_at,
-                eta_ready_at: row.eta_ready_at,
-                vendor:       vendorCacheRef.current[o.vendor_id] ?? o.vendor,
+                status:         row.status,
+                payment_status: row.payment_status,
+                payment_method: row.payment_method,
+                updated_at:     row.updated_at,
+                eta_ready_at:   row.eta_ready_at,
+                vendor:         vendorCacheRef.current[o.vendor_id] ?? o.vendor,
               };
             });
           });
@@ -551,6 +564,42 @@ export default function MyOrdersPage() {
     const t = setTimeout(() => setReadyAlert(null), 8000);
     return () => clearTimeout(t);
   }, [readyAlert]);
+
+  // ── Payment actions ─────────────────────────────────────────────────────────
+
+  async function handleBuyerConfirm(orderId: string) {
+    setConfirming(orderId);
+    try {
+      const res  = await fetch(`/api/orders/${orderId}/buyer-confirm`, { method: 'POST' });
+      const json = await res.json();
+      if (json.ok) {
+        setOrders((prev) => prev.map((o) =>
+          o.id === orderId ? { ...o, payment_status: 'buyer_confirmed', payment_method: 'transfer' } : o
+        ));
+      }
+    } finally {
+      setConfirming(null);
+    }
+  }
+
+  async function handleMarkCash(orderId: string) {
+    setConfirming(orderId);
+    try {
+      const res  = await fetch(`/api/orders/${orderId}/payment-method`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_method: 'cash' }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setOrders((prev) => prev.map((o) =>
+          o.id === orderId ? { ...o, payment_method: 'cash' } : o
+        ));
+      }
+    } finally {
+      setConfirming(null);
+    }
+  }
 
   // ── Tab switching ───────────────────────────────────────────────────────────
 
@@ -770,6 +819,102 @@ export default function MyOrdersPage() {
                     })}
                   </div>
                 )}
+
+                {/* Payment card — shown for non-cancelled, non-delivered active orders */}
+                {!['cancelled', 'delivered'].includes(order.status) && (() => {
+                  const { payment_status: ps, payment_method: pm, vendor: v } = order;
+                  const hasBank = !!(v.bank_account_number && v.bank_account_name && v.bank_name);
+
+                  if (ps === 'vendor_confirmed') {
+                    return (
+                      <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700">
+                        ✅ Payment confirmed by vendor
+                      </div>
+                    );
+                  }
+
+                  if (ps === 'buyer_confirmed') {
+                    return (
+                      <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
+                        <p className="font-semibold">Transfer sent — waiting for vendor confirmation</p>
+                        <p className="mt-0.5 text-blue-600">You'll be notified once the vendor confirms receipt.</p>
+                      </div>
+                    );
+                  }
+
+                  if (pm === 'cash') {
+                    return (
+                      <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-600">
+                        🤝 Paying cash on pickup
+                      </div>
+                    );
+                  }
+
+                  // unpaid — show transfer details + action buttons
+                  return (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2.5">
+                      <p className="text-xs font-semibold text-amber-900">Pay for your order</p>
+                      {hasBank ? (
+                        <>
+                          <div className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 space-y-0.5">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-bold text-zinc-900">{v.bank_account_number}</p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(v.bank_account_number!).catch(() => {});
+                                  setCopied(order.id);
+                                  setTimeout(() => setCopied(null), 2000);
+                                }}
+                                className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
+                              >
+                                {copied === order.id ? 'Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                            <p className="text-xs text-zinc-600">{v.bank_account_name}</p>
+                            <p className="text-xs text-zinc-400">{v.bank_name}</p>
+                          </div>
+                          <p className="text-[11px] text-amber-700">Transfer ₦{order.total.toLocaleString()} to the account above, then tap &quot;I&apos;ve paid&quot;.</p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleBuyerConfirm(order.id)}
+                              disabled={confirming === order.id}
+                              className={cn(
+                                'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
+                                confirming === order.id ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
+                              )}
+                            >
+                              {confirming === order.id ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : "I've paid"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMarkCash(order.id)}
+                              disabled={confirming === order.id}
+                              className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              Pay cash
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleMarkCash(order.id)}
+                            disabled={confirming === order.id}
+                            className={cn(
+                              'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
+                              confirming === order.id ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
+                            )}
+                          >
+                            {confirming === order.id ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Pay cash'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Footer */}
                 <div className="mt-3 flex items-center justify-between">

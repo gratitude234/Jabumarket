@@ -14,10 +14,17 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
   cancelled: { label: 'Cancelled', className: 'border-red-200 bg-red-50 text-red-700' },
 };
 
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  unpaid:           '⏳ Awaiting payment',
+  buyer_confirmed:  '💸 Payment sent (unconfirmed)',
+  vendor_confirmed: '✅ Payment confirmed',
+};
+
 type Props = {
   payload: OrderPayload;
   isSender: boolean;
   status?: string;
+  paymentStatus?: string;
   createdAt: string;
 };
 
@@ -107,7 +114,7 @@ function LineItems({ payload }: { payload: OrderPayload }) {
   );
 }
 
-export default function OrderBubble({ payload, isSender, status, createdAt }: Props) {
+export default function OrderBubble({ payload, isSender, status, paymentStatus, createdAt }: Props) {
   const st = status && STATUS_STYLES[status] ? STATUS_STYLES[status] : STATUS_STYLES.pending;
 
   return (
@@ -146,6 +153,13 @@ export default function OrderBubble({ payload, isSender, status, createdAt }: Pr
           <span className="text-xs font-semibold text-zinc-500">Total</span>
           <span className="text-base font-bold text-zinc-900">{fmt(payload.total)}</span>
         </div>
+
+        {/* Payment status */}
+        {paymentStatus && PAYMENT_STATUS_LABELS[paymentStatus] && (
+          <div className="border-t border-zinc-100 px-4 py-2">
+            <span className="text-xs text-zinc-500">{PAYMENT_STATUS_LABELS[paymentStatus]}</span>
+          </div>
+        )}
 
         {/* Timestamp */}
         <div className="px-4 pb-2 text-right">

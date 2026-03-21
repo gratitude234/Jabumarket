@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
     let query = admin
       .from('orders')
-      .select('id, conversation_id, vendor_id, items, total, status, order_type, delivery_address, pickup_note, created_at, updated_at, eta_ready_at')
+      .select('id, conversation_id, vendor_id, items, total, status, payment_status, payment_method, order_type, delivery_address, pickup_note, created_at, updated_at, eta_ready_at')
       .eq('buyer_id', user.id)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -40,11 +40,17 @@ export async function GET(req: Request) {
     const vendorIds = [...new Set((orders ?? []).map((o) => o.vendor_id))];
     const { data: vendors } = await admin
       .from('vendors')
-      .select('id, name, avatar_url')
+      .select('id, name, avatar_url, bank_name, bank_account_number, bank_account_name')
       .in('id', vendorIds);
 
-    const vendorMap: Record<string, { name: string; avatar_url: string | null }> = {};
-    for (const v of vendors ?? []) vendorMap[v.id] = { name: v.name, avatar_url: v.avatar_url };
+    const vendorMap: Record<string, {
+      name: string; avatar_url: string | null;
+      bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null;
+    }> = {};
+    for (const v of vendors ?? []) vendorMap[v.id] = {
+      name: v.name, avatar_url: v.avatar_url,
+      bank_name: v.bank_name ?? null, bank_account_number: v.bank_account_number ?? null, bank_account_name: v.bank_account_name ?? null,
+    };
 
     const enriched = (orders ?? []).map((o) => ({
       ...o,

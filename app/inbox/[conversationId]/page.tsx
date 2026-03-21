@@ -89,6 +89,7 @@ export default function ConversationPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [showMealBuilder, setShowMealBuilder] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -189,10 +190,13 @@ export default function ConversationPage() {
       if (conv.order_id) {
         const { data: orderData } = await supabase
           .from("orders")
-          .select("status")
+          .select("status, payment_status")
           .eq("id", conv.order_id)
           .single();
-        if (orderData) setOrderStatus(orderData.status);
+        if (orderData) {
+          setOrderStatus(orderData.status);
+          setPaymentStatus((orderData as any).payment_status ?? null);
+        }
       }
 
       await loadMessages();
@@ -240,8 +244,9 @@ export default function ConversationPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${meta.order_id}` },
         (payload) => {
-          const updated = payload.new as { status: string };
+          const updated = payload.new as { status: string; payment_status?: string };
           if (updated.status) setOrderStatus(updated.status);
+          if (updated.payment_status) setPaymentStatus(updated.payment_status);
         }
       )
       .subscribe();
@@ -474,6 +479,7 @@ export default function ConversationPage() {
                       payload={msg.order_payload}
                       isSender={isMine}
                       status={orderStatus ?? undefined}
+                      paymentStatus={paymentStatus ?? undefined}
                       createdAt={msg.created_at}
                     />
                   ) : (

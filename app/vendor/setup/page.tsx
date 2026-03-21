@@ -356,6 +356,9 @@ export default function VendorSetupPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vendorId, setVendorId] = useState<string | null>(null);
+  const [bankName, setBankName]           = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName]     = useState('');
   const [form, setForm] = useState<FormData>({
     name: '',
     description: '',
@@ -390,6 +393,9 @@ export default function VendorSetupPage() {
 
       const v: VendorRow = json.vendor;
       setVendorId(v.id);
+      setBankName((v as any).bank_name ?? '');
+      setAccountNumber((v as any).bank_account_number ?? '');
+      setAccountName((v as any).bank_account_name ?? '');
       setForm({
         name: v.name ?? '',
         description: v.description ?? '',
@@ -413,13 +419,22 @@ export default function VendorSetupPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (accountNumber && !/^\d{10}$/.test(accountNumber)) {
+      setBanner({ type: 'error', text: 'Account number must be exactly 10 digits.' });
+      return;
+    }
     setSaving(true);
     setBanner(null);
 
     const res = await fetch('/api/vendor/setup', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        bank_name: bankName || null,
+        bank_account_number: accountNumber || null,
+        bank_account_name: accountName || null,
+      }),
     });
 
     const json = await res.json();
@@ -603,6 +618,35 @@ export default function VendorSetupPage() {
             onChange={(v) => set('whatsapp', v)}
             placeholder="08012345678"
             type="tel"
+          />
+        </div>
+
+        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-zinc-900">Payment details</p>
+            <p className="text-xs text-zinc-500 mt-1">
+              Students will transfer to this account when they order. Make sure it&apos;s correct.
+            </p>
+          </div>
+          <input
+            placeholder="Bank name (e.g. GTBank, Access, Opay)"
+            value={bankName}
+            onChange={e => setBankName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            placeholder="Account number (10 digits)"
+            inputMode="numeric"
+            maxLength={10}
+            value={accountNumber}
+            onChange={e => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            placeholder="Account name (as it appears on your bank)"
+            value={accountName}
+            onChange={e => setAccountName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
           />
         </div>
 

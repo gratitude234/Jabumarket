@@ -20,7 +20,7 @@ async function getVendor() {
   const admin = createSupabaseAdminClient();
   const { data: vendor } = await admin
     .from('vendors')
-    .select('id, user_id, name, description, location, whatsapp, phone, opens_at, closes_at, accepts_orders, accepts_delivery, delivery_fee, verification_status, vendor_type, avatar_url, day_schedule')
+    .select('id, user_id, name, description, location, whatsapp, phone, opens_at, closes_at, accepts_orders, accepts_delivery, delivery_fee, verification_status, vendor_type, avatar_url, day_schedule, bank_name, bank_account_number, bank_account_name')
     .eq('user_id', user.id)
     .eq('vendor_type', 'food')
     .maybeSingle();
@@ -60,6 +60,9 @@ export async function PATCH(req: Request) {
     if (body.accepts_delivery !== undefined) patch.accepts_delivery = Boolean(body.accepts_delivery);
     if (body.delivery_fee !== undefined) patch.delivery_fee = Math.max(0, Math.round(Number(body.delivery_fee) || 0));
     if (body.avatar_url !== undefined) patch.avatar_url = body.avatar_url ? String(body.avatar_url).trim() : null;
+    if (body.bank_name !== undefined) patch.bank_name = body.bank_name ? String(body.bank_name).trim() : null;
+    if (body.bank_account_number !== undefined) patch.bank_account_number = body.bank_account_number ? String(body.bank_account_number).trim() : null;
+    if (body.bank_account_name !== undefined) patch.bank_account_name = body.bank_account_name ? String(body.bank_account_name).trim() : null;
     if (body.day_schedule !== undefined) {
       // null clears it; array is stored as-is (Supabase handles JSONB)
       patch.day_schedule = body.day_schedule === null ? null : body.day_schedule;
