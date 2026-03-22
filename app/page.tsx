@@ -4,10 +4,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   ArrowRight, BookOpen, Bookmark, Cpu, FileText,
-  MessageCircleQuestion, Search, Sparkles, ShieldCheck,
+  MessageCircleQuestion, Sparkles, ShieldCheck,
   Truck, Smartphone, Laptop, Shirt, ShoppingBasket,
   UtensilsCrossed, Wrench, PlusSquare, MapPin,
-  Image as ImageIcon, Star, Zap, ChevronRight,
+  Image as ImageIcon, Star, Zap, ChevronRight, Store,
 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ListingImage from "@/components/ListingImage";
@@ -22,9 +22,7 @@ function formatNaira(amount: number | null | undefined) {
 
 function timeAgo(iso?: string | null) {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diff = Date.now() - t;
+  const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -46,17 +44,18 @@ type VendorPreview = {
   verified: boolean | null;
   verification_status: "unverified"|"requested"|"under_review"|"verified"|"rejected"|"suspended"|null;
   vendor_type: "food"|"mall"|"student"|"other"|null;
+  avatar_url?: string | null;
 };
 
 const categories = [
-  { name: "Food",        icon: UtensilsCrossed, href: "/food",                                   bg: "bg-orange-500", light: "bg-orange-50",  text: "text-orange-600" },
-  { name: "Phones",      icon: Smartphone,      href: "/explore?category=Phones",                bg: "bg-blue-500",   light: "bg-blue-50",    text: "text-blue-600"   },
-  { name: "Laptops",     icon: Laptop,          href: "/explore?category=Laptops",               bg: "bg-violet-500", light: "bg-violet-50",  text: "text-violet-600" },
-  { name: "Fashion",     icon: Shirt,           href: "/explore?category=Fashion",               bg: "bg-pink-500",   light: "bg-pink-50",    text: "text-pink-600"   },
-  { name: "Electronics", icon: Cpu,             href: "/explore?category=Electronics",           bg: "bg-cyan-500",   light: "bg-cyan-50",    text: "text-cyan-600"   },
-  { name: "Provisions",  icon: ShoppingBasket,  href: "/explore?category=Provisions",            bg: "bg-green-500",  light: "bg-green-50",   text: "text-green-600"  },
-  { name: "Books",       icon: BookOpen,        href: "/explore?category=Books+%26+Stationery", bg: "bg-amber-500",  light: "bg-amber-50",   text: "text-amber-600"  },
-  { name: "Services",    icon: Wrench,          href: "/explore?category=Services&type=service", bg: "bg-zinc-700",   light: "bg-zinc-100",   text: "text-zinc-600"   },
+  { name: "Food",        icon: UtensilsCrossed, href: "/food",                                   bg: "bg-orange-500" },
+  { name: "Phones",      icon: Smartphone,      href: "/explore?category=Phones",                bg: "bg-blue-500"   },
+  { name: "Laptops",     icon: Laptop,          href: "/explore?category=Laptops",               bg: "bg-violet-500" },
+  { name: "Fashion",     icon: Shirt,           href: "/explore?category=Fashion",               bg: "bg-pink-500"   },
+  { name: "Electronics", icon: Cpu,             href: "/explore?category=Electronics",           bg: "bg-cyan-500"   },
+  { name: "Provisions",  icon: ShoppingBasket,  href: "/explore?category=Provisions",            bg: "bg-green-500"  },
+  { name: "Books",       icon: BookOpen,        href: "/explore?category=Books+%26+Stationery", bg: "bg-amber-500"  },
+  { name: "Services",    icon: Wrench,          href: "/explore?category=Services&type=service", bg: "bg-zinc-600"   },
 ];
 
 function getFirstName(name: string | null | undefined) {
@@ -64,19 +63,19 @@ function getFirstName(name: string | null | undefined) {
   return name.trim().split(" ")[0];
 }
 
-function isVendorVerified(v: VendorPreview) {
+function isVerified(v: VendorPreview) {
   return v.verified === true || v.verification_status === "verified";
 }
 
-function SectionRow({ title, href, cta, children }: {
+function Row({ title, href, cta, children }: {
   title: string; href?: string; cta?: string; children: ReactNode;
 }) {
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between px-4 sm:px-0">
-        <h2 className="text-base font-bold text-zinc-900 sm:text-lg">{title}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-[15px] font-bold text-zinc-900">{title}</h2>
         {href && (
-          <Link href={href} className="flex items-center gap-0.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800">
+          <Link href={href} className="flex items-center gap-0.5 text-xs font-semibold text-zinc-400 hover:text-zinc-700">
             {cta ?? "See all"} <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         )}
@@ -110,19 +109,16 @@ export default async function HomePage() {
   ]);
 
   const listings = (latestRes.data ?? []) as ListingPreview[];
-  const rawVendors = (vendorsRes.data ?? []) as (VendorPreview & { avatar_url?: string | null })[];
+  const rawVendors = (vendorsRes.data ?? []) as VendorPreview[];
   const featuredListings = (featuredRes.data ?? []) as ListingPreview[];
   const firstName = getFirstName(profileRes.data?.full_name);
 
-  const vendorIds = rawVendors.map(v => v.id);
-  const listingIds = listings.map(l => l.id);
-
   const [reviewsRes, statsRes] = await Promise.all([
-    vendorIds.length > 0
-      ? supabase.from("vendor_reviews").select("vendor_id,rating").in("vendor_id", vendorIds)
+    rawVendors.length > 0
+      ? supabase.from("vendor_reviews").select("vendor_id,rating").in("vendor_id", rawVendors.map(v => v.id))
       : { data: [] as { vendor_id: string; rating: number }[] },
-    listingIds.length > 0
-      ? supabase.from("listing_stats").select("listing_id,saves").in("listing_id", listingIds)
+    listings.length > 0
+      ? supabase.from("listing_stats").select("listing_id,saves").in("listing_id", listings.map(l => l.id))
       : { data: [] as { listing_id: string; saves: number }[] },
   ]);
 
@@ -135,85 +131,56 @@ export default async function HomePage() {
   }
 
   const savesMap: Record<string, number> = {};
-  for (const s of statsRes.data ?? []) {
-    savesMap[s.listing_id] = Number(s.saves ?? 0);
-  }
+  for (const s of statsRes.data ?? []) savesMap[s.listing_id] = Number(s.saves ?? 0);
 
   const vendors = rawVendors
     .map(v => ({ ...v, _score: (ratingMap[v.id] ? 2 : 0) + (v.avatar_url ? 1 : 0) }))
-    .sort((a, b) => b._score - a._score)
-    .slice(0, 6);
+    .sort((a, b) => b._score - a._score).slice(0, 6);
 
   return (
-    <main className="w-full pb-28 sm:pb-12">
+    <div className="space-y-8 -mt-6">
 
-      {/* ── HERO ── */}
-      <div className="bg-zinc-900 px-4 pb-10 pt-6 sm:px-6">
-        <div className="mx-auto max-w-6xl space-y-5">
-          <div>
-            <p className="text-sm font-medium text-zinc-400">
-              {user && firstName ? `Hey, ${firstName} 👋` : "Campus marketplace & study hub"}
-            </p>
-            <h1 className="mt-1 text-[26px] font-bold leading-tight text-white sm:text-4xl">
-              Buy, sell & find anything around JABU.
-            </h1>
-          </div>
+      {/* ── HERO — bleeds edge to edge using negative margins ── */}
+      <div className="-mx-4 bg-zinc-900 px-4 pt-6 pb-7 sm:-mx-6 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          {/* Greeting line */}
+          <p className="text-sm text-zinc-400">
+            {user && firstName
+              ? `Welcome back, ${firstName} 👋`
+              : "Campus marketplace & study hub"}
+          </p>
 
-          {/* Search bar */}
-          <form action="/explore" method="GET">
-            <div className="flex items-center gap-2 rounded-2xl bg-white p-2 shadow-lg">
-              <Search className="ml-1 h-5 w-5 shrink-0 text-zinc-400" />
-              <input
-                name="q"
-                placeholder="Search phones, food, laundry…"
-                list="home-suggestions"
-                aria-label="Search"
-                className="h-10 w-full bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
-              />
-              <button
-                type="submit"
-                className="h-10 shrink-0 rounded-xl bg-zinc-900 px-5 text-sm font-bold text-white hover:bg-zinc-700"
-              >
-                Search
-              </button>
-              <datalist id="home-suggestions">
-                <option value="Phones" /><option value="Laptops" /><option value="Fashion" />
-                <option value="Food" /><option value="Rice" /><option value="Laundry" />
-                <option value="Hair" /><option value="Sneakers" /><option value="Charger" />
-                <option value="Power bank" /><option value="Tutoring" /><option value="Repairs" />
-              </datalist>
-            </div>
-          </form>
+          {/* Headline */}
+          <h1 className="mt-1 text-[22px] font-bold leading-snug text-white sm:text-3xl">
+            Buy, sell & find anything<br className="sm:hidden" /> around JABU.
+          </h1>
 
-          {/* Quick action pills */}
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "New today",       href: "/explore?sort=newest" },
-              { label: "Food vendors",    href: "/vendors?type=food" },
-              { label: "Services",        href: "/explore?type=service" },
-              { label: "Verified only",   href: "/vendors" },
-            ].map(q => (
-              <Link
-                key={q.label}
-                href={q.href}
-                className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white"
-              >
-                {q.label}
-              </Link>
-            ))}
-          </div>
-
-          {/* Two CTA buttons */}
-          <div className="flex gap-3">
+          {/* Quick action buttons */}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
             <Link
               href="/explore"
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-900 hover:bg-zinc-100 sm:flex-none"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-bold text-zinc-900 hover:bg-zinc-100"
             >
-              Explore listings <ArrowRight className="h-4 w-4" />
+              <Store className="h-4 w-4" />
+              Explore
+            </Link>
+            <Link
+              href="/food"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600"
+            >
+              <UtensilsCrossed className="h-4 w-4" />
+              Order food
+            </Link>
+            <Link
+              href="/vendors"
+              className="flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-800 py-3 text-sm font-bold text-white hover:bg-zinc-700"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Vendors
             </Link>
             <Link
               href="/post"
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm font-bold text-white hover:bg-zinc-700 sm:flex-none"
+              className="flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-800 py-3 text-sm font-bold text-white hover:bg-zinc-700"
             >
               <PlusSquare className="h-4 w-4" />
               Post
@@ -223,32 +190,32 @@ export default async function HomePage() {
       </div>
 
       {/* ── BODY ── */}
-      <div className="mx-auto max-w-6xl space-y-10 px-4 pt-8 sm:px-6">
+      <div className="space-y-8">
 
         {/* ── CATEGORIES ── */}
-        <SectionRow title="Categories" href="/explore" cta="All">
-          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-8 sm:gap-3 sm:overflow-visible sm:px-0">
+        <Row title="Categories" href="/explore" cta="All">
+          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-8 sm:overflow-visible sm:px-0">
             {categories.map(c => {
               const Icon = c.icon;
               return (
                 <Link
                   key={c.name}
                   href={c.href}
-                  className="group flex min-w-[72px] flex-col items-center gap-2 rounded-2xl border bg-white p-3 shadow-sm transition hover:shadow-md sm:min-w-0"
+                  className="flex min-w-[68px] flex-col items-center gap-2 rounded-2xl border bg-white p-3 shadow-sm transition hover:shadow-md sm:min-w-0"
                 >
-                  <div className={cn("grid h-12 w-12 place-items-center rounded-2xl", c.bg)}>
+                  <div className={cn("grid h-11 w-11 place-items-center rounded-xl", c.bg)}>
                     <Icon className="h-5 w-5 text-white" />
                   </div>
-                  <span className="text-center text-xs font-semibold text-zinc-800">{c.name}</span>
+                  <span className="text-center text-[11px] font-semibold text-zinc-700 leading-tight">{c.name}</span>
                 </Link>
               );
             })}
           </div>
-        </SectionRow>
+        </Row>
 
         {/* ── FEATURED LISTINGS ── */}
         {featuredListings.length > 0 && (
-          <SectionRow title="Featured" href="/explore" cta="See all">
+          <Row title="Featured" href="/explore" cta="See all">
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
               {featuredListings.map(l => {
                 const title = l.title ?? "Untitled";
@@ -257,23 +224,18 @@ export default async function HomePage() {
                   <Link
                     key={l.id}
                     href={`/listing/${l.id}`}
-                    className="group min-w-[200px] overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md sm:min-w-0"
+                    className="group min-w-[180px] overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md sm:min-w-0"
                   >
-                    <div className="relative h-44 w-full bg-zinc-100">
-                      {img ? (
-                        <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-zinc-300">
-                          <ImageIcon className="h-8 w-8" />
-                        </div>
-                      )}
-                      <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
-                      <span className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                        Featured
-                      </span>
-                      <div className="absolute bottom-2 left-3 right-3">
-                        <p className="truncate text-sm font-bold text-white">{title}</p>
-                        <p className="mt-0.5 text-xs font-semibold text-amber-400">
+                    <div className="relative h-36 w-full bg-zinc-100">
+                      {img
+                        ? <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
+                        : <div className="flex h-full items-center justify-center text-zinc-200"><ImageIcon className="h-6 w-6" /></div>
+                      }
+                      <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+                      <span className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">★ Featured</span>
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <p className="truncate text-xs font-bold text-white">{title}</p>
+                        <p className="text-xs font-bold text-amber-400">
                           {l.price ? formatNaira(l.price) : l.price_label ?? "Contact"}
                         </p>
                       </div>
@@ -282,16 +244,16 @@ export default async function HomePage() {
                 );
               })}
             </div>
-          </SectionRow>
+          </Row>
         )}
 
         {/* ── LATEST LISTINGS ── */}
-        <SectionRow title="Latest listings" href="/explore?sort=newest" cta="See more">
+        <Row title="Latest listings" href="/explore?sort=newest" cta="See more">
           {listings.length === 0 ? (
             <div className="rounded-2xl border bg-white p-6 text-center shadow-sm">
               <p className="text-sm font-semibold text-zinc-900">No listings yet</p>
-              <p className="mt-1 text-xs text-zinc-500">Be the first to post.</p>
-              <Link href="/post" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-700">
+              <p className="mt-1 text-xs text-zinc-500">Be the first to post something.</p>
+              <Link href="/post" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-bold text-white">
                 Post now <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -304,40 +266,35 @@ export default async function HomePage() {
                   <Link
                     key={l.id}
                     href={`/listing/${l.id}`}
-                    className="group min-w-[260px] overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md sm:min-w-0"
+                    className="group min-w-[240px] overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md sm:min-w-0"
                   >
-                    <div className="relative h-44 w-full bg-zinc-100">
-                      {img ? (
-                        <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-zinc-200">
-                          <ImageIcon className="h-8 w-8" />
-                        </div>
-                      )}
-                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/50 to-transparent" />
+                    <div className="relative h-40 w-full bg-zinc-100">
+                      {img
+                        ? <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
+                        : <div className="flex h-full items-center justify-center text-zinc-200"><ImageIcon className="h-8 w-8" /></div>
+                      }
+                      <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/50 to-transparent" />
                       {l.category && (
                         <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
                           {l.category}
                         </span>
                       )}
-                      <span className="absolute bottom-2 right-2 text-[10px] font-medium text-white/70">
-                        {timeAgo(l.created_at)}
-                      </span>
+                      <span className="absolute bottom-2 right-2 text-[10px] text-white/70">{timeAgo(l.created_at)}</span>
                     </div>
                     <div className="p-3">
                       <p className="truncate text-sm font-bold text-zinc-900">{title}</p>
-                      <div className="mt-1 flex items-center justify-between">
+                      <div className="mt-1 flex items-center justify-between gap-2">
                         <p className="text-sm font-bold text-zinc-900">
                           {l.price !== null ? formatNaira(l.price) : (l.price_label ?? "Contact")}
                         </p>
                         {l.negotiable && (
-                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
+                          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
                             Negotiable
                           </span>
                         )}
                       </div>
                       {l.location && (
-                        <div className="mt-1.5 flex items-center gap-1 text-xs text-zinc-500">
+                        <div className="mt-1 flex items-center gap-1 text-xs text-zinc-400">
                           <MapPin className="h-3 w-3 shrink-0" />
                           <span className="truncate">{l.location}</span>
                         </div>
@@ -348,27 +305,26 @@ export default async function HomePage() {
               })}
             </div>
           )}
-        </SectionRow>
+        </Row>
 
         {/* ── VERIFIED VENDORS ── */}
-        <SectionRow title="Verified vendors" href="/vendors" cta="Browse all">
+        <Row title="Verified vendors" href="/vendors" cta="Browse all">
           {vendors.length === 0 ? (
-            <p className="text-sm text-zinc-500">No verified vendors yet.</p>
+            <p className="text-sm text-zinc-400">No verified vendors yet.</p>
           ) : (
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3">
               {vendors.map(v => {
                 const rating = ratingMap[v.id];
-                const avatarUrl = (v as any).avatar_url as string | null | undefined;
                 return (
                   <Link
                     key={v.id}
                     href={`/vendors/${v.id}`}
-                    className="group min-w-[260px] rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:min-w-0"
+                    className="group min-w-[240px] rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:min-w-0"
                   >
                     <div className="flex items-center gap-3">
-                      {avatarUrl ? (
+                      {v.avatar_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                        <img src={v.avatar_url} alt="" className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
                       ) : (
                         <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-zinc-900 text-base font-bold text-white">
                           {(v.name ?? "V")[0].toUpperCase()}
@@ -376,18 +332,18 @@ export default async function HomePage() {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-zinc-900">{v.name ?? "Vendor"}</p>
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
                           <MapPin className="h-3 w-3 shrink-0" />
                           <span className="truncate">{v.location ?? "—"}</span>
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          {isVendorVerified(v) && (
+                          {isVerified(v) && (
                             <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                              <ShieldCheck className="h-3 w-3" /> Verified
+                              <ShieldCheck className="h-2.5 w-2.5" /> Verified
                             </span>
                           )}
                           {v.vendor_type && (
-                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 capitalize">
+                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 capitalize">
                               {v.vendor_type}
                             </span>
                           )}
@@ -400,23 +356,23 @@ export default async function HomePage() {
                           )}
                         </div>
                       </div>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-600" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-200 transition group-hover:text-zinc-500" />
                     </div>
                   </Link>
                 );
               })}
             </div>
           )}
-        </SectionRow>
+        </Row>
 
         {/* ── STUDY HUB ── */}
-        <SectionRow title="Study Hub" href="/study" cta="Open">
+        <Row title="Study Hub" href="/study" cta="Open">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { href: "/study/materials", icon: <FileText className="h-5 w-5 text-white" />, bg: "bg-violet-500", title: "Materials",   desc: "Notes & past questions" },
-              { href: "/study/practice",  icon: <Zap className="h-5 w-5 text-white" />,      bg: "bg-amber-500",  title: "MCQ Practice", desc: "Timed quizzes + AI" },
-              { href: "/study/questions", icon: <MessageCircleQuestion className="h-5 w-5 text-white" />, bg: "bg-blue-500", title: "Q&A Forum", desc: "Ask & answer peers" },
-              { href: "/study/ai-plan",   icon: <Sparkles className="h-5 w-5 text-white" />, bg: "bg-emerald-500", title: "AI Plan",    desc: "Weekly study schedule" },
+              { href: "/study/materials", icon: <FileText className="h-5 w-5 text-white" />,              bg: "bg-violet-500", title: "Materials",    desc: "Notes & past questions" },
+              { href: "/study/practice",  icon: <Zap className="h-5 w-5 text-white" />,                   bg: "bg-amber-500",  title: "MCQ Practice", desc: "Timed quizzes + AI" },
+              { href: "/study/questions", icon: <MessageCircleQuestion className="h-5 w-5 text-white" />, bg: "bg-blue-500",   title: "Q&A Forum",    desc: "Ask & answer peers" },
+              { href: "/study/ai-plan",   icon: <Sparkles className="h-5 w-5 text-white" />,              bg: "bg-emerald-500",title: "AI Plan",      desc: "Personalised schedule" },
             ].map(card => (
               <Link
                 key={card.href}
@@ -427,55 +383,50 @@ export default async function HomePage() {
                   {card.icon}
                 </div>
                 <p className="mt-3 text-sm font-bold text-zinc-900">{card.title}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">{card.desc}</p>
-                <div className="mt-3 flex items-center gap-1 text-xs font-bold text-zinc-700">
+                <p className="mt-0.5 text-xs text-zinc-400">{card.desc}</p>
+                <div className="mt-3 flex items-center gap-1 text-xs font-bold text-zinc-600">
                   Open <ChevronRight className="h-3.5 w-3.5" />
                 </div>
               </Link>
             ))}
           </div>
-        </SectionRow>
+        </Row>
 
         {/* ── DELIVERY + SAFETY ── */}
-        <section className="grid gap-3 sm:grid-cols-2">
-          <div className="flex items-center justify-between rounded-2xl bg-zinc-900 p-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <Truck className="h-5 w-5 text-white" />
-                <p className="text-sm font-bold text-white">Delivery & transport</p>
-              </div>
-              <p className="mt-0.5 text-xs text-zinc-400">Agents, keke & car rides</p>
-              <div className="mt-4 flex gap-2">
-                <Link href="/delivery" className="rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-700">
-                  Find agents
-                </Link>
-                <Link href="/couriers" className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-zinc-900 hover:bg-zinc-100">
-                  Transport
-                </Link>
-              </div>
+        <section className="grid gap-3 sm:grid-cols-2 pb-4">
+          <div className="rounded-2xl bg-zinc-900 p-5">
+            <div className="flex items-center gap-2">
+              <Truck className="h-5 w-5 text-white" />
+              <p className="text-sm font-bold text-white">Delivery & transport</p>
+            </div>
+            <p className="mt-0.5 text-xs text-zinc-400">Agents, keke & car rides</p>
+            <div className="mt-4 flex gap-2">
+              <Link href="/delivery" className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800">
+                Find agents
+              </Link>
+              <Link href="/couriers" className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-zinc-900 hover:bg-zinc-100">
+                Transport
+              </Link>
             </div>
           </div>
-
-          <div className="flex items-center justify-between rounded-2xl border bg-white p-5 shadow-sm">
-            <div>
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-zinc-700" />
-                <p className="text-sm font-bold text-zinc-900">Stay safe</p>
-              </div>
-              <p className="mt-0.5 text-xs text-zinc-500">Meet in public, verify sellers</p>
-              <div className="mt-4 flex gap-2">
-                <Link href="/report" className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50">
-                  Report issue
-                </Link>
-                <Link href="/vendors" className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-bold text-white hover:bg-zinc-700">
-                  Verified vendors
-                </Link>
-              </div>
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-zinc-700" />
+              <p className="text-sm font-bold text-zinc-900">Stay safe</p>
+            </div>
+            <p className="mt-0.5 text-xs text-zinc-500">Meet in public, verify sellers</p>
+            <div className="mt-4 flex gap-2">
+              <Link href="/report" className="rounded-xl border px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50">
+                Report issue
+              </Link>
+              <Link href="/vendors" className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-bold text-white hover:bg-zinc-700">
+                Verified vendors
+              </Link>
             </div>
           </div>
         </section>
 
       </div>
-    </main>
+    </div>
   );
 }
