@@ -42,9 +42,13 @@ type OrderEntry = {
   created_at: string;
   updated_at: string;
   eta_ready_at: string | null;
+  paid_at: string | null;
+  receipt_url: string | null;
   vendor: {
     name: string; avatar_url: string | null;
     bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null;
+    vendor_type: string | null;
+    payment_note: string | null;
   };
 };
 
@@ -389,8 +393,14 @@ export default function MyOrdersPage() {
   // Tick every 30s so ETA chips re-compute without a full data refetch
   const [tick, setTick]             = useState(0);
   // Payment
-  const [copied, setCopied]         = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [copied, setCopied]               = useState<string | null>(null);
+  const [confirming, setConfirming]         = useState<string | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState<string | null>(null);
+  const [uploadedReceipt,  setUploadedReceipt]  = useState<string | null>(null);
+  const [nudging,          setNudging]          = useState<string | null>(null);
+  const [nudgeError,       setNudgeError]       = useState<string | null>(null);
+  const [nudgeSent,        setNudgeSent]        = useState<string | null>(null);
+  const [revealedAccount,  setRevealedAccount]  = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
@@ -822,26 +832,93 @@ export default function MyOrdersPage() {
 
                 {/* Payment card — shown for non-cancelled, non-delivered active orders */}
                 {!['cancelled', 'delivered'].includes(order.status) && (() => {
-                  const { payment_status: ps, payment_method: pm, vendor: v } = order;
-                  const hasBank = !!(v.bank_account_number && v.bank_account_name && v.bank_name);
+                  const { payment_status: ps, payment_method: pm, vendor: v, paid_at, receipt_url } = order;
+                  const hasBank    = !!(v.bank_account_number && v.bank_account_name && v.bank_name);
+                  const isFood     = v.vendor_type === 'food';
 
+                  // ── Already confirmed ────────────────────────────────────────
                   if (ps === 'vendor_confirmed') {
                     return (
-                      <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700">
-                        ✅ Payment confirmed by vendor
+                      <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 space-y-0.5">
+                        <p className="text-xs font-semibold text-emerald-700">✅ Payment confirmed by vendor</p>
+                        {paid_at && (
+                          <p className="text-[11px] text-emerald-600">
+                            Confirmed at {new Date(paid_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
                       </div>
                     );
                   }
 
+                  // ── Buyer already tapped "I've paid" ─────────────────────────
                   if (ps === 'buyer_confirmed') {
+                    // Show nudge button after 10 minutes of paid_at with no confirmation
+                    const canNudge = (() => {
+                      if (!paid_at) return true; // no timestamp — always allow
+                      return Date.now() - new Date(paid_at).getTime() > 10 * 60 * 1000;
+                    })();
+
                     return (
-                      <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
-                        <p className="font-semibold">Transfer sent — waiting for vendor confirmation</p>
-                        <p className="mt-0.5 text-blue-600">You'll be notified once the vendor confirms receipt.</p>
+                      <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5 space-y-2">
+                        <p className="text-xs font-semibold text-blue-800">💸 Transfer sent — waiting for vendor</p>
+                        {paid_at && (
+                          <p className="text-[11px] text-blue-600">
+                            Sent at {new Date(paid_at).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
+                        {receipt_url && (
+                          <a
+                            href={receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 underline"
+                          >
+                            🧾 View uploaded receipt
+                          </a>
+                        )}
+                        {nudgeSent === order.id ? (
+                          <p className="text-[11px] font-semibold text-emerald-700">✅ Vendor notified — give them a moment.</p>
+                        ) : canNudge ? (
+                          <div className="space-y-1">
+                            <button
+                              type="button"
+                              disabled={nudging === order.id}
+                              onClick={async () => {
+                                setNudging(order.id);
+                                setNudgeError(null);
+                                try {
+                                  const res  = await fetch(`/api/orders/${order.id}/nudge-vendor`, { method: 'POST' });
+                                  const json = await res.json();
+                                  if (!json.ok) throw new Error(json.message ?? 'Failed to nudge');
+                                  setNudgeSent(order.id);
+                                  setTimeout(() => setNudgeSent(null), 60000); // reset after 1 min
+                                } catch (err: any) {
+                                  setNudgeError(err.message ?? 'Could not send reminder');
+                                } finally {
+                                  setNudging(null);
+                                }
+                              }}
+                              className={cn(
+                                'w-full rounded-xl border py-2 text-xs font-semibold transition-all',
+                                nudging === order.id
+                                  ? 'border-zinc-200 bg-zinc-100 text-zinc-400'
+                                  : 'border-blue-300 bg-white text-blue-700 hover:bg-blue-50'
+                              )}
+                            >
+                              {nudging === order.id ? 'Sending reminder…' : '🔔 Remind vendor to confirm'}
+                            </button>
+                            {nudgeError && (
+                              <p className="text-[11px] text-red-600">{nudgeError}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-blue-500">You'll be notified once the vendor confirms.</p>
+                        )}
                       </div>
                     );
                   }
 
+                  // ── Cash order (marketplace only) ────────────────────────────
                   if (pm === 'cash') {
                     return (
                       <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-600">
@@ -850,31 +927,96 @@ export default function MyOrdersPage() {
                     );
                   }
 
-                  // unpaid — show transfer details + action buttons
+                  // ── Unpaid — show transfer details ────────────────────────────
                   return (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2.5">
                       <p className="text-xs font-semibold text-amber-900">Pay for your order</p>
                       {hasBank ? (
                         <>
                           <div className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 space-y-0.5">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-bold text-zinc-900">{v.bank_account_number}</p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(v.bank_account_number!).catch(() => {});
-                                  setCopied(order.id);
-                                  setTimeout(() => setCopied(null), 2000);
-                                }}
-                                className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
-                              >
-                                {copied === order.id ? 'Copied!' : 'Copy'}
-                              </button>
+                            <div className="flex items-center justify-between gap-2">
+                              {/* Masked by default — tap to reveal then copy */}
+                              <p className="text-sm font-bold text-zinc-900 tracking-wider">
+                                {revealedAccount === order.id
+                                  ? v.bank_account_number
+                                  : `••••••${v.bank_account_number!.slice(-4)}`}
+                              </p>
+                              <div className="flex shrink-0 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setRevealedAccount(revealedAccount === order.id ? null : order.id)}
+                                  className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
+                                >
+                                  {revealedAccount === order.id ? 'Hide' : 'Reveal'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(v.bank_account_number!).catch(() => {});
+                                    setCopied(order.id);
+                                    setTimeout(() => setCopied(null), 2000);
+                                  }}
+                                  className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
+                                >
+                                  {copied === order.id ? 'Copied!' : 'Copy'}
+                                </button>
+                              </div>
                             </div>
                             <p className="text-xs text-zinc-600">{v.bank_account_name}</p>
                             <p className="text-xs text-zinc-400">{v.bank_name}</p>
                           </div>
-                          <p className="text-[11px] text-amber-700">Transfer ₦{order.total.toLocaleString()} to the account above, then tap &quot;I&apos;ve paid&quot;.</p>
+
+                          {/* Receipt upload */}
+                          <div>
+                            <label className={cn(
+                              'flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed py-2 text-xs font-medium transition-all',
+                              uploadingReceipt === order.id
+                                ? 'border-zinc-300 bg-zinc-50 text-zinc-400'
+                                : uploadedReceipt === order.id
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'
+                            )}>
+                              {uploadingReceipt === order.id
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Uploading…</>
+                                : uploadedReceipt === order.id
+                                ? <>✅ Receipt uploaded</>
+                                : <>📎 Attach transfer receipt (optional)</>}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                disabled={uploadingReceipt === order.id}
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  setUploadingReceipt(order.id);
+                                  try {
+                                    const fd = new FormData();
+                                    fd.append('receipt', file);
+                                    const res = await fetch(`/api/orders/${order.id}/receipt`, { method: 'POST', body: fd });
+                                    const json = await res.json();
+                                    if (!json.ok) throw new Error(json.message ?? 'Upload failed');
+                                    setUploadedReceipt(order.id);
+                                  } catch (err: any) {
+                                    alert(err.message ?? 'Upload failed');
+                                  } finally {
+                                    setUploadingReceipt(null);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          {v.payment_note && (
+                            <p className="text-[11px] font-medium text-amber-800">
+                              📝 {v.payment_note}
+                            </p>
+                          )}
+                          <p className="text-[11px] text-amber-700">
+                            Transfer ₦{order.total.toLocaleString()} to the account above, then tap &quot;I&apos;ve paid&quot;.
+                          </p>
+
+                          {/* Action buttons — "I've paid" only; no cash for food orders */}
                           <div className="flex gap-2">
                             <button
                               type="button"
@@ -887,30 +1029,25 @@ export default function MyOrdersPage() {
                             >
                               {confirming === order.id ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : "I've paid"}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMarkCash(order.id)}
-                              disabled={confirming === order.id}
-                              className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                            >
-                              Pay cash
-                            </button>
+                            {/* Cash only available for non-food vendors */}
+                            {!isFood && (
+                              <button
+                                type="button"
+                                onClick={() => handleMarkCash(order.id)}
+                                disabled={confirming === order.id}
+                                className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                Pay cash
+                              </button>
+                            )}
                           </div>
                         </>
                       ) : (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleMarkCash(order.id)}
-                            disabled={confirming === order.id}
-                            className={cn(
-                              'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
-                              confirming === order.id ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
-                            )}
-                          >
-                            {confirming === order.id ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Pay cash'}
-                          </button>
-                        </div>
+                        // No bank details — this should be blocked at order creation now,
+                        // but handle gracefully for any orders that slipped through before the fix.
+                        <p className="text-[11px] text-amber-700">
+                          This vendor hasn&apos;t set up bank transfer yet. Contact them via chat to arrange payment.
+                        </p>
                       )}
                     </div>
                   );

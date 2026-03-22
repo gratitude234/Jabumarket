@@ -71,7 +71,7 @@ export async function PATCH(
 
     const { data: order, error: orderErr } = await admin
       .from('orders')
-      .select('id, vendor_id, buyer_id, conversation_id, status, order_type')
+      .select('id, vendor_id, buyer_id, conversation_id, status, order_type, payment_status, payment_method')
       .eq('id', orderId)
       .single();
 
@@ -91,6 +91,29 @@ export async function PATCH(
     const allowed = VALID_TRANSITIONS[order.status];
     if (!allowed || !allowed.includes(newStatus)) {
       return jsonError(`Cannot transition from ${order.status} to ${newStatus}`, 400, 'invalid_transition');
+    }
+
+    // ── Payment guard — money first, food second ───────────────────────────────
+    // The only legitimate path to 'preparing' for a transfer order is through
+    // /vendor-confirm-payment, which atomically sets payment_status: vendor_confirmed
+    // AND status: preparing together. This route is the backstop that blocks any
+    // attempt to skip that step — whether from the UI or a direct API call.
+    //
+    // Cash orders are exempt: cash-on-pickup is settled at collection, so there
+    // is no pre-payment to confirm. The payment-method route enforces that cash
+    // is blocked on food orders as a separate guard.
+    if (newStatus === 'preparing') {
+      const paymentStatus = (order as any).payment_status as string | null;
+      const paymentMethod = (order as any).payment_method as string | null;
+      const isCashOrder   = paymentMethod === 'cash';
+
+      if (!isCashOrder && paymentStatus !== 'vendor_confirmed') {
+        return jsonError(
+          'Payment must be confirmed before the order can be prepared. Use "Confirm payment" to verify the transfer first.',
+          400,
+          'payment_not_confirmed'
+        );
+      }
     }
 
     // Update order status

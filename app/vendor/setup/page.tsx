@@ -356,9 +356,10 @@ export default function VendorSetupPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vendorId, setVendorId] = useState<string | null>(null);
-  const [bankName, setBankName]           = useState('');
+  const [bankName,     setBankName]     = useState('');
   const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName]     = useState('');
+  const [accountName,  setAccountName]  = useState('');
+  const [paymentNote,  setPaymentNote]  = useState('');
   const [form, setForm] = useState<FormData>({
     name: '',
     description: '',
@@ -373,6 +374,7 @@ export default function VendorSetupPage() {
     day_schedule: null,
   });
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [vendorType, setVendorType] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -396,6 +398,7 @@ export default function VendorSetupPage() {
       setBankName((v as any).bank_name ?? '');
       setAccountNumber((v as any).bank_account_number ?? '');
       setAccountName((v as any).bank_account_name ?? '');
+      setPaymentNote((v as any).payment_note ?? '');
       setForm({
         name: v.name ?? '',
         description: v.description ?? '',
@@ -409,6 +412,7 @@ export default function VendorSetupPage() {
         avatar_url: (v as any).avatar_url ?? null,
         day_schedule: (v as any).day_schedule ?? null,
       });
+      setVendorType((v as any).vendor_type ?? null);
       setLoading(false);
     })();
   }, [router]);
@@ -434,6 +438,7 @@ export default function VendorSetupPage() {
         bank_name: bankName || null,
         bank_account_number: accountNumber || null,
         bank_account_name: accountName || null,
+        payment_note: paymentNote.trim() || null,
       }),
     });
 
@@ -495,6 +500,27 @@ export default function VendorSetupPage() {
         <h1 className="text-xl font-bold text-zinc-900">Store Settings</h1>
         <p className="mt-1 text-sm text-zinc-500">Manage your vendor profile and order settings.</p>
       </div>
+
+      {/* Bank details warning — food vendors must have bank details to receive orders */}
+      {vendorType === 'food' && form.accepts_orders && !accountNumber && (
+        <div className="rounded-3xl border border-red-200 bg-red-50 p-4 space-y-1">
+          <p className="text-sm font-bold text-red-800">⚠️ You can't receive orders yet</p>
+          <p className="text-xs text-red-700">
+            Your store is open but you have no bank account set up. Students who try to order from you
+            will be blocked until you add your payment details below.
+          </p>
+        </div>
+      )}
+
+      {/* Bank details nudge — food vendor is open but bank is incomplete (partial) */}
+      {vendorType === 'food' && form.accepts_orders && accountNumber && (!bankName || !accountName) && (
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 space-y-1">
+          <p className="text-sm font-bold text-amber-800">⚠️ Payment details incomplete</p>
+          <p className="text-xs text-amber-700">
+            Add your bank name and account name so students can confirm who to transfer to.
+          </p>
+        </div>
+      )}
 
       {/* Taking orders toggle */}
       <button
@@ -648,6 +674,19 @@ export default function VendorSetupPage() {
             onChange={e => setAccountName(e.target.value)}
             className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
           />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Transfer note (optional)
+            </label>
+            <input
+              placeholder="e.g. Include your name and order number in the description"
+              value={paymentNote}
+              onChange={e => setPaymentNote(e.target.value)}
+              maxLength={120}
+              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            />
+            <p className="text-[11px] text-zinc-400">Shown to buyers when they&apos;re about to transfer. Helps you match payments to orders.</p>
+          </div>
         </div>
 
         <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VendorRow } from '@/lib/types';
+import { subscribeToPush } from '@/components/ServiceWorkerRegister';
 
 type OrderSummary = {
   pending: number; active: number; ready: number;
@@ -741,6 +742,49 @@ function VendorDashboardPageInner() {
       setLoading(false);
     })();
   }, [router]);
+
+  // ── Subscribe vendor device to push notifications ────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!('serviceWorker' in navigator)) return;
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+
+    async function subscribeVendorPush() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          // No existing subscription — create one via the shared helper
+          await subscribeToPush(reg);
+          sub = await reg.pushManager.getSubscription();
+        }
+        if (!sub) return;
+
+        const json = sub.toJSON() as {
+          endpoint: string;
+          keys: { p256dh: string; auth: string };
+        };
+
+        // Save to vendor_push_subscriptions so order notifications work
+        await fetch('/api/vendor/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: json.endpoint,
+            p256dh:   json.keys.p256dh,
+            auth:     json.keys.auth,
+          }),
+        });
+      } catch {
+        // Non-critical — never block the dashboard
+      }
+    }
+
+    void subscribeVendorPush();
+  }, []);
+
 
   async function toggleOrders() {
     if (!vendor) return;

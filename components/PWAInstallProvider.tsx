@@ -37,29 +37,48 @@ export default function PWAInstallProvider({
     const standalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window.navigator as any).standalone === true // iOS Safari non-standard property
+      (window.navigator as any).standalone === true
     if (standalone) {
       setIsInstalled(true)
       return
     }
 
-    // Capture the prompt — Chrome fires this when eligibility
-    // criteria are met. Store it for later use.
-    function handler(e: Event) {
-      e.preventDefault()
+    // Pick up the event if it already fired before this component mounted.
+    // The inline script in layout.tsx captures it on window.__pwaInstallPrompt
+    // so we never miss it even on slow-hydrating pages.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const early = (window as any).__pwaInstallPrompt as BeforeInstallPromptEvent | null
+    if (early) {
+      setDeferredPrompt(early)
+    }
+
+    // Also listen for future fires (e.g. after the user dismisses once and
+    // Chrome re-evaluates eligibility) and for our custom 'pwaInstallReady'
+    // event fired by the inline script.
+    function handlePrompt(e: Event) {
+      e.preventDefault?.()
       setDeferredPrompt(e as BeforeInstallPromptEvent)
     }
 
-    window.addEventListener('beforeinstallprompt', handler)
+    function handleReady() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = (window as any).__pwaInstallPrompt as BeforeInstallPromptEvent | null
+      if (p) setDeferredPrompt(p)
+    }
 
-    // Also detect post-install
+    window.addEventListener('beforeinstallprompt', handlePrompt)
+    window.addEventListener('pwaInstallReady', handleReady)
+
     window.addEventListener('appinstalled', () => {
       setIsInstalled(true)
       setDeferredPrompt(null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(window as any).__pwaInstallPrompt = null
     })
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handler)
+      window.removeEventListener('beforeinstallprompt', handlePrompt)
+      window.removeEventListener('pwaInstallReady', handleReady)
     }
   }, [])
 
@@ -68,6 +87,8 @@ export default function PWAInstallProvider({
     await deferredPrompt.prompt()
     const { outcome } = await deferredPrompt.userChoice
     setDeferredPrompt(null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).__pwaInstallPrompt = null
     return outcome
   }
 

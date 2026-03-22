@@ -90,6 +90,13 @@ export default function ConversationPage() {
   const [notFound, setNotFound] = useState(false);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
+  const [receiptUrl,   setReceiptUrl]   = useState<string | null>(null);
+  const [vendorBank, setVendorBank] = useState<{
+    bank_name: string;
+    bank_account_number: string;
+    bank_account_name: string;
+  } | null>(null);
   const [showMealBuilder, setShowMealBuilder] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -169,7 +176,7 @@ export default function ConversationPage() {
         .select(`
           id, listing_id, order_id, buyer_id, vendor_id, buyer_unread, vendor_unread,
           listing:listings(id, title, image_url, status),
-          vendor:vendors(id, name, user_id, vendor_type, accepts_orders)
+          vendor:vendors(id, name, user_id, vendor_type, accepts_orders, bank_name, bank_account_number, bank_account_name)
         `)
         .eq("id", conversationId)
         .maybeSingle();
@@ -190,13 +197,29 @@ export default function ConversationPage() {
       if (conv.order_id) {
         const { data: orderData } = await supabase
           .from("orders")
-          .select("status, payment_status")
+          .select("status, payment_status, payment_method, receipt_url")
           .eq("id", conv.order_id)
           .single();
         if (orderData) {
           setOrderStatus(orderData.status);
           setPaymentStatus((orderData as any).payment_status ?? null);
+          setPaymentMethod((orderData as any).payment_method ?? null);
+          setReceiptUrl((orderData as any).receipt_url ?? null);
         }
+      }
+
+      // Pull vendor bank details for the buyer payment panel
+      const vendorForBank = Array.isArray(convData.vendor) ? convData.vendor[0] : convData.vendor as any;
+      if (
+        vendorForBank?.bank_account_number &&
+        vendorForBank?.bank_account_name &&
+        vendorForBank?.bank_name
+      ) {
+        setVendorBank({
+          bank_name:           vendorForBank.bank_name,
+          bank_account_number: vendorForBank.bank_account_number,
+          bank_account_name:   vendorForBank.bank_account_name,
+        });
       }
 
       await loadMessages();
@@ -244,9 +267,11 @@ export default function ConversationPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${meta.order_id}` },
         (payload) => {
-          const updated = payload.new as { status: string; payment_status?: string };
+          const updated = payload.new as { status: string; payment_status?: string; payment_method?: string; receipt_url?: string };
           if (updated.status) setOrderStatus(updated.status);
           if (updated.payment_status) setPaymentStatus(updated.payment_status);
+          if (updated.payment_method) setPaymentMethod(updated.payment_method);
+          if (updated.receipt_url) setReceiptUrl(updated.receipt_url);
         }
       )
       .subscribe();
@@ -257,6 +282,37 @@ export default function ConversationPage() {
   useEffect(() => {
     scrollToBottom(messages.length <= 1 ? "instant" : "smooth");
   }, [messages.length]);
+
+    // ── Payment action handlers ───────────────────────────────────────────────────
+  async function handleBuyerConfirmFromChat() {
+    if (!meta?.order_id) return;
+    const res = await fetch(`/api/orders/${meta.order_id}/buyer-confirm`, { method: "POST" });
+    const json = await res.json();
+    if (json.ok) {
+      setPaymentStatus("buyer_confirmed");
+      setPaymentMethod("transfer");
+    } else {
+      console.error("[inbox] buyer-confirm failed:", json.message);
+    }
+  }
+
+  async function handleVendorConfirmFromChat() {
+    if (!meta?.order_id) return;
+    const res = await fetch(`/api/orders/${meta.order_id}/vendor-confirm-payment`, { method: "POST" });
+    const json = await res.json();
+    if (json.ok) {
+      setPaymentStatus("vendor_confirmed");
+      setOrderStatus("preparing");
+    } else {
+      console.error("[inbox] vendor-confirm-payment failed:", json.message);
+    }
+  }
+
+  async function handlePaymentDisputeFromChat() {
+    if (!meta?.order_id) return;
+    await fetch(`/api/orders/${meta.order_id}/payment-dispute`, { method: "POST" });
+    setPaymentStatus("unpaid");
+  }
 
   async function send(chipText?: string) {
     const text = (chipText ?? body).trim();
@@ -480,7 +536,15 @@ export default function ConversationPage() {
                       isSender={isMine}
                       status={orderStatus ?? undefined}
                       paymentStatus={paymentStatus ?? undefined}
+                      paymentMethod={paymentMethod ?? undefined}
+                      receiptUrl={receiptUrl}
                       createdAt={msg.created_at}
+                      orderId={meta?.order_id ?? undefined}
+                      isViewer={isVendorSide ? "vendor" : "buyer"}
+                      vendorBank={vendorBank}
+                      onBuyerConfirm={handleBuyerConfirmFromChat}
+                      onVendorConfirmPayment={handleVendorConfirmFromChat}
+                      onPaymentDispute={handlePaymentDisputeFromChat}
                     />
                   ) : (
                     <div

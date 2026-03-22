@@ -1,8 +1,13 @@
 'use client';
 // components/chat/OrderBubble.tsx
-// Renders a structured order card inside the chat thread (handles both new lines format + legacy)
+// Renders a structured order card inside the chat thread.
+// Now context-aware: shows bank details + "I've paid" for buyers,
+// and "Confirm payment" for vendors — so payment can complete without
+// leaving the chat.
 
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { Loader2, Copy, Check } from 'lucide-react';
 import type { OrderPayload } from '@/types/meal-builder';
 
 const STATUS_STYLES: Record<string, { label: string; className: string }> = {
@@ -14,18 +19,28 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
   cancelled: { label: 'Cancelled', className: 'border-red-200 bg-red-50 text-red-700' },
 };
 
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  unpaid:           '⏳ Awaiting payment',
-  buyer_confirmed:  '💸 Payment sent (unconfirmed)',
-  vendor_confirmed: '✅ Payment confirmed',
+type BankDetails = {
+  bank_name: string;
+  bank_account_number: string;
+  bank_account_name: string;
 };
 
 type Props = {
-  payload: OrderPayload;
-  isSender: boolean;
-  status?: string;
+  payload:       OrderPayload;
+  isSender:      boolean;
+  status?:       string;
   paymentStatus?: string;
-  createdAt: string;
+  paymentMethod?: string;
+  receiptUrl?:   string | null;
+  createdAt:     string;
+  orderId?:      string;
+  // Buyer-side actions
+  isViewer?: 'buyer' | 'vendor';
+  vendorBank?: BankDetails | null;
+  onBuyerConfirm?:         () => Promise<void>;
+  // Vendor-side actions
+  onVendorConfirmPayment?: () => Promise<void>;
+  onPaymentDispute?:       () => void;
 };
 
 function fmt(n: number) { return `₦${n.toLocaleString()}`; }
@@ -34,19 +49,16 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Render line items from new OR legacy format ────────────────────────────────
+// ── Line items ─────────────────────────────────────────────────────────────────
 
 function LineItems({ payload }: { payload: OrderPayload }) {
-  // New format: lines array
   if (Array.isArray(payload.lines) && payload.lines.length > 0) {
-    // Group by category for clean display
     const byCategory: Record<string, typeof payload.lines> = {};
     for (const l of payload.lines) {
       const cat = l.category || 'Items';
       if (!byCategory[cat]) byCategory[cat] = [];
       byCategory[cat].push(l);
     }
-
     return (
       <>
         {Object.entries(byCategory).map(([cat, lines]) => (
@@ -114,7 +126,281 @@ function LineItems({ payload }: { payload: OrderPayload }) {
   );
 }
 
-export default function OrderBubble({ payload, isSender, status, paymentStatus, createdAt }: Props) {
+// ── Buyer payment panel ────────────────────────────────────────────────────────
+
+function BuyerPaymentPanel({
+  total,
+  paymentStatus,
+  paymentMethod,
+  vendorBank,
+  orderId,
+  onBuyerConfirm,
+}: {
+  total: number;
+  paymentStatus?: string;
+  paymentMethod?: string;
+  vendorBank?: BankDetails | null;
+  orderId?: string;
+  onBuyerConfirm?: () => Promise<void>;
+}) {
+  const [loading,        setLoading]        = useState(false);
+  const [copied,         setCopied]         = useState(false);
+  const [done,           setDone]           = useState(false);
+  const [uploading,      setUploading]      = useState(false);
+  const [receiptUploaded, setReceiptUploaded] = useState(false);
+  const [uploadError,    setUploadError]    = useState<string | null>(null);
+
+  // Already confirmed — show status only
+  if (paymentStatus === 'vendor_confirmed') {
+    return (
+      <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-2.5">
+        <p className="text-xs font-semibold text-emerald-700">✅ Payment confirmed by vendor</p>
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'buyer_confirmed' || done) {
+    return (
+      <div className="border-t border-blue-100 bg-blue-50 px-4 py-2.5">
+        <p className="text-xs font-semibold text-blue-800">💸 Transfer sent — waiting for vendor confirmation</p>
+        <p className="mt-0.5 text-[11px] text-blue-600">You'll be notified when the vendor confirms receipt.</p>
+      </div>
+    );
+  }
+
+  if (paymentMethod === 'cash') {
+    return (
+      <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-2">
+        <p className="text-xs text-zinc-500">🤝 Paying cash on pickup</p>
+      </div>
+    );
+  }
+
+  // Unpaid — show bank details and action
+  async function handleConfirm() {
+    if (!onBuyerConfirm) return;
+    setLoading(true);
+    try {
+      await onBuyerConfirm();
+      setDone(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyAccount() {
+    if (!vendorBank?.bank_account_number) return;
+    navigator.clipboard.writeText(vendorBank.bank_account_number).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 space-y-2.5">
+      <p className="text-xs font-semibold text-amber-900">Pay for your order</p>
+
+      {vendorBank ? (
+        <>
+          {/* Bank details */}
+          <div className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 space-y-0.5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-zinc-900">{vendorBank.bank_account_number}</p>
+              <button
+                type="button"
+                onClick={copyAccount}
+                className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100"
+              >
+                {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-xs text-zinc-600">{vendorBank.bank_account_name}</p>
+            <p className="text-xs text-zinc-400">{vendorBank.bank_name}</p>
+          </div>
+
+          <p className="text-[11px] text-amber-700">
+            Transfer {fmt(total)} to the account above, then upload your receipt and tap &quot;I&apos;ve paid&quot;.
+          </p>
+
+          {/* Receipt upload */}
+          {orderId && (
+            <div>
+              <label className="block text-[11px] font-semibold text-amber-800 mb-1">
+                Upload receipt (optional but recommended)
+              </label>
+              <label className={cn(
+                'flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed py-2 text-xs font-medium transition-all',
+                receiptUploaded
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                  : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'
+              )}>
+                {uploading
+                  ? <><Loader2 className="h-3 w-3 animate-spin" /> Uploading…</>
+                  : receiptUploaded
+                  ? <>✅ Receipt uploaded</>
+                  : <>📎 Attach screenshot / photo</>}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={uploading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setUploading(true);
+                    setUploadError(null);
+                    try {
+                      const fd = new FormData();
+                      fd.append('receipt', file);
+                      const res = await fetch(`/api/orders/${orderId}/receipt`, { method: 'POST', body: fd });
+                      const json = await res.json();
+                      if (!json.ok) throw new Error(json.message ?? 'Upload failed');
+                      setReceiptUploaded(true);
+                    } catch (err: any) {
+                      setUploadError(err.message ?? 'Upload failed');
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+              </label>
+              {uploadError && (
+                <p className="mt-1 text-[11px] text-red-600">{uploadError}</p>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={loading}
+            className={cn(
+              'w-full rounded-xl py-2 text-xs font-semibold text-white transition-all',
+              loading ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
+            )}
+          >
+            {loading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : "I've paid"}
+          </button>
+        </>
+      ) : (
+        <p className="text-[11px] text-amber-700">
+          This vendor hasn&apos;t set up bank details yet. Contact them via chat to arrange payment.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Vendor payment panel ───────────────────────────────────────────────────────
+
+function VendorPaymentPanel({
+  total,
+  paymentStatus,
+  receiptUrl,
+  onVendorConfirmPayment,
+  onPaymentDispute,
+}: {
+  total: number;
+  paymentStatus?: string;
+  receiptUrl?: string | null;
+  onVendorConfirmPayment?: () => Promise<void>;
+  onPaymentDispute?: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  if (paymentStatus === 'vendor_confirmed') {
+    return (
+      <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-2.5">
+        <p className="text-xs font-semibold text-emerald-700">✅ Payment confirmed</p>
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'buyer_confirmed') {
+    async function handleConfirm() {
+      if (!onVendorConfirmPayment) return;
+      setLoading(true);
+      try { await onVendorConfirmPayment(); } finally { setLoading(false); }
+    }
+
+    return (
+      <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
+        <p className="text-xs font-semibold text-amber-900">💸 Buyer says they&apos;ve transferred</p>
+        <p className="text-[11px] text-amber-700">
+          Check your account for {fmt(total)}, then confirm or dispute.
+        </p>
+        {receiptUrl ? (
+          <a
+            href={receiptUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block overflow-hidden rounded-xl border border-amber-200"
+          >
+            <img
+              src={receiptUrl}
+              alt="Transfer receipt"
+              className="h-28 w-full object-cover"
+            />
+            <p className="bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800">
+              🧾 View full receipt ↗
+            </p>
+          </a>
+        ) : (
+          <p className="text-[11px] italic text-amber-600">No receipt uploaded by buyer.</p>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onPaymentDispute}
+            disabled={loading}
+            className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+          >
+            Not received
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={loading}
+            className={cn(
+              'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
+              loading ? 'bg-zinc-400' : 'bg-emerald-600 hover:bg-emerald-700'
+            )}
+          >
+            {loading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Confirm payment'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'unpaid') {
+    return (
+      <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-2">
+        <p className="text-xs text-zinc-400">⏳ Awaiting payment from buyer</p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export default function OrderBubble({
+  payload,
+  isSender,
+  status,
+  paymentStatus,
+  paymentMethod,
+  receiptUrl,
+  createdAt,
+  orderId,
+  isViewer,
+  vendorBank,
+  onBuyerConfirm,
+  onVendorConfirmPayment,
+  onPaymentDispute,
+}: Props) {
   const st = status && STATUS_STYLES[status] ? STATUS_STYLES[status] : STATUS_STYLES.pending;
 
   return (
@@ -154,15 +440,30 @@ export default function OrderBubble({ payload, isSender, status, paymentStatus, 
           <span className="text-base font-bold text-zinc-900">{fmt(payload.total)}</span>
         </div>
 
-        {/* Payment status */}
-        {paymentStatus && PAYMENT_STATUS_LABELS[paymentStatus] && (
-          <div className="border-t border-zinc-100 px-4 py-2">
-            <span className="text-xs text-zinc-500">{PAYMENT_STATUS_LABELS[paymentStatus]}</span>
-          </div>
+        {/* Payment panel — context-aware per viewer role */}
+        {isViewer === 'buyer' && !['cancelled', 'delivered'].includes(status ?? '') && (
+          <BuyerPaymentPanel
+            total={payload.total}
+            paymentStatus={paymentStatus}
+            paymentMethod={paymentMethod}
+            vendorBank={vendorBank}
+            orderId={orderId}
+            onBuyerConfirm={onBuyerConfirm}
+          />
+        )}
+
+        {isViewer === 'vendor' && !['cancelled', 'delivered'].includes(status ?? '') && (
+          <VendorPaymentPanel
+            total={payload.total}
+            paymentStatus={paymentStatus}
+            receiptUrl={receiptUrl}
+            onVendorConfirmPayment={onVendorConfirmPayment}
+            onPaymentDispute={onPaymentDispute}
+          />
         )}
 
         {/* Timestamp */}
-        <div className="px-4 pb-2 text-right">
+        <div className="px-4 pb-2 pt-1 text-right">
           <span className="text-[10px] text-zinc-400">{fmtTime(createdAt)}</span>
         </div>
       </div>

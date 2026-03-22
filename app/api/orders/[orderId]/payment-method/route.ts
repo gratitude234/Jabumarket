@@ -1,5 +1,8 @@
 // app/api/orders/[orderId]/payment-method/route.ts
 // PATCH — buyer sets payment method to cash
+// NOTE: Cash is only valid for non-food (marketplace) orders.
+//       Food orders must go through bank transfer so payment is confirmed
+//       before the kitchen starts. This route enforces that at the server.
 
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -36,16 +39,28 @@ export async function PATCH(
     if (orderErr || !order) return jsonError('Order not found', 404, 'order_not_found')
     if (order.buyer_id !== user.id) return jsonError('Forbidden', 403, 'forbidden')
 
+    // ── Food vendor guard ──────────────────────────────────────────────────────
+    // Cash payment means payment_status never reaches vendor_confirmed, which
+    // means a vendor could start preparing without confirmed payment. Block it
+    // for food vendors — they must use bank transfer.
+    const { data: vendor } = await admin
+      .from('vendors')
+      .select('user_id, vendor_type')
+      .eq('id', order.vendor_id)
+      .single()
+
+    if (vendor?.vendor_type === 'food') {
+      return jsonError(
+        'Cash payment is not available for food orders. Please transfer to the vendor\'s bank account and tap "I\'ve paid".',
+        400,
+        'cash_not_allowed_for_food'
+      )
+    }
+
     await admin
       .from('orders')
       .update({ payment_method: 'cash' })
       .eq('id', orderId)
-
-    const { data: vendor } = await admin
-      .from('vendors')
-      .select('user_id')
-      .eq('id', order.vendor_id)
-      .single()
 
     if (vendor?.user_id) {
       try {

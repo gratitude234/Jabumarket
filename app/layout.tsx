@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppChrome from "@/components/layout/AppChrome";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import PWAInstallProvider from "@/components/PWAInstallProvider";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -49,6 +50,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" sizes="167x167" href="/icon-192.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icon-192.png" />
         <link rel="apple-touch-icon" sizes="120x120" href="/icon-192.png" />
+
+        {/*
+          Capture beforeinstallprompt as early as possible — before React
+          hydrates. Chrome fires this event very early in page load, often
+          before any useEffect can register a listener. We stash it on window
+          so PWAInstallProvider can pick it up whenever it mounts.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.__pwaInstallPrompt = null;
+              window.addEventListener('beforeinstallprompt', function(e) {
+                e.preventDefault();
+                window.__pwaInstallPrompt = e;
+                window.dispatchEvent(new Event('pwaInstallReady'));
+              });
+            `,
+          }}
+        />
       </head>
       <body className="min-h-screen bg-background text-foreground">
         <div className="pointer-events-none fixed inset-0 -z-10">
@@ -56,7 +76,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute -bottom-52 -left-52 h-[36rem] w-[36rem] rounded-full bg-accent/10 blur-3xl" />
         </div>
 
-        <AppChrome>{children}</AppChrome>
+        <PWAInstallProvider>
+          <AppChrome>{children}</AppChrome>
+        </PWAInstallProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

@@ -44,13 +44,30 @@ export async function POST(req: Request) {
     // ── Validate vendor ─────────────────────────────────────────────────────────
     const { data: vendor, error: vendorErr } = await admin
       .from('vendors')
-      .select('id, user_id, vendor_type, accepts_orders')
+      .select('id, user_id, vendor_type, accepts_orders, bank_account_number, bank_account_name, bank_name')
       .eq('id', vendor_id)
       .single();
 
     if (vendorErr || !vendor) return jsonError('Vendor not found', 404, 'vendor_not_found');
     if (vendor.vendor_type !== 'food') return jsonError('Not a food vendor', 400, 'not_food_vendor');
     if (!vendor.accepts_orders) return jsonError('Vendor is not accepting orders right now', 400, 'not_accepting');
+
+    // ── Bank details guard ──────────────────────────────────────────────────────
+    // Food vendors must have bank transfer details set up before they can receive
+    // orders. Without them, the buyer has no way to pay in-app and would be
+    // silently pushed to "Pay cash" — which bypasses payment confirmation entirely.
+    const hasBank = !!(
+      (vendor as any).bank_account_number &&
+      (vendor as any).bank_account_name &&
+      (vendor as any).bank_name
+    );
+    if (!hasBank) {
+      return jsonError(
+        'This vendor has not set up their payment details yet and cannot accept orders. Ask them to complete their bank details in their vendor profile.',
+        400,
+        'vendor_no_bank_details'
+      );
+    }
 
     // ── Server-side price validation (critical security check) ─────────────────
     const itemIds = [...new Set(lines.map((l) => l.item_id))];

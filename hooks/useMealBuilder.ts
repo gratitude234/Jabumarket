@@ -39,9 +39,14 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
   const [step, setStep] = useState<string>('');
   const [draftRestored, setDraftRestored] = useState(false);
   // true when vendor flips accepts_orders off while builder is open
-  const [vendorClosed, setVendorClosed] = useState(false);
-  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [vendorClosed,   setVendorClosed]   = useState(false);
+  const [deliveryFee,    setDeliveryFee]    = useState(0);
   const [acceptsDelivery, setAcceptsDelivery] = useState(true);
+  const [vendorBank,     setVendorBank]     = useState<{
+    bank_name: string;
+    bank_account_number: string;
+    bank_account_name: string;
+  } | null>(null);
 
   // All step keys in order: category names → fulfillment → review
   const steps = useMemo(
@@ -70,7 +75,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
       // Read current state first so we don't false-alarm on stale page-load data
       supabase
         .from('vendors')
-        .select('accepts_orders, accepts_delivery, delivery_fee')
+        .select('accepts_orders, accepts_delivery, delivery_fee, bank_name, bank_account_number, bank_account_name')
         .eq('id', vendorId)
         .single()
         .then(({ data }) => {
@@ -78,6 +83,10 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
           if (!data.accepts_orders) setVendorClosed(true);
           if (typeof (data as any).accepts_delivery === 'boolean') setAcceptsDelivery((data as any).accepts_delivery);
           if (typeof (data as any).delivery_fee === 'number') setDeliveryFee((data as any).delivery_fee);
+          const d = data as any;
+          if (d.bank_account_number && d.bank_account_name && d.bank_name) {
+            setVendorBank({ bank_name: d.bank_name, bank_account_number: d.bank_account_number, bank_account_name: d.bank_account_name });
+          }
         });
 
       const channel = supabase
@@ -407,6 +416,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
     vendorClosed,
     deliveryFee,
     acceptsDelivery,
+    vendorBank,
     // Mutations
     selectSingle,
     setSingleQty,
