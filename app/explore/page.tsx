@@ -445,14 +445,23 @@ export default async function ExplorePage({
   const parallelFetches: Promise<void>[] = [];
   if (vendorIds.length > 0) {
     parallelFetches.push(
-      supabase.from("vendors").select("id, name, verified, verification_status, vendor_type, avatar_url")
-        .in("id", vendorIds).then(({ data }) => { for (const v of data ?? []) vendorMap[v.id] = v as VendorSnippet; })
+      (async () => {
+        const { data } = await supabase.from("vendors")
+          .select("id, name, verified, verification_status, vendor_type, avatar_url")
+          .in("id", vendorIds);
+        for (const v of data ?? []) vendorMap[v.id] = v as VendorSnippet;
+      })()
     );
   }
   if (listingIds.length > 0) {
     parallelFetches.push(
-      supabase.from("listing_stats").select("listing_id, views, saves").in("listing_id", listingIds)
-        .then(({ data }) => { for (const s of data ?? []) statsMap[s.listing_id] = { views: Number(s.views ?? 0), saves: Number(s.saves ?? 0) }; })
+      (async () => {
+        const { data } = await supabase.from("listing_stats")
+          .select("listing_id, views, saves")
+          .in("listing_id", listingIds);
+        for (const s of data ?? [])
+          statsMap[s.listing_id] = { views: Number(s.views ?? 0), saves: Number(s.saves ?? 0) };
+      })()
     );
   }
   await Promise.all(parallelFetches);
