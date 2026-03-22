@@ -332,9 +332,9 @@ export default async function ListingPage({
                 </span>
               ) : null}
               {listing.created_at ? (
-                <span className="inline-flex items-center gap-1">
+                <span className="inline-flex items-center gap-1" suppressHydrationWarning>
                   <Clock className="h-3.5 w-3.5 shrink-0" />
-                  {timeAgo(listing.created_at)}
+                  <span suppressHydrationWarning>{timeAgo(listing.created_at)}</span>
                 </span>
               ) : null}
               {viewCount > 0 ? (

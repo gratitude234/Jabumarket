@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, BookOpen, MessageCircle, User, Plus, Store } from "lucide-react";
+import { Home, Search, BookOpen, MessageCircle, User, Store } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -177,20 +177,9 @@ export default function BottomNav() {
   ];
 
   const items = isVendor ? vendorItems : studentItems;
-  const hidePostFab = pathname.startsWith("/study");
 
   return (
     <>
-      {/* Floating Post button */}
-      {!hidePostFab && (
-        <Link
-          href="/post"
-          className="md:hidden fixed bottom-16 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background shadow-lg active:scale-95 transition-transform"
-          aria-label="Post listing"
-        >
-          <Plus className="h-6 w-6" />
-        </Link>
-      )}
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background">
         <div className="mx-auto max-w-6xl px-2">
