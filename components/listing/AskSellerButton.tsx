@@ -107,8 +107,17 @@ export default function AskSellerButton({
     setError(null);
     try {
       const convId = await openConversation();
-      if (convId) router.push(`/inbox/${convId}`);
-      else setError("Couldn't open chat. Please try again.");
+      if (convId) {
+        // Fire-and-forget: count this as a contact click for ranking
+        void supabase.rpc("listing_stats_increment", {
+          p_listing_id: listingId,
+          p_event: "contact_click",
+          p_amount: 1,
+        }).catch(() => {});
+        router.push(`/inbox/${convId}`);
+      } else {
+        setError("Couldn't open chat. Please try again.");
+      }
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
