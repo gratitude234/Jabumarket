@@ -110,7 +110,7 @@ function Pill({
         "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
         "focus:outline-none focus:ring-2 focus:ring-black/10",
         active
-          ? "border-zinc-900 bg-zinc-900 text-white"
+          ? "border-amber-500 bg-amber-500 text-white"
           : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
       )}
     >
@@ -283,7 +283,7 @@ export default function VendorsClient({
           <button
             type="button"
             onClick={() => router.refresh()}
-            className="mt-4 inline-flex items-center justify-center rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white"
+            className="mt-4 inline-flex items-center justify-center rounded-2xl bg-amber-500 px-4 py-2 text-sm font-medium text-white"
           >
             Retry
           </button>
@@ -311,7 +311,7 @@ export default function VendorsClient({
                   <button
                     type="button"
                     onClick={clearSearch}
-                    className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white"
+                    className="rounded-2xl bg-amber-500 px-4 py-2 text-sm font-medium text-white"
                   >
                     Clear search
                   </button>
@@ -486,7 +486,7 @@ function VendorCard({
             </Link>
             <Link
               href={`/vendors/${v.id}?order=true`}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white no-underline hover:bg-zinc-700"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white no-underline hover:bg-amber-600"
             >
               <UtensilsCrossed className="h-4 w-4" />
               Order food
@@ -507,7 +507,7 @@ function VendorCard({
                 href={waLink(whatsapp, "Hi, I found you on Jabu Market. I'm interested in your services.")}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-medium text-white no-underline"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-sm font-medium text-white no-underline"
               >
                 <MessageCircle className="h-4 w-4" />
                 WhatsApp

@@ -100,7 +100,7 @@ export default function FoodOrderCTA({
           <p className="text-xs text-zinc-500">Create a free account in under a minute. No spam.</p>
           <div className="flex gap-2">
             <a href={`/signup?next=/vendors/${vendorId}?order=true`}
-              className="flex-1 rounded-2xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white text-center hover:bg-zinc-700">
+              className="flex-1 rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white text-center hover:bg-amber-600">
               Sign up free
             </a>
             <a href={`/login?next=/vendors/${vendorId}?order=true`}
@@ -118,7 +118,7 @@ export default function FoodOrderCTA({
             type="button"
             onClick={handleOrderClick}
             disabled={authChecking}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
           >
             <UtensilsCrossed className="h-4 w-4" />
             {authChecking ? 'Checking…' : `Order Food from ${vendorName}`}
