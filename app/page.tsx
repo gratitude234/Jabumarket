@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 // app/page.tsx
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
@@ -20,7 +20,6 @@ import {
   UtensilsCrossed,
   Wrench,
   PlusSquare,
-  Flame,
   BadgeCheck,
   MapPin,
   Image as ImageIcon,
@@ -30,7 +29,7 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ListingImage from "@/components/ListingImage";
 
-export const revalidate = 120; // cache homepage briefly for speed
+export const revalidate = 120;
 
 function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
@@ -83,24 +82,15 @@ type VendorPreview = {
 };
 
 const categories = [
-  { name: "Phones", icon: Smartphone, href: "/explore?category=Phones" },
-  { name: "Laptops", icon: Laptop, href: "/explore?category=Laptops" },
-  { name: "Electronics", icon: Cpu, href: "/explore?category=Electronics" },
-  { name: "Fashion", icon: Shirt, href: "/explore?category=Fashion" },
-  { name: "Provisions", icon: ShoppingBasket, href: "/explore?category=Provisions" },
-  { name: "Books & Stationery", icon: BookOpen, href: "/explore?category=Books+%26+Stationery" },
-  { name: "Food", icon: UtensilsCrossed, href: "/food" },
-  { name: "Beauty", icon: Sparkles, href: "/explore?category=Beauty" },
-  { name: "Services", icon: Wrench, href: "/explore?category=Services&type=service" },
+  { name: "Food",        icon: UtensilsCrossed, href: "/food",                                   bg: "bg-orange-100", icon_color: "text-orange-600" },
+  { name: "Phones",      icon: Smartphone,      href: "/explore?category=Phones",                bg: "bg-blue-100",   icon_color: "text-blue-600"   },
+  { name: "Laptops",     icon: Laptop,          href: "/explore?category=Laptops",               bg: "bg-violet-100", icon_color: "text-violet-600" },
+  { name: "Fashion",     icon: Shirt,           href: "/explore?category=Fashion",               bg: "bg-pink-100",   icon_color: "text-pink-600"   },
+  { name: "Electronics", icon: Cpu,             href: "/explore?category=Electronics",           bg: "bg-cyan-100",   icon_color: "text-cyan-600"   },
+  { name: "Provisions",  icon: ShoppingBasket,  href: "/explore?category=Provisions",            bg: "bg-green-100",  icon_color: "text-green-600"  },
+  { name: "Books",       icon: BookOpen,        href: "/explore?category=Books+%26+Stationery", bg: "bg-amber-100",  icon_color: "text-amber-600"  },
+  { name: "Services",    icon: Wrench,          href: "/explore?category=Services&type=service", bg: "bg-zinc-100",   icon_color: "text-zinc-600"   },
 ];
-
-const quickLinks = [
-  { label: "New today", href: "/explore?sort=newest" },
-  { label: "Food vendors", href: "/vendors?type=food" },
-  { label: "Services", href: "/explore?type=service" },
-  { label: "Verified vendors", href: "/vendors" },
-];
-
 
 function SectionHeader({
   title,
@@ -119,24 +109,23 @@ function SectionHeader({
     <div className="flex items-end justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          {icon ? (
+          {icon && (
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-zinc-100">
               {icon}
             </span>
-          ) : null}
+          )}
           <h2 className="truncate text-base font-semibold text-zinc-900 sm:text-lg">{title}</h2>
         </div>
-        {subtitle ? <p className="mt-0.5 text-xs text-zinc-600 sm:text-sm">{subtitle}</p> : null}
+        {subtitle && <p className="mt-0.5 text-xs text-zinc-500 sm:text-sm">{subtitle}</p>}
       </div>
-
-      {href ? (
+      {href && (
         <Link
           href={href}
-          className="shrink-0 rounded-full border bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 sm:text-sm"
+          className="shrink-0 rounded-full border bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 sm:text-sm"
         >
           {cta ?? "See all"}
         </Link>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -149,48 +138,11 @@ function ScrollRow({ children }: { children: ReactNode }) {
   );
 }
 
-function Pill({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full border bg-white/70 px-3 py-1 text-xs text-zinc-700 backdrop-blur">
-      {children}
-    </span>
-  );
-}
-
 function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full border bg-white px-2 py-0.5 text-xs text-zinc-700">
+    <span className="rounded-full border bg-white px-2 py-0.5 text-xs text-zinc-600">
       {children}
     </span>
-  );
-}
-
-function PriceChip({
-  price,
-  priceLabel,
-}: {
-  price: number | null | undefined;
-  priceLabel?: string | null;
-}) {
-  const label = (priceLabel ?? "").trim();
-  if (!price && label) {
-    return (
-      <div className="shrink-0 rounded-2xl bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900">
-        {label}
-      </div>
-    );
-  }
-  if (!price) {
-    return (
-      <div className="shrink-0 rounded-2xl bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900">
-        Contact
-      </div>
-    );
-  }
-  return (
-    <div className="shrink-0 rounded-2xl bg-zinc-100 px-3 py-2 text-sm font-bold text-zinc-900">
-      {formatNaira(price)}
-    </div>
   );
 }
 
@@ -198,41 +150,49 @@ function isVendorVerified(v: VendorPreview) {
   return v.verified === true || v.verification_status === "verified";
 }
 
+function getFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return "";
+  return fullName.trim().split(" ")[0];
+}
+
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
 
-  // Run queries in parallel (faster TTFB)
-  const [latestListingsRes, featuredVendorsRes, featuredListingsRes] = await Promise.all([
-    supabase
-      .from("listings")
-      .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(6),
-    supabase
-      .from("vendors")
-      .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
-      .or("verified.eq.true,verification_status.eq.verified")
-      // Quality-weighted: vendors with avatar first (signal of completeness),
-      // then by name so the list is stable and not purely newest-registered.
-      .not("name", "is", null)
-      .order("avatar_url", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(18), // fetch 18, re-rank client-side below
-    supabase
-      .from("listings")
-      .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
-      .eq("featured", true)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(6),
-  ]);
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const [latestListingsRes, featuredVendorsRes, featuredListingsRes, profileRes] =
+    await Promise.all([
+      supabase
+        .from("listings")
+        .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(6),
+      supabase
+        .from("vendors")
+        .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
+        .or("verified.eq.true,verification_status.eq.verified")
+        .not("name", "is", null)
+        .order("avatar_url", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(18),
+      supabase
+        .from("listings")
+        .select("id, title, price, price_label, category, listing_type, location, image_url, negotiable, created_at, status")
+        .eq("featured", true)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(6),
+      user
+        ? supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
 
   const listings = ((latestListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
   const rawVendors = ((featuredVendorsRes.data ?? []) as (VendorPreview & { avatar_url?: string | null })[]).filter(Boolean);
   const featuredListings = ((featuredListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
+  const firstName = getFirstName(profileRes.data?.full_name);
 
-  // Fetch rating summaries for homepage vendors + listing stats — parallel
   const homepageVendorIds = rawVendors.map((v) => v.id);
   const homepageListingIds = listings.map((l) => l.id);
 
@@ -245,279 +205,119 @@ export default async function HomePage() {
       : { data: [] as { listing_id: string; saves: number }[] },
   ]);
 
-  const homepageReviews = homepageReviewsRes.data;
-
-  // Build rating map
   const homeRatingMap: Record<string, { avg: number; count: number }> = {};
-  for (const r of homepageReviews ?? []) {
+  for (const r of homepageReviewsRes.data ?? []) {
     const e = homeRatingMap[r.vendor_id];
     homeRatingMap[r.vendor_id] = e
       ? { avg: (e.avg * e.count + r.rating) / (e.count + 1), count: e.count + 1 }
       : { avg: r.rating, count: 1 };
   }
 
-  // Build listing saves map
   const homeSavesMap: Record<string, number> = {};
   for (const s of homepageStatsRes.data ?? []) {
     homeSavesMap[s.listing_id] = Number(s.saves ?? 0);
   }
 
-  // Quality score: has reviews (2pts) + has avatar (1pt) — pick top 6
   const vendors = rawVendors
     .map((v) => ({
       ...v,
-      _score:
-        (homeRatingMap[v.id] ? 2 : 0) +
-        (v.avatar_url ? 1 : 0),
+      _score: (homeRatingMap[v.id] ? 2 : 0) + (v.avatar_url ? 1 : 0),
     }))
     .sort((a, b) => b._score - a._score)
     .slice(0, 6);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-10 px-4 pb-28 pt-5 sm:pb-10 sm:pt-8">
-      {/* HERO */}
-      <section className="relative overflow-hidden rounded-3xl border bg-white p-4 shadow-sm sm:p-7">
-        {/* background */}
-        <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -top-28 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-zinc-100 blur-3xl" />
-          <div className="absolute -bottom-28 -right-28 h-80 w-80 rounded-full bg-zinc-100 blur-3xl" />
-          <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-zinc-50" />
+
+      {/* ── HERO ── */}
+      <section className="space-y-4">
+        <div>
+          {user && firstName ? (
+            <p className="text-sm text-zinc-500">
+              Welcome back, <span className="font-semibold text-zinc-900">{firstName}</span> 👋
+            </p>
+          ) : (
+            <p className="text-sm text-zinc-500">Campus marketplace & study hub</p>
+          )}
+          <h1 className="mt-1 text-2xl font-bold leading-tight tracking-tight text-zinc-900 sm:text-4xl">
+            Buy, sell & find services around JABU.
+          </h1>
         </div>
 
-        {/* top row */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            <Pill>
-              <Sparkles className="h-4 w-4" />
-              JABU Market
-            </Pill>
-            <Pill>
-              <ShieldCheck className="h-4 w-4" />
-              Verified vendors
-            </Pill>
-            <Pill>
-              <Truck className="h-4 w-4" />
-              Delivery & transport
-            </Pill>
+        <form action="/explore" method="GET">
+          <div className="flex items-center gap-2 rounded-2xl border bg-white p-2 shadow-sm">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100">
+              <Search className="h-5 w-5 text-zinc-600" />
+            </div>
+            <input
+              name="q"
+              placeholder="Search iPhone, rice, laundry, hair…"
+              list="home-suggestions"
+              aria-label="Search JABU Market"
+              className="h-10 w-full bg-transparent px-1 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+            />
+            <button
+              type="submit"
+              className="h-10 shrink-0 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-700"
+            >
+              Search
+            </button>
+            <datalist id="home-suggestions">
+              <option value="Phones" /><option value="Laptops" /><option value="Fashion" />
+              <option value="Provisions" /><option value="Food" /><option value="Beauty" />
+              <option value="Services" /><option value="Repairs" /><option value="Tutoring" />
+              <option value="iPhone" /><option value="Android" /><option value="Charger" />
+              <option value="Rice" /><option value="Laundry" /><option value="Hair" />
+              <option value="Sneakers" /><option value="Power bank" />
+            </datalist>
           </div>
+        </form>
 
+        <div className="flex gap-3">
+          <Link
+            href="/explore"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-700 sm:flex-none"
+          >
+            Explore listings <ArrowRight className="h-4 w-4" />
+          </Link>
           <Link
             href="/post"
-            className="hidden items-center gap-2 rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-800 sm:inline-flex"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 sm:flex-none"
           >
             <PlusSquare className="h-4 w-4" />
             Post
           </Link>
         </div>
-
-        {/* hero content */}
-        <div className="mt-4 grid gap-5 sm:mt-5 sm:grid-cols-[1.3fr_0.7fr] sm:items-start">
-          <div className="space-y-3">
-            <h1 className="text-[28px] font-bold leading-[1.1] tracking-tight text-zinc-900 sm:text-5xl">
-              Buy, sell & find services around JABU.
-            </h1>
-            <p className="max-w-2xl text-sm leading-relaxed text-zinc-600 sm:text-base">
-              Discover fresh listings, trusted vendors and fast deliveries. Search fast, chat quickly, keep it safe.
-            </p>
-
-            {/* search */}
-            <form action="/explore" method="GET" className="mt-4">
-              <div className="rounded-2xl border bg-white p-2 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-100">
-                    <Search className="h-5 w-5 text-zinc-700" />
-                  </div>
-
-                  <input
-                    name="q"
-                    placeholder="Search iPhone, rice, laundry, hair…"
-                    list="home-suggestions"
-                    aria-label="Search JABU Market"
-                    className="h-10 w-full bg-transparent px-1 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
-                  />
-
-                  <button
-                    type="submit"
-                    className="h-10 rounded-xl bg-black px-4 text-sm font-semibold text-white hover:bg-zinc-800"
-                    aria-label="Search"
-                  >
-                    Search
-                  </button>
-
-                  <datalist id="home-suggestions">
-                    {/* Categories */}
-                    <option value="Phones" />
-                    <option value="Laptops" />
-                    <option value="Fashion" />
-                    <option value="Provisions" />
-                    <option value="Food" />
-                    <option value="Beauty" />
-                    <option value="Services" />
-                    <option value="Repairs" />
-                    <option value="Tutoring" />
-                    {/* Popular campus terms */}
-                    <option value="iPhone" />
-                    <option value="Android" />
-                    <option value="Charger" />
-                    <option value="Laptop bag" />
-                    <option value="Rice" />
-                    <option value="Indomie" />
-                    <option value="Laundry" />
-                    <option value="Hair" />
-                    <option value="Sneakers" />
-                    <option value="Jeans" />
-                    <option value="Perfume" />
-                    <option value="Mattress" />
-                    <option value="Fan" />
-                    <option value="Power bank" />
-                  </datalist>
-                </div>
-              </div>
-
-              {/* quick links */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {quickLinks.map((q) => (
-                  <Link
-                    key={q.label}
-                    href={q.href}
-                    className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                  >
-                    {q.label}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                ))}
-              </div>
-            </form>
-
-            {/* CTAs */}
-            <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
-              <Link
-                href="/explore"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-              >
-                Explore listings <ArrowRight className="h-4 w-4" />
-              </Link>
-
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                <Link
-                  href="/vendors"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Vendors <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <Link
-                  href="/delivery"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Delivery <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <Link
-                  href="/couriers"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Transport <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <Link
-                  href="/post"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Post <PlusSquare className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* right side mini highlights */}
-          <div className="grid gap-3 sm:mt-1">
-            <div className="rounded-2xl border bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-                <BadgeCheck className="h-4 w-4" />
-                Verified-first
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
-                Prioritize trusted vendors. Report suspicious activity fast.
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Link
-                  href="/vendors"
-                  className="inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
-                >
-                  View vendors <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/report"
-                  className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Report <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-                <Flame className="h-4 w-4" />
-                Hot right now
-              </div>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
-                Fresh campus posts — catch the best deals early.
-              </p>
-              <div className="mt-3">
-                <Link
-                  href="/explore?sort=newest"
-                  className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  See newest <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
-      {/* CATEGORIES */}
+      {/* ── CATEGORIES ── */}
       <section className="space-y-3">
-        <SectionHeader
-          title="Categories"
-          subtitle="Jump straight to what you need."
-          href="/explore"
-          cta="View all"
-          icon={<Sparkles className="h-4 w-4 text-zinc-800" />}
-        />
-
-        <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+        <SectionHeader title="Categories" href="/explore" cta="View all" />
+        <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-4 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-8">
           {categories.map((c) => {
             const Icon = c.icon;
             return (
               <Link
                 key={c.name}
                 href={c.href}
-                className="group min-w-[180px] rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
+                className="group flex min-w-[72px] flex-col items-center gap-2 rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
               >
-                <div className="flex items-center gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-zinc-100 transition group-hover:bg-zinc-200/60">
-                    <Icon className="h-5 w-5 text-zinc-800" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-zinc-900">{c.name}</div>
-                    <div className="text-xs text-zinc-600">Browse {c.name.toLowerCase()}</div>
-                  </div>
-                  <ArrowRight className="ml-auto h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                <div className={cn("grid h-11 w-11 place-items-center rounded-2xl", c.bg)}>
+                  <Icon className={cn("h-5 w-5", c.icon_color)} />
                 </div>
+                <span className="text-center text-xs font-medium text-zinc-800">{c.name}</span>
               </Link>
             );
           })}
         </div>
       </section>
 
-      {/* FEATURED LISTINGS */}
-      {featuredListings.length > 0 ? (
+      {/* ── FEATURED LISTINGS ── */}
+      {featuredListings.length > 0 && (
         <section className="space-y-3">
           <SectionHeader
             title="Featured listings"
-            subtitle="Handpicked listings from the marketplace."
+            subtitle="Handpicked from the marketplace."
             href="/explore"
             cta="See all"
             icon={<Star className="h-4 w-4 text-amber-500" />}
@@ -526,33 +326,28 @@ export default async function HomePage() {
             {featuredListings.map((l) => {
               const title = l.title ?? "Untitled listing";
               const img = (l.image_url ?? "").trim();
-              const showImg = img.length > 0;
-
               return (
                 <Link
                   key={l.id}
                   href={`/listing/${l.id}`}
-                  className="group min-w-[280px] overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
+                  className="group min-w-[280px] overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-[1px] sm:min-w-0"
                 >
-                  <div className="relative h-36 w-full bg-zinc-100">
-                    {showImg ? (
+                  <div className="relative h-40 w-full bg-zinc-100">
+                    {img ? (
                       <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                      <div className="flex h-full w-full items-center justify-center text-zinc-300">
                         <ImageIcon className="h-6 w-6" />
                       </div>
                     )}
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
-                    <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-                      {l.category ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.category}</span> : null}
-                    </div>
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/40 to-transparent" />
                     <div className="absolute right-3 top-3">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
                         <Star className="h-2.5 w-2.5 fill-white" />
                         Featured
                       </span>
                     </div>
-                    <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white">
+                    <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white/80">
                       {l.created_at ? timeAgo(l.created_at) : ""}
                     </div>
                   </div>
@@ -560,20 +355,20 @@ export default async function HomePage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-zinc-900">{title}</div>
-                        {l.location ? (
-                          <div className="mt-1 flex items-center gap-1 text-xs text-zinc-600">
-                            <MapPin className="h-3.5 w-3.5" />
+                        {l.location && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+                            <MapPin className="h-3.5 w-3.5 shrink-0" />
                             <span className="truncate">{l.location}</span>
                           </div>
-                        ) : null}
+                        )}
                       </div>
-                      <div className="shrink-0 rounded-2xl bg-zinc-100 px-3 py-2 text-sm font-bold text-zinc-900">
+                      <div className="shrink-0 rounded-xl bg-zinc-100 px-3 py-1.5 text-sm font-bold text-zinc-900">
                         {l.price ? `₦${l.price.toLocaleString("en-NG")}` : l.price_label?.trim() || "Contact"}
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
-                      <span className="font-medium">View details</span>
-                      <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                    <div className="mt-3 flex items-center justify-between text-xs text-zinc-400">
+                      <span>View details</span>
+                      <ArrowRight className="h-4 w-4 transition group-hover:text-zinc-600" />
                     </div>
                   </div>
                 </Link>
@@ -581,105 +376,85 @@ export default async function HomePage() {
             })}
           </ScrollRow>
         </section>
-      ) : null}
+      )}
 
-      {/* LATEST LISTINGS */}
+      {/* ── LATEST LISTINGS ── */}
       <section className="space-y-3">
         <SectionHeader
           title="Latest listings"
           subtitle="Fresh posts from around campus."
           href="/explore?sort=newest"
           cta="See more"
-          icon={<Search className="h-4 w-4 text-zinc-800" />}
+          icon={<Search className="h-4 w-4 text-zinc-600" />}
         />
-
         {listings.length === 0 ? (
-          <div className="rounded-3xl border bg-white p-5 shadow-sm">
-            <div className="text-sm font-semibold text-zinc-900">No recent listings yet</div>
-            <p className="mt-1 text-sm text-zinc-600">Be the first to post an item or service.</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link
-                href="/post"
-                className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
-              >
-                Post now <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/explore?sort=newest"
-                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-              >
-                Explore <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+          <div className="rounded-3xl border bg-white p-6 shadow-sm">
+            <div className="text-sm font-semibold text-zinc-900">No listings yet</div>
+            <p className="mt-1 text-sm text-zinc-500">Be the first to post something.</p>
+            <Link
+              href="/post"
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-700"
+            >
+              Post now <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         ) : (
           <ScrollRow>
             {listings.map((l) => {
               const title = l.title ?? "Untitled listing";
               const img = (l.image_url ?? "").trim();
-              const showImg = img.length > 0;
-
               return (
                 <Link
                   key={l.id}
                   href={`/listing/${l.id}`}
-                  className="group min-w-[280px] overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50 sm:min-w-0"
+                  className="group min-w-[280px] overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-[1px] sm:min-w-0"
                 >
-                  <div className="relative h-36 w-full bg-zinc-100">
-                    {showImg ? (
+                  <div className="relative h-40 w-full bg-zinc-100">
+                    {img ? (
                       <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                      <div className="flex h-full w-full items-center justify-center text-zinc-300">
                         <ImageIcon className="h-6 w-6" />
                       </div>
                     )}
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
-                    <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-                      {l.category ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.category}</span> : null}
-                      {l.listing_type ? <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-900">{l.listing_type}</span> : null}
-                    </div>
-                    <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white">
+                    <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" />
+                    {l.category && (
+                      <div className="absolute left-3 top-3">
+                        <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-zinc-800 backdrop-blur">
+                          {l.category}
+                        </span>
+                      </div>
+                    )}
+                    <div className="absolute bottom-3 left-3 text-[11px] font-medium text-white/80">
                       {l.created_at ? timeAgo(l.created_at) : ""}
                     </div>
                   </div>
-
                   <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-zinc-900">{title}</div>
-
-                        {l.location ? (
-                          <div className="mt-1 flex items-center gap-1 text-xs text-zinc-600">
-                            <MapPin className="h-3.5 w-3.5" />
+                        {l.location && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+                            <MapPin className="h-3.5 w-3.5 shrink-0" />
                             <span className="truncate">{l.location}</span>
                           </div>
-                        ) : null}
-
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {l.category ? <Tag>{l.category}</Tag> : null}
-                          {l.listing_type ? <Tag>{l.listing_type}</Tag> : null}
-                        </div>
-                      </div>
-
-                      <p className="shrink-0 text-base font-bold text-zinc-900">
-                        {l.price !== null ? formatNaira(l.price) : (l.price_label ?? "Contact")}
-                        {l.negotiable && (
-                          <span className="ml-1.5 text-xs font-normal text-zinc-500">· Negotiable</span>
                         )}
+                      </div>
+                      <p className="shrink-0 text-sm font-bold text-zinc-900">
+                        {l.price !== null ? formatNaira(l.price) : (l.price_label ?? "Contact")}
                       </p>
                     </div>
-
-                    <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
-                      <span className="font-medium">View details</span>
+                    <div className="mt-3 flex items-center justify-between text-xs text-zinc-400">
                       <div className="flex items-center gap-2">
-                        {(homeSavesMap[l.id] ?? 0) > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-zinc-600">
+                        {l.negotiable && <span className="text-zinc-500">Negotiable</span>}
+                        {(homeSavesMap[l.id] ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 text-zinc-500">
                             <Bookmark className="h-3 w-3" />
                             {homeSavesMap[l.id]}
                           </span>
-                        ) : null}
-                        <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-400" />
+                        )}
                       </div>
+                      <ArrowRight className="h-4 w-4 transition group-hover:text-zinc-600" />
                     </div>
                   </div>
                 </Link>
@@ -689,19 +464,18 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* FEATURED VENDORS */}
+      {/* ── VERIFIED VENDORS ── */}
       <section className="space-y-3">
         <SectionHeader
-          title="Featured verified vendors"
-          subtitle="Trusted sellers & services."
+          title="Verified vendors"
+          subtitle="Trusted sellers & services on campus."
           href="/vendors"
           cta="Browse all"
-          icon={<ShieldCheck className="h-4 w-4 text-zinc-800" />}
+          icon={<ShieldCheck className="h-4 w-4 text-zinc-600" />}
         />
-
         {vendors.length === 0 ? (
-          <div className="rounded-3xl border bg-white p-5 shadow-sm text-sm text-zinc-600">
-            No featured vendors available right now.
+          <div className="rounded-3xl border bg-white p-5 text-sm text-zinc-500 shadow-sm">
+            No verified vendors yet.
           </div>
         ) : (
           <ScrollRow>
@@ -709,7 +483,6 @@ export default async function HomePage() {
               const verified = isVendorVerified(v);
               const rating = homeRatingMap[v.id];
               const avatarUrl = (v as any).avatar_url as string | null | undefined;
-
               return (
                 <Link
                   key={v.id}
@@ -719,37 +492,28 @@ export default async function HomePage() {
                   <div className="flex items-start gap-3">
                     {avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={avatarUrl}
-                        alt=""
-                        className="h-10 w-10 shrink-0 rounded-xl object-cover"
-                      />
+                      <img src={avatarUrl} alt="" className="h-11 w-11 shrink-0 rounded-2xl object-cover" />
                     ) : (
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-500">
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-sm font-bold text-zinc-500">
                         {(v.name ?? "V")[0].toUpperCase()}
                       </div>
                     )}
-
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-zinc-900">
                         {v.name ?? "Unnamed vendor"}
                       </div>
-
-                      <div className="mt-1 flex items-center gap-1 text-xs text-zinc-600">
-                        <MapPin className="h-3.5 w-3.5" />
+                      <div className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{v.location ?? "Location not set"}</span>
                       </div>
-
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {v.vendor_type ? <Tag>{v.vendor_type}</Tag> : null}
-
-                        {verified ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2 py-0.5 text-xs text-zinc-700">
-                            <ShieldCheck className="h-3.5 w-3.5" />
+                        {v.vendor_type && <Tag>{v.vendor_type}</Tag>}
+                        {verified && (
+                          <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2 py-0.5 text-xs text-zinc-600">
+                            <ShieldCheck className="h-3 w-3" />
                             Verified
                           </span>
-                        ) : null}
-
+                        )}
                         {rating && (
                           <span className="inline-flex items-center gap-1">
                             <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
@@ -761,8 +525,7 @@ export default async function HomePage() {
                         )}
                       </div>
                     </div>
-
-                    <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-400" />
+                    <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-500" />
                   </div>
                 </Link>
               );
@@ -771,51 +534,32 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* STUDY HUB */}
+      {/* ── STUDY HUB ── */}
       <section className="space-y-3">
         <SectionHeader
           title="Study Hub"
           subtitle="Materials, practice sets, Q&A and more."
           href="/study"
-          cta="Open Study Hub"
-          icon={<BookOpen className="h-4 w-4 text-zinc-800" />}
+          cta="Open"
+          icon={<BookOpen className="h-4 w-4 text-zinc-600" />}
         />
-
         <div className="grid grid-cols-2 gap-3">
           {[
-            {
-              href: "/study/materials",
-              icon: <FileText className="h-5 w-5 text-zinc-700" />,
-              title: "Course Materials",
-              desc: "Lecture notes, past questions, and resources uploaded by course reps.",
-            },
-            {
-              href: "/study/practice",
-              icon: <Zap className="h-5 w-5 text-zinc-700" />,
-              title: "MCQ Practice",
-              desc: "Timed quiz sets with AI-powered explanations and weak-area tracking.",
-            },
-            {
-              href: "/study/questions",
-              icon: <MessageCircleQuestion className="h-5 w-5 text-zinc-700" />,
-              title: "Q&A Forum",
-              desc: "Ask questions, get answers from peers, and upvote the best responses.",
-            },
-            {
-              href: "/study/ai-plan",
-              icon: <Sparkles className="h-5 w-5 text-zinc-700" />,
-              title: "AI Study Plan",
-              desc: "Generate a personalised weekly study schedule powered by Gemini.",
-            },
+            { href: "/study/materials", icon: <FileText className="h-5 w-5 text-violet-600" />, bg: "bg-violet-50", title: "Course Materials", desc: "Notes, past questions & resources." },
+            { href: "/study/practice",  icon: <Zap className="h-5 w-5 text-amber-600" />,       bg: "bg-amber-50",  title: "MCQ Practice",      desc: "Timed quizzes with AI explanations." },
+            { href: "/study/questions", icon: <MessageCircleQuestion className="h-5 w-5 text-blue-600" />, bg: "bg-blue-50", title: "Q&A Forum", desc: "Ask questions, get peer answers." },
+            { href: "/study/ai-plan",   icon: <Sparkles className="h-5 w-5 text-emerald-600" />, bg: "bg-emerald-50", title: "AI Study Plan", desc: "Personalised weekly schedule." },
           ].map((card) => (
             <Link
               key={card.href}
               href={card.href}
               className="group rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-zinc-50"
             >
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-zinc-100">{card.icon}</div>
+              <div className={cn("grid h-9 w-9 place-items-center rounded-xl", card.bg)}>
+                {card.icon}
+              </div>
               <div className="mt-3 text-sm font-semibold text-zinc-900">{card.title}</div>
-              <div className="mt-1 text-xs text-zinc-600 leading-relaxed">{card.desc}</div>
+              <div className="mt-1 text-xs leading-relaxed text-zinc-500">{card.desc}</div>
               <div className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-700">
                 Open <ArrowRight className="h-3.5 w-3.5" />
               </div>
@@ -824,118 +568,49 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* SAFETY + DELIVERY/TRANSPORT */}
-      <section className="grid gap-3 lg:grid-cols-2">
+      {/* ── DELIVERY + SAFETY ── */}
+      <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-zinc-100">
-              <ShieldCheck className="h-5 w-5 text-zinc-800" />
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-zinc-100">
+              <Truck className="h-5 w-5 text-zinc-700" />
             </div>
-            <div className="space-y-1">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Delivery & transport</h3>
+              <p className="text-xs text-zinc-500">Agents, keke & car rides</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/delivery" className="inline-flex items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50">
+              Find agents <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link href="/couriers" className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700">
+              Find transport <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-zinc-100">
+              <ShieldCheck className="h-5 w-5 text-zinc-700" />
+            </div>
+            <div>
               <h3 className="text-sm font-semibold text-zinc-900">Stay safe</h3>
-              <p className="text-sm text-zinc-600">
-                Meet in public places, verify details, and report suspicious activity.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  href="/report"
-                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Report <ArrowRight className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/vendors"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-                >
-                  Verified vendors <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
+              <p className="text-xs text-zinc-500">Meet in public, verify details</p>
             </div>
           </div>
-        </div>
-
-        <div className="rounded-3xl border bg-white p-5 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-zinc-100">
-              <Truck className="h-5 w-5 text-zinc-800" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-zinc-900">Need delivery or transport?</h3>
-              <p className="text-sm text-zinc-600">
-                Contact delivery agents for errands, or transport providers for keke & car rides.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  href="/delivery"
-                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Find delivery agents <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <Link
-                  href="/couriers"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-                >
-                  Find transport <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <Link
-                  href="/rider/apply"
-                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-                >
-                  Become a delivery agent <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/report" className="inline-flex items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50">
+              Report issue <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link href="/vendors" className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700">
+              Verified vendors <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
-      <section className="rounded-3xl border bg-white p-5 shadow-sm sm:p-6">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-zinc-900 sm:text-lg">How it works</h2>
-          <p className="text-sm text-zinc-600">Simple flow. No stress.</p>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Link href="/explore" className="group rounded-2xl border bg-white p-4 hover:bg-zinc-50">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-              <Search className="h-4 w-4" />
-              1) Browse
-            </div>
-            <div className="mt-1 text-sm text-zinc-600">Search listings, categories and services.</div>
-            <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              Explore <ArrowRight className="h-4 w-4" />
-            </div>
-          </Link>
-
-          <Link href="/vendors" className="group rounded-2xl border bg-white p-4 hover:bg-zinc-50">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-              <ShieldCheck className="h-4 w-4" />
-              2) Chat
-            </div>
-            <div className="mt-1 text-sm text-zinc-600">Contact vendors and negotiate safely.</div>
-            <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              Vendors <ArrowRight className="h-4 w-4" />
-            </div>
-          </Link>
-
-          <Link href="/post" className="group rounded-2xl border bg-white p-4 hover:bg-zinc-50">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-              <PlusSquare className="h-4 w-4" />
-              3) Post
-            </div>
-            <div className="mt-1 text-sm text-zinc-600">Sell items or advertise your service.</div>
-            <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              Post now <ArrowRight className="h-4 w-4" />
-            </div>
-          </Link>
-        </div>
-      </section>
-
-      {/* Bottom nav is handled globally by BottomNav.tsx — no custom nav needed here */}
     </main>
   );
 }
