@@ -408,10 +408,7 @@ export default function MyOrdersPage() {
   }, []);
 
   // Vendor data is not in realtime payloads — preserve it from REST responses
-  const vendorCacheRef = useRef<Record<string, {
-    name: string; avatar_url: string | null;
-    bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null;
-  }>>({});
+  const vendorCacheRef = useRef<Record<string, OrderEntry['vendor']>>({});
   // Keep tab accessible inside the realtime callback without re-subscribing
   const tabRef = useRef<Tab>('all');
 
