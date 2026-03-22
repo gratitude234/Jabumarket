@@ -6,7 +6,7 @@
   "start_url": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
-  "background_color": "#fafafa",
+  "background_color": "#18181b",
   "theme_color": "#18181b",
   "orientation": "portrait-primary",
   "icons": [
@@ -35,7 +35,29 @@
       "purpose": "maskable"
     }
   ],
-  "screenshots": [],
+  "screenshots": [
+    {
+      "src": "/images/screenshot-home.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Browse listings around JABU"
+    },
+    {
+      "src": "/images/screenshot-vendors.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Order food from campus vendors"
+    },
+    {
+      "src": "/images/screenshot-study.jpg",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Study Hub — materials, MCQs, Q&A"
+    }
+  ],
   "categories": ["shopping", "education"],
   "shortcuts": [
     {
