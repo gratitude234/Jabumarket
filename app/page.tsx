@@ -338,7 +338,7 @@ export default async function HomePage() {
 
                   <button
                     type="submit"
-                    className="h-10 rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-600"
+                    className="h-10 rounded-xl bg-black px-4 text-sm font-semibold text-white hover:bg-zinc-800"
                     aria-label="Search"
                   >
                     Search
@@ -393,7 +393,7 @@ export default async function HomePage() {
             <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
               <Link
                 href="/explore"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
               >
                 Explore listings <ArrowRight className="h-4 w-4" />
               </Link>
@@ -443,7 +443,7 @@ export default async function HomePage() {
               <div className="mt-3 flex gap-2">
                 <Link
                   href="/vendors"
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600"
+                  className="inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
                 >
                   View vendors <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -600,7 +600,7 @@ export default async function HomePage() {
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/post"
-                className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600"
+                className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
               >
                 Post now <ArrowRight className="h-4 w-4" />
               </Link>
@@ -845,7 +845,7 @@ export default async function HomePage() {
                 </Link>
                 <Link
                   href="/vendors"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
                   Verified vendors <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -875,7 +875,7 @@ export default async function HomePage() {
 
                 <Link
                   href="/couriers"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
                 >
                   Find transport <ArrowRight className="h-4 w-4" />
                 </Link>

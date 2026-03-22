@@ -62,8 +62,8 @@
   --popover-foreground: oklch(0.145 0 0);
 
   /* Brand */
-  --primary: oklch(0.75 0.15 70); /* Amber/Orange */
-  --primary-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.56 0.22 266); /* Indigo */
+  --primary-foreground: oklch(0.985 0 0);
 
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -78,7 +78,7 @@
 
   --border: oklch(0.92 0 0);
   --input: oklch(0.92 0 0);
-  --ring: oklch(0.75 0.15 70); /* Amber ring */
+  --ring: oklch(0.56 0.22 266); /* Indigo ring */
 
   /* Sidebar */
   --sidebar: oklch(1 0 0);
@@ -101,7 +101,7 @@
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
 
-  --primary: oklch(0.80 0.15 70);
+  --primary: oklch(0.68 0.2 266);
   --primary-foreground: oklch(0.145 0 0);
 
   --secondary: oklch(0.269 0 0);
@@ -115,7 +115,7 @@
 
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.80 0.15 70);
+  --ring: oklch(0.68 0.2 266);
 }
 
 @layer base {
