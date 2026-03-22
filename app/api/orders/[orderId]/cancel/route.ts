@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { sendVendorPush } from '@/lib/webPush';
 
 function jsonError(msg: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message: msg }, { status });
@@ -87,21 +88,33 @@ export async function POST(
       } catch (_) {}
     }
 
-    // ── Notify vendor ─────────────────────────────────────────────────────────
+    // ── Notify vendor (in-app + push) ─────────────────────────────────────────
     const { data: vendor } = await admin
       .from('vendors')
-      .select('user_id')
+      .select('id, user_id')
       .eq('id', order.vendor_id)
       .single();
+
+    const notifTitle = 'Order cancelled'
+    const notifBody  = `A ₦${order.total.toLocaleString()} order was cancelled before you accepted it.`
 
     if (vendor?.user_id) {
       try {
         await admin.from('notifications').insert({
           user_id: vendor.user_id,
           type: 'order_cancelled',
-          title: 'Order cancelled',
-          body: `A ₦${order.total.toLocaleString()} order was cancelled before you accepted it.`,
-          href: '/vendor/orders',
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+        });
+      } catch (_) {}
+
+      try {
+        await sendVendorPush(order.vendor_id, {
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+          tag:   `cancelled-${orderId}`,
         });
       } catch (_) {}
     }

@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { sendVendorPush } from '@/lib/webPush'
 
 function jsonError(msg: string, status = 400, code?: string) {
   return NextResponse.json({ ok: false, code, message: msg }, { status })
@@ -44,18 +45,32 @@ export async function POST(
 
     const { data: vendor } = await admin
       .from('vendors')
-      .select('user_id')
+      .select('id, user_id')
       .eq('id', order.vendor_id)
       .single()
 
+    const notifTitle = '💸 Payment submitted'
+    const notifBody  = "A buyer says they've transferred payment. Check your account and confirm."
+
     if (vendor?.user_id) {
+      // In-app notification for vendor
       try {
         await admin.from('notifications').insert({
           user_id: vendor.user_id,
           type: 'payment_submitted',
-          title: '💸 Payment submitted',
-          body: "A buyer says they've transferred payment. Check your account and confirm.",
-          href: '/vendor/orders',
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+        })
+      } catch { /* non-critical */ }
+
+      // Push notification to vendor's device(s)
+      try {
+        await sendVendorPush(order.vendor_id, {
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+          tag:   `payment-${orderId}`,
         })
       } catch { /* non-critical */ }
     }

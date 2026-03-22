@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { sendVendorPush } from '@/lib/webPush'
 
 function jsonError(msg: string, status = 400, code?: string) {
   return NextResponse.json({ ok: false, code, message: msg }, { status })
@@ -40,18 +41,15 @@ export async function PATCH(
     if (order.buyer_id !== user.id) return jsonError('Forbidden', 403, 'forbidden')
 
     // ── Food vendor guard ──────────────────────────────────────────────────────
-    // Cash payment means payment_status never reaches vendor_confirmed, which
-    // means a vendor could start preparing without confirmed payment. Block it
-    // for food vendors — they must use bank transfer.
     const { data: vendor } = await admin
       .from('vendors')
-      .select('user_id, vendor_type')
+      .select('id, user_id, vendor_type')
       .eq('id', order.vendor_id)
       .single()
 
     if (vendor?.vendor_type === 'food') {
       return jsonError(
-        'Cash payment is not available for food orders. Please transfer to the vendor\'s bank account and tap "I\'ve paid".',
+        "Cash payment is not available for food orders. Please transfer to the vendor's bank account and tap \"I've paid\".",
         400,
         'cash_not_allowed_for_food'
       )
@@ -62,14 +60,28 @@ export async function PATCH(
       .update({ payment_method: 'cash' })
       .eq('id', orderId)
 
+    const notifTitle = 'Cash payment'
+    const notifBody  = 'Buyer will pay cash on pickup/delivery.'
+
     if (vendor?.user_id) {
+      // In-app notification for vendor
       try {
         await admin.from('notifications').insert({
           user_id: vendor.user_id,
           type: 'payment_cash',
-          title: 'Cash payment',
-          body: 'Buyer will pay cash on pickup/delivery.',
-          href: '/vendor/orders',
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+        })
+      } catch { /* non-critical */ }
+
+      // Push notification to vendor's device(s)
+      try {
+        await sendVendorPush(order.vendor_id, {
+          title: notifTitle,
+          body:  notifBody,
+          href:  '/vendor/orders',
+          tag:   `cash-${orderId}`,
         })
       } catch { /* non-critical */ }
     }

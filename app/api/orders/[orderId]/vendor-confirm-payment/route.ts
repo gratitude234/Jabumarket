@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { sendUserPush } from '@/lib/webPush'
 
 function jsonError(msg: string, status = 400, code?: string) {
   return NextResponse.json({ ok: false, code, message: msg }, { status })
@@ -51,13 +52,27 @@ export async function POST(
       })
       .eq('id', orderId)
 
+    const notifTitle = '✅ Payment confirmed!'
+    const notifBody  = 'Vendor confirmed your transfer. Your order is now being prepared.'
+
+    // In-app notification for buyer
     try {
       await admin.from('notifications').insert({
         user_id: order.buyer_id,
         type: 'payment_confirmed',
-        title: '✅ Payment confirmed!',
-        body: 'Vendor confirmed your transfer. Your order is now being prepared.',
-        href: '/my-orders',
+        title: notifTitle,
+        body:  notifBody,
+        href:  '/my-orders',
+      })
+    } catch { /* non-critical */ }
+
+    // Push notification to buyer's device(s)
+    try {
+      await sendUserPush(order.buyer_id, {
+        title: notifTitle,
+        body:  notifBody,
+        href:  '/my-orders',
+        tag:   `payment-confirmed-${orderId}`,
       })
     } catch { /* non-critical */ }
 

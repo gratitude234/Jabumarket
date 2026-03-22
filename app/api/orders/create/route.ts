@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { OrderPayload, OrderLine } from '@/types/meal-builder';
+import { sendVendorPush } from '@/lib/webPush';
 
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
@@ -223,22 +224,12 @@ export async function POST(req: Request) {
 
     // ── Push notifications to vendor devices ───────────────────────────────────
     try {
-      const { sendPush } = await import('@/lib/webPush');
-      const { data: subs } = await admin
-        .from('vendor_push_subscriptions')
-        .select('endpoint, p256dh, auth')
-        .eq('vendor_id', vendor_id);
-      if (subs && subs.length > 0) {
-        await Promise.allSettled(
-          subs.map((sub) =>
-            sendPush(sub, {
-              title: 'New order 🛒',
-              body: `₦${serverTotal.toLocaleString()} order just came in`,
-              data: { href: '/vendor/orders' },
-            })
-          )
-        );
-      }
+      await sendVendorPush(vendor_id, {
+        title: 'New order 🛒',
+        body: `₦${serverTotal.toLocaleString()} order just came in`,
+        href: '/vendor/orders',
+        tag: `new-order-${order.id}`,
+      });
     } catch { /* push failure must never crash order creation */ }
 
     return NextResponse.json({ ok: true, order_id: order.id, conversation_id });

@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { sendUserPush } from '@/lib/webPush';
 
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
@@ -94,14 +95,6 @@ export async function PATCH(
     }
 
     // ── Payment guard — money first, food second ───────────────────────────────
-    // The only legitimate path to 'preparing' for a transfer order is through
-    // /vendor-confirm-payment, which atomically sets payment_status: vendor_confirmed
-    // AND status: preparing together. This route is the backstop that blocks any
-    // attempt to skip that step — whether from the UI or a direct API call.
-    //
-    // Cash orders are exempt: cash-on-pickup is settled at collection, so there
-    // is no pre-payment to confirm. The payment-method route enforces that cash
-    // is blocked on food orders as a separate guard.
     if (newStatus === 'preparing') {
       const paymentStatus = (order as any).payment_status as string | null;
       const paymentMethod = (order as any).payment_method as string | null;
@@ -127,8 +120,6 @@ export async function PATCH(
     if (updateErr) return jsonError(updateErr.message, 500, 'update_failed');
 
     // Store ETA as a timestamp so the buyer can see a countdown.
-    // Requires eta_ready_at TIMESTAMPTZ column on orders table.
-    // Wrapped separately so a missing column never breaks the main update.
     if (eta && newStatus === 'preparing') {
       try {
         await admin
@@ -162,7 +153,7 @@ export async function PATCH(
       } catch (_) {}
     }
 
-    // Notify buyer — href goes to /my-orders so they see order tracking, not just chat
+    // Notify buyer (in-app + push)
     try {
       await admin.from('notifications').insert({
         user_id: order.buyer_id,
@@ -173,8 +164,17 @@ export async function PATCH(
       });
     } catch (_) {}
 
-    // When delivered: send a second notification prompting the buyer to leave a review.
-    // Fire-and-forget — a review failure must never break the status update.
+    // Push notification to buyer's device(s)
+    try {
+      await sendUserPush(order.buyer_id, {
+        title: STATUS_TITLES[newStatus] ?? `Order ${newStatus}`,
+        body:  msgBody,
+        href:  '/my-orders',
+        tag:   `order-${orderId}`,
+      });
+    } catch (_) {}
+
+    // When delivered: review prompt notification
     if (newStatus === 'delivered') {
       let vendorName = 'the vendor';
       try {
@@ -193,6 +193,15 @@ export async function PATCH(
           title: 'How was your order?',
           body: `Leave a quick rating for ${vendorName} — it helps other students.`,
           href: `/vendors/${order.vendor_id}?review=1`,
+        });
+      } catch (_) {}
+
+      try {
+        await sendUserPush(order.buyer_id, {
+          title: 'How was your order?',
+          body:  `Leave a quick rating for ${vendorName} — it helps other students.`,
+          href:  `/vendors/${order.vendor_id}?review=1`,
+          tag:   `review-${orderId}`,
         });
       } catch (_) {}
     }
