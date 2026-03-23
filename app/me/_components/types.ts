@@ -26,6 +26,10 @@ export type Vendor = {
   rejected_at: string | null;
   rejection_reason: string | null;
 
+  bank_name: string | null;
+  bank_account_number: string | null;
+  bank_account_name: string | null;
+
   created_at?: string;
 };
 

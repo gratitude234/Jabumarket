@@ -143,16 +143,12 @@ function MeInner() {
         full_name: (user.user_metadata as any)?.full_name ?? null,
       };
 
-      const [vendorRes, listingsRes, materialsRes] = await Promise.all([
+      const [vendorRes, materialsRes] = await Promise.all([
         supabase
           .from("vendors")
-          .select("id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at")
+          .select("id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at,bank_name,bank_account_number,bank_account_name")
           .eq("user_id", user.id)
           .maybeSingle(),
-        supabase
-          .from("listings")
-          .select("id", { count: "exact", head: true })
-          .eq("vendor_id", user.id),
         supabase
           .from("study_materials")
           .select("id", { count: "exact", head: true })
@@ -163,8 +159,15 @@ function MeInner() {
 
       setMe(nextMe);
       setVendor(vendorRes.error ? null : ((vendorRes.data as any) ?? null));
-      setListingsCount(listingsRes.count ?? 0);
       setMaterialsCount(materialsRes.count ?? 0);
+
+      if (vendorRes.data?.id) {
+        const listingsRes = await supabase
+          .from("listings")
+          .select("id", { count: "exact", head: true })
+          .eq("vendor_id", vendorRes.data.id);
+        if (mounted) setListingsCount(listingsRes.count ?? 0);
+      }
 
       // Food vendor extra stats
       if (!vendorRes.error && vendorRes.data?.vendor_type === "food" && vendorRes.data?.id) {
@@ -263,7 +266,7 @@ function MeInner() {
           )}
 
           {activeTab === "listings" && (
-            <ListingsTab userId={me?.id ?? null} />
+            <ListingsTab vendorId={vendor?.id ?? null} />
           )}
 
           {activeTab === "study" && (

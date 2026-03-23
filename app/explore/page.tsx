@@ -119,7 +119,8 @@ export default async function ExplorePage({
     let vQuery = supabase
       .from("vendors")
       .select("id, name, whatsapp, phone, location, verified, verification_status, vendor_type, avatar_url", { count: "exact" })
-      .or("verification_status.eq.verified,verified.eq.true");
+      .or("verification_status.eq.verified,verified.eq.true")
+      .is("suspended_at", null);
     if (vType !== "all") vQuery = vQuery.eq("vendor_type", vType);
     if (vQ) {
       const safe = vQ.replaceAll(",", " ");
@@ -213,6 +214,7 @@ export default async function ExplorePage({
       .select("id, name, description, avatar_url, opens_at, closes_at, accepts_orders, accepts_delivery, day_schedule")
       .eq("vendor_type", "food").eq("accepts_orders", true)
       .or("verified.eq.true,verification_status.eq.verified")
+      .is("suspended_at", null)
       .order("name", { ascending: true });
     const list = vendors ?? [];
 

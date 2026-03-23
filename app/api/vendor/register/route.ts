@@ -18,6 +18,9 @@ type VendorBody = {
   description?: string;
   opens_at?: string;
   closes_at?: string;
+  bank_name?: string;
+  bank_account_number?: string;
+  bank_account_name?: string;
 };
 
 export async function POST(req: Request) {
@@ -49,6 +52,9 @@ export async function POST(req: Request) {
         description: body.description?.trim() || null,
         opens_at: body.opens_at || null,
         closes_at: body.closes_at || null,
+        bank_name: body.bank_name?.trim() || null,
+        bank_account_number: body.bank_account_number?.trim() || null,
+        bank_account_name: body.bank_account_name?.trim() || null,
         vendor_type: 'food',
         verification_status: 'pending',
         accepts_orders: false,

@@ -30,12 +30,12 @@ const statusStyles: Record<string, string> = {
   inactive: "bg-zinc-50 text-zinc-400 border-zinc-200",
 };
 
-export default function ListingsTab({ userId }: { userId: string | null }) {
+export default function ListingsTab({ vendorId }: { vendorId: string | null }) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!vendorId) return;
     let mounted = true;
 
     async function load() {
@@ -43,7 +43,7 @@ export default function ListingsTab({ userId }: { userId: string | null }) {
       const { data } = await supabase
         .from("listings")
         .select("id,title,price,price_label,category,listing_type,location,status,created_at")
-        .eq("vendor_id", userId!)
+        .eq("vendor_id", vendorId!)
         .order("created_at", { ascending: false })
         .limit(20);
 
@@ -54,7 +54,7 @@ export default function ListingsTab({ userId }: { userId: string | null }) {
 
     load();
     return () => { mounted = false; };
-  }, [userId]);
+  }, [vendorId]);
 
   if (loading) {
     return (
@@ -66,7 +66,7 @@ export default function ListingsTab({ userId }: { userId: string | null }) {
     );
   }
 
-  if (!userId) {
+  if (!vendorId) {
     return (
       <div className="rounded-xl border bg-zinc-50 p-4 text-center text-sm text-zinc-500">
         Sign in to see your listings.

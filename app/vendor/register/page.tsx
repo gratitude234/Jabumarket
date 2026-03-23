@@ -54,6 +54,9 @@ export default function VendorRegisterPage() {
   const [form, setForm] = useState<FormData>(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -96,7 +99,12 @@ export default function VendorRegisterPage() {
     const res = await fetch('/api/vendor/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        ...(bankName.trim() ? { bank_name: bankName.trim() } : {}),
+        ...(accountNumber.trim().length === 10 ? { bank_account_number: accountNumber.trim() } : {}),
+        ...(accountName.trim() ? { bank_account_name: accountName.trim() } : {}),
+      }),
     });
 
     const json = await res.json();
@@ -150,6 +158,36 @@ export default function VendorRegisterPage() {
             />
             <p className="text-[11px] text-zinc-400">Shown to students on your vendor profile. Keep it short and clear.</p>
           </div>
+        </div>
+
+        {/* Bank details */}
+        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Payment details</p>
+          <input
+            type="text"
+            placeholder="Bank name (e.g. GTBank, Opay, Palmpay)"
+            value={bankName}
+            onChange={(e) => setBankName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="Account number (10 digits)"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            type="text"
+            placeholder="Account name (as on your bank)"
+            value={accountName}
+            onChange={(e) => setAccountName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <p className="text-[11px] text-zinc-400">
+            Required before you can receive orders. You can also add this after approval.
+          </p>
         </div>
 
         {/* Section 2: Where & when */}

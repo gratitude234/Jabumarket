@@ -67,6 +67,8 @@ export async function PATCH(req: Request) {
       // null clears it; array is stored as-is (Supabase handles JSONB)
       patch.day_schedule = body.day_schedule === null ? null : body.day_schedule;
     }
+    if (body.pause_until !== undefined) patch.pause_until = body.pause_until ?? null;
+    if (body.pause_reason !== undefined) patch.pause_reason = body.pause_reason ? String(body.pause_reason).trim() : null;
 
     if (Object.keys(patch).length === 0) return jsonError('No fields to update', 400, 'empty_patch');
 

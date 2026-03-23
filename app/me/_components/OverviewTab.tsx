@@ -59,15 +59,33 @@ export default function OverviewTab({
         )}
       </div>
 
-      {roles.isVendor ? (
-        <div className="rounded-2xl border p-3">
-          <div className="text-sm font-semibold text-zinc-900">JabuMarket</div>
-          <p className="mt-1 text-sm text-zinc-700">
-            Store: <span className="font-medium">{vendor?.name ?? "—"}</span>
-          </p>
-          <p className="mt-1 text-sm text-zinc-700">
-            Verification: <span className="font-medium">{vendor?.verified ? "Verified" : "Not verified"}</span>
-          </p>
+      {roles.isVendor && !roles.isFoodVendor ? (
+        <div className="rounded-2xl border p-3 space-y-2">
+          <div className="text-sm font-semibold text-zinc-900">Your store</div>
+          <div className="text-sm text-zinc-700">
+            <span className="text-zinc-500">Name:</span>{" "}
+            <span className="font-medium">{vendor?.name ?? "—"}</span>
+          </div>
+          <div className="text-sm text-zinc-700">
+            <span className="text-zinc-500">Verification:</span>{" "}
+            <span className="font-medium">
+              {vendor?.verified
+                ? "✅ Verified"
+                : vendor?.verification_status === "requested" || vendor?.verification_status === "under_review"
+                ? "⏳ Under review"
+                : vendor?.verification_status === "rejected"
+                ? "❌ Rejected"
+                : "Not verified"}
+            </span>
+          </div>
+          {vendor?.id && (
+            <Link
+              href={`/vendors/${vendor.id}`}
+              className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-zinc-900"
+            >
+              View your storefront →
+            </Link>
+          )}
         </div>
       ) : (
         <div className="rounded-2xl border p-3">

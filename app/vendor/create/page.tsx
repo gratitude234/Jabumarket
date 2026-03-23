@@ -63,6 +63,9 @@ export default function VendorCreatePage() {
   const [vendorType, setVendorType] = useState<VendorType>('student');
   const [whatsapp, setWhatsapp] = useState('');
   const [location, setLocation] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -120,6 +123,9 @@ export default function VendorCreatePage() {
       location: location.trim() || null,
       verified: false,
       verification_status: 'unverified',
+      ...(bankName.trim() ? { bank_name: bankName.trim() } : {}),
+      ...(accountNumber.trim().length === 10 ? { bank_account_number: accountNumber.trim() } : {}),
+      ...(accountName.trim() ? { bank_account_name: accountName.trim() } : {}),
     });
 
     setSubmitting(false);
@@ -129,7 +135,7 @@ export default function VendorCreatePage() {
       return;
     }
 
-    router.replace('/me');
+    router.replace('/vendor');
   }
 
   if (checking) {
@@ -194,6 +200,35 @@ export default function VendorCreatePage() {
           onChange={setLocation}
           placeholder="e.g. JABU Campus / Male Hostels"
         />
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Payment details <span className="normal-case font-normal text-zinc-400">(buyers pay you here)</span>
+          </p>
+          <input
+            type="text"
+            placeholder="Bank name (e.g. GTBank, Opay, Palmpay)"
+            value={bankName}
+            onChange={(e) => setBankName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="Account number (10 digits)"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <input
+            type="text"
+            placeholder="Account name (as on your bank)"
+            value={accountName}
+            onChange={(e) => setAccountName(e.target.value)}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+          />
+          <p className="text-[11px] text-zinc-400">You can add this later — but buyers need it to pay you.</p>
+        </div>
 
         {error && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">

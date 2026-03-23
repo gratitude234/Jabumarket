@@ -176,6 +176,7 @@ export default function MyListingsPage() {
   const [hasMore, setHasMore] = useState(false);
 
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+  const [soldId, setSoldId] = useState<string | null>(null);
   const [bumpingId, setBumpingId] = useState<string | null>(null);
   const [bumpMessages, setBumpMessages] = useState<Record<string, string>>({});
 
@@ -414,6 +415,21 @@ export default function MyListingsPage() {
       loadCounts(vendorId).catch(() => {});
     } finally {
       setRowBusyId(null);
+    }
+  }
+
+  async function markSold(id: string) {
+    if (!vendorId) return;
+    setSoldId(id);
+    try {
+      await supabase.from("listings").update({ status: "sold" }).eq("id", id).eq("vendor_id", vendorId);
+      loadCounts(vendorId).catch(() => {});
+      setTimeout(() => {
+        setSoldId(null);
+        setListings((prev) => prev.filter((x) => x.id !== id));
+      }, 2000);
+    } catch {
+      setSoldId(null);
     }
   }
 
@@ -809,15 +825,15 @@ export default function MyListingsPage() {
                             Bump ↑
                           </button>
                           <button
-                            onClick={() => updateStatus(l.id, "sold")}
-                            disabled={busy}
+                            onClick={() => markSold(l.id)}
+                            disabled={soldId === l.id}
                             className={cx(
-                              "inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-2 text-xs font-medium text-white hover:opacity-90",
-                              busy && "opacity-60"
+                              "inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100",
+                              soldId === l.id && "border-emerald-200 bg-emerald-50 text-emerald-700"
                             )}
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                            Mark sold
+                            {soldId === l.id ? "Sold ✓" : "Mark sold"}
                           </button>
                           <button
                             onClick={() => updateStatus(l.id, "inactive")}
@@ -970,15 +986,15 @@ export default function MyListingsPage() {
                             Bump ↑
                           </button>
                           <button
-                            onClick={() => updateStatus(l.id, "sold")}
-                            disabled={busy}
+                            onClick={() => markSold(l.id)}
+                            disabled={soldId === l.id}
                             className={cx(
-                              "inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-2 text-xs font-medium text-white hover:opacity-90",
-                              busy && "opacity-60"
+                              "inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100",
+                              soldId === l.id && "border-emerald-200 bg-emerald-50 text-emerald-700"
                             )}
                           >
                             <CheckCircle2 className="h-4 w-4" />
-                            Sold
+                            {soldId === l.id ? "Sold ✓" : "Mark sold"}
                           </button>
                           <button
                             onClick={() => updateStatus(l.id, "inactive")}

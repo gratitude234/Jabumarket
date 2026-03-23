@@ -54,6 +54,7 @@ export default async function FoodPage({
     .eq('vendor_type', 'food')
     .eq('accepts_orders', true)
     .or('verified.eq.true,verification_status.eq.verified')
+    .is('suspended_at', null)
     .order('name', { ascending: true });
 
   const list = vendors ?? [];

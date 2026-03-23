@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, BookOpen, ChefHat, ChevronRight, FileText, LayoutDashboard, Settings, ShieldCheck, ShoppingBag, Store } from "lucide-react";
+import { Bookmark, BookOpen, ChefHat, ChevronRight, FileText, LayoutDashboard, MessageCircle, PlusSquare, Settings, ShieldCheck, ShoppingBag, Store } from "lucide-react";
 import type { RoleFlags } from "./types";
 
 export default function QuickActions({ roles }: { roles: RoleFlags }) {
@@ -15,6 +15,32 @@ export default function QuickActions({ roles }: { roles: RoleFlags }) {
     return (
       <div className="grid grid-cols-2 gap-3">
         {foodCards.map((c) => (
+          <Link key={c.title} href={c.href} className="rounded-2xl border bg-white p-3 shadow-sm transition hover:bg-zinc-50">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl border bg-white p-2">{c.icon}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-zinc-900">{c.title}</div>
+                <div className="mt-0.5 text-xs text-zinc-600">{c.desc}</div>
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    );
+  }
+
+  if (roles.isVendor && !roles.isFoodVendor) {
+    const vendorCards = [
+      { href: "/my-listings",         icon: <LayoutDashboard className="h-4 w-4" />, title: "My listings",      desc: "Manage your active listings" },
+      { href: "/inbox",               icon: <MessageCircle className="h-4 w-4" />,   title: "Messages",         desc: "Buyer enquiries and orders" },
+      { href: "/vendor/setup",        icon: <Settings className="h-4 w-4" />,        title: "Vendor settings",  desc: "Profile, bank details" },
+      { href: "/post",                icon: <PlusSquare className="h-4 w-4" />,      title: "Post listing",     desc: "Add a product or service" },
+      { href: "/me?tab=verification", icon: <ShieldCheck className="h-4 w-4" />,     title: "Verification",     desc: "Upload docs & request" },
+      { href: "/saved",               icon: <Bookmark className="h-4 w-4" />,        title: "Saved items",      desc: "Items you bookmarked" },
+    ];
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        {vendorCards.map((c) => (
           <Link key={c.title} href={c.href} className="rounded-2xl border bg-white p-3 shadow-sm transition hover:bg-zinc-50">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 rounded-xl border bg-white p-2">{c.icon}</div>

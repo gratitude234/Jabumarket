@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import {
   Loader2, ShoppingBag, ChefHat, Settings, ToggleLeft, ToggleRight,
   Clock, CheckCircle2, Bell, ArrowRight, Store, AlertCircle, AlertTriangle,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VendorRow } from '@/lib/types';
@@ -161,10 +162,11 @@ type ChecklistState = {
   hasMenuItems: boolean;
   hasHours: boolean;
   hasGoneLive: boolean;
+  hasBankDetails: boolean;
 };
 
 function OnboardingChecklist({ vendor, checklist }: { vendor: VendorRow; checklist: ChecklistState }) {
-  const allDone = checklist.hasMenuItems && checklist.hasHours && checklist.hasGoneLive;
+  const allDone = checklist.hasMenuItems && checklist.hasHours && checklist.hasGoneLive && checklist.hasBankDetails;
   if (allDone) return null;
 
   const steps = [
@@ -192,6 +194,15 @@ function OnboardingChecklist({ vendor, checklist }: { vendor: VendorRow; checkli
         : 'Without hours, students can\'t tell if you\'re open',
       href: '/vendor/setup',
       cta: 'Set hours →',
+    },
+    {
+      done: checklist.hasBankDetails,
+      label: checklist.hasBankDetails ? 'Bank details added' : 'Add your bank details',
+      sub: checklist.hasBankDetails
+        ? 'Buyers can pay you directly.'
+        : 'Required before buyers can complete payment.',
+      href: '/vendor/setup',
+      cta: 'Add details →',
     },
     {
       done: checklist.hasGoneLive,
@@ -644,7 +655,8 @@ function VendorDashboardPageInner() {
   const [summary, setSummary]   = useState<OrderSummary>({ pending: 0, active: 0, ready: 0, today_count: 0, today_revenue: 0 });
   const [weekData, setWeekData] = useState<DayStats[]>([]);
   const [toggling, setToggling] = useState(false);
-  const [checklist, setChecklist] = useState<ChecklistState>({ hasMenuItems: false, hasHours: false, hasGoneLive: false });
+  const [pausing, setPausing] = useState(false);
+  const [checklist, setChecklist] = useState<ChecklistState>({ hasMenuItems: false, hasHours: false, hasGoneLive: false, hasBankDetails: false });
   const [goOfflineModal, setGoOfflineModal] = useState<{ activeCount: number } | null>(null);
 
   useEffect(() => {
@@ -735,6 +747,7 @@ function VendorDashboardPageInner() {
             hasMenuItems: (menuItems?.length ?? 0) > 0,
             hasHours: !!v.opens_at && !!v.closes_at,
             hasGoneLive: (v as VendorRow).accepts_orders === true,
+            hasBankDetails: !!(v.bank_name && v.bank_account_number && v.bank_account_name),
           });
         }
       }
@@ -815,10 +828,16 @@ function VendorDashboardPageInner() {
 
     setVendor((prev) => prev ? { ...prev, accepts_orders: next } : prev);
 
+    const body: Record<string, unknown> = { accepts_orders: next };
+    if (next) {
+      // Turning on — clear any pause fields
+      body.pause_until = null;
+      body.pause_reason = null;
+    }
     const res = await fetch('/api/vendor/setup', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accepts_orders: next }),
+      body: JSON.stringify(body),
     });
     const json = await res.json();
 
@@ -911,37 +930,68 @@ function VendorDashboardPageInner() {
           </div>
         </div>
 
-        {/* While you wait — key insight: pending vendors CAN already add menu items */}
-        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
-          <p className="text-sm font-semibold text-zinc-900">While you wait — get ahead</p>
-          <p className="text-sm text-zinc-500">
-            You don't need to be approved to set up your menu. Add your items now so you're ready to go live the moment approval comes through.
-          </p>
+        {/* While you wait — key insight: pending vendors CAN already set up */}
+        {vendor.vendor_type === 'food' ? (
+          <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
+            <p className="text-sm font-semibold text-zinc-900">While you wait — get ahead</p>
+            <p className="text-sm text-zinc-500">
+              You don't need to be approved to set up your menu. Add your items now so you're ready to go live the moment approval comes through.
+            </p>
 
-          <Link href="/vendor/menu"
-            className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
-            <div className="flex items-center gap-3">
-              <ChefHat className="h-5 w-5 text-zinc-600" />
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">Set up your menu</p>
-                <p className="text-xs text-zinc-500">Add your food items, prices, and categories</p>
+            <Link href="/vendor/menu"
+              className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
+              <div className="flex items-center gap-3">
+                <ChefHat className="h-5 w-5 text-zinc-600" />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">Set up your menu</p>
+                  <p className="text-xs text-zinc-500">Add your food items, prices, and categories</p>
+                </div>
               </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-zinc-400" />
-          </Link>
+              <ArrowRight className="h-4 w-4 text-zinc-400" />
+            </Link>
 
-          <Link href="/vendor/setup"
-            className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
-            <div className="flex items-center gap-3">
-              <Settings className="h-5 w-5 text-zinc-600" />
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">Review your profile</p>
-                <p className="text-xs text-zinc-500">Check your hours, location, and contact details</p>
+            <Link href="/vendor/setup"
+              className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
+              <div className="flex items-center gap-3">
+                <Settings className="h-5 w-5 text-zinc-600" />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">Review your profile</p>
+                  <p className="text-xs text-zinc-500">Check your hours, location, and contact details</p>
+                </div>
               </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-zinc-400" />
-          </Link>
-        </div>
+              <ArrowRight className="h-4 w-4 text-zinc-400" />
+            </Link>
+          </div>
+        ) : (
+          <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
+            <p className="text-sm font-semibold text-zinc-900">While you wait — get ahead</p>
+            <p className="text-sm text-zinc-500">
+              Your verification is being reviewed. In the meantime, post your first listing so buyers find you straight away.
+            </p>
+            <Link href="/post"
+              className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
+              <div className="flex items-center gap-3">
+                <Store className="h-5 w-5 text-zinc-600" />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">Post a listing</p>
+                  <p className="text-xs text-zinc-500">Add a product or service to start selling</p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-zinc-400" />
+            </Link>
+            <Link href="/vendor/setup"
+              className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
+              <div className="flex items-center gap-3">
+                <Settings className="h-5 w-5 text-zinc-600" />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900">Add bank details</p>
+                  <p className="text-xs text-zinc-500">So buyers can pay you when a deal is agreed</p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-zinc-400" />
+            </Link>
+          </div>
+        )}
       </div>
     );
   }
@@ -952,7 +1002,80 @@ function VendorDashboardPageInner() {
   }
 
   // ── Approved dashboard ─────────────────────────────────────────────────────
-  const showChecklist = !checklist.hasMenuItems || !checklist.hasHours;
+  const isFoodVendor = vendor.vendor_type === 'food';
+  const showChecklist = !checklist.hasMenuItems || !checklist.hasHours || !checklist.hasBankDetails;
+
+  if (!isFoodVendor) {
+    // ── Normal (non-food) vendor dashboard ──────────────────────────────────
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
+        <div>
+          <h1 className="text-xl font-bold text-zinc-900">{vendor.name}</h1>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            {vendor.vendor_type === 'mall' ? 'Campus shop' : 'Student vendor'} · Seller dashboard
+          </p>
+        </div>
+
+        {/* Bank details warning — most critical */}
+        {!(vendor as any).bank_account_number && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-900">Bank details missing</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Buyers cannot finalize deals until you add your bank account number.
+              </p>
+            </div>
+            <Link
+              href="/vendor/setup"
+              className="shrink-0 self-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 no-underline"
+            >
+              Add now →
+            </Link>
+          </div>
+        )}
+
+        {/* Storefront link */}
+        <div className="rounded-2xl border bg-white p-4 shadow-sm flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-zinc-900">Your storefront</p>
+            <p className="mt-0.5 text-xs text-zinc-500 font-mono truncate">
+              jabumarket.com/vendors/{vendor.id}
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/vendors/${vendor.id}`).catch(() => {});
+              }}
+              className="rounded-xl border bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+            >
+              Copy link
+            </button>
+            <Link
+              href={`/vendors/${vendor.id}`}
+              className="rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 no-underline"
+            >
+              View →
+            </Link>
+          </div>
+        </div>
+
+        {/* Quick stats */}
+        <NormalVendorStats vendorId={vendor.id} />
+
+        {/* Quick links */}
+        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-2">
+          <p className="text-sm font-semibold text-zinc-900 mb-3">Manage</p>
+          <QuickLink href="/my-listings"          icon={<Store className="h-5 w-5" />}          label="My listings" />
+          <QuickLink href="/inbox"                icon={<MessageCircle className="h-5 w-5" />}   label="Messages" />
+          <QuickLink href="/vendor/setup"         icon={<Settings className="h-5 w-5" />}        label="Edit profile & bank details" />
+          <QuickLink href={`/vendors/${vendor.id}`} icon={<ArrowRight className="h-5 w-5" />}   label="View storefront" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -971,7 +1094,7 @@ function VendorDashboardPageInner() {
         <p className="mt-0.5 text-sm text-zinc-500">Vendor Dashboard</p>
       </div>
 
-      {/* Onboarding checklist — shown until menu + hours are set */}
+      {/* Onboarding checklist — shown until menu + hours + bank are set */}
       {showChecklist && (
         <OnboardingChecklist vendor={vendor} checklist={checklist} />
       )}
@@ -998,6 +1121,33 @@ function VendorDashboardPageInner() {
           ? <ToggleRight className="h-8 w-8 text-emerald-600 shrink-0" />
           : <ToggleLeft className="h-8 w-8 text-zinc-400 shrink-0" />}
       </button>
+
+      {/* Pause for N minutes — food vendor only, shown when accepting orders */}
+      {vendor.accepts_orders && (
+        <div className="flex gap-2 px-1 -mt-2">
+          <p className="text-xs text-zinc-500 self-center mr-1">Pause for:</p>
+          {[15, 30, 60].map((mins) => (
+            <button
+              key={mins}
+              type="button"
+              disabled={pausing}
+              onClick={async () => {
+                setPausing(true);
+                const pauseUntil = new Date(Date.now() + mins * 60 * 1000).toISOString();
+                await supabase
+                  .from('vendors')
+                  .update({ accepts_orders: false, pause_until: pauseUntil, pause_reason: `Paused for ${mins} min` })
+                  .eq('id', vendor.id);
+                setVendor((prev) => prev ? { ...prev, accepts_orders: false } as VendorRow : prev);
+                setPausing(false);
+              }}
+              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {mins}m
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Today's order summary */}
       <div className="rounded-3xl border bg-white p-5 shadow-sm">
@@ -1053,6 +1203,45 @@ function VendorDashboardPageInner() {
       </div>
     </div>
     </>
+  );
+}
+
+function NormalVendorStats({ vendorId }: { vendorId: string }) {
+  const [stats, setStats] = useState<{ listings: number; active: number; messages: number } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const [listingsRes, convoRes] = await Promise.all([
+        supabase.from('listings').select('id, status').eq('vendor_id', vendorId),
+        supabase.from('conversations').select('id, vendor_unread').eq('vendor_id', vendorId),
+      ]);
+      const listings = listingsRes.data ?? [];
+      const convos = convoRes.data ?? [];
+      setStats({
+        listings: listings.length,
+        active: listings.filter((l: any) => l.status === 'active').length,
+        messages: convos.reduce((sum: number, c: any) => sum + (c.vendor_unread ?? 0), 0),
+      });
+    })();
+  }, [vendorId]);
+
+  if (!stats) return null;
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
+        <p className="text-2xl font-bold text-zinc-900">{stats.listings}</p>
+        <p className="mt-0.5 text-xs text-zinc-500">Total listings</p>
+      </div>
+      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
+        <p className="text-2xl font-bold text-zinc-900">{stats.active}</p>
+        <p className="mt-0.5 text-xs text-zinc-500">Active now</p>
+      </div>
+      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
+        <p className={cn('text-2xl font-bold', stats.messages > 0 ? 'text-red-600' : 'text-zinc-900')}>{stats.messages}</p>
+        <p className="mt-0.5 text-xs text-zinc-500">Unread messages</p>
+      </div>
+    </div>
   );
 }
 

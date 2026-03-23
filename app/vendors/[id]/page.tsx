@@ -229,12 +229,24 @@ export default async function VendorProfilePage({
   // Vendor
   const { data: vendorData, error: vErr } = await supabase
     .from("vendors")
-    .select("id,name,whatsapp,phone,location,verified,verification_status,vendor_type,description,avatar_url,opens_at,closes_at,accepts_orders,day_schedule")
+    .select("id,name,whatsapp,phone,location,verified,verification_status,vendor_type,description,avatar_url,opens_at,closes_at,accepts_orders,day_schedule,suspended_at")
     .eq("id", id)
     .single();
 
   if (vErr || !vendorData) return notFound();
   const vendor = vendorData as VendorRow;
+
+  if ((vendor as any).suspended_at) {
+    return (
+      <div className="mx-auto max-w-xl pt-12 text-center px-4">
+        <p className="text-lg font-semibold text-zinc-900">This store is currently unavailable</p>
+        <p className="mt-2 text-sm text-zinc-500">This vendor account has been suspended.</p>
+        <Link href="/explore" className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 no-underline">
+          Browse other vendors →
+        </Link>
+      </div>
+    );
+  }
 
   // Listings (active only, from this vendor)
   let lq = supabase

@@ -67,10 +67,59 @@ export default function ContextBanner({
   }
 
   if (roles.isVendor && roles.isVerifiedVendor) {
+    // Verified but missing bank details (non-food only)
+    if (vendor?.vendor_type !== "food" && !vendor?.bank_account_number) {
+      return (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="mt-0.5 text-lg leading-none">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-900">Bank details missing</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Buyers cannot finalize deals until you add your bank account number.
+            </p>
+          </div>
+          <Link
+            href="/vendor/setup"
+            className="shrink-0 self-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
+          >
+            Add now →
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
         <span className="text-lg leading-none">✅</span>
         <p className="text-sm font-semibold text-emerald-900">Your store is verified — customers can trust you!</p>
+      </div>
+    );
+  }
+
+  // Bank details warning for unverified non-food vendors (no active verification in progress)
+  if (
+    roles.isVendor &&
+    vendor?.vendor_type !== "food" &&
+    !vendor?.bank_account_number &&
+    vendor?.verification_status !== "under_review" &&
+    vendor?.verification_status !== "requested" &&
+    vendor?.verification_status !== "rejected"
+  ) {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+        <span className="mt-0.5 text-lg leading-none">⚠️</span>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-amber-900">Bank details missing</p>
+          <p className="text-xs text-amber-700 mt-0.5">
+            Buyers cannot finalize deals until you add your bank account number.
+          </p>
+        </div>
+        <Link
+          href="/vendor/setup"
+          className="shrink-0 self-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
+        >
+          Add now →
+        </Link>
       </div>
     );
   }
