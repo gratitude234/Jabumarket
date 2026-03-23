@@ -15,7 +15,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Jabumarket",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://jabumarket.com"
+  ),
+  title: {
+    default: "Jabumarket",
+    template: "%s — Jabumarket",
+  },
   description: "Buy, sell & find services around JABU.",
   manifest: "/manifest.json",
   icons: {
@@ -24,9 +30,7 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
       { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
+    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
     shortcut: "/favicon.ico",
   },
   appleWebApp: {
@@ -37,8 +41,14 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   openGraph: {
     type: "website",
+    siteName: "Jabumarket",
     title: "Jabumarket",
     description: "Buy, sell & find services around JABU.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@jabumarket",
+    creator: "@jabumarket",
   },
 };
 

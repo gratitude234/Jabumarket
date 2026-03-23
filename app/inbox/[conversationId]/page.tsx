@@ -17,6 +17,7 @@ import {
 import type { OrderPayload } from "@/types/meal-builder";
 import OrderBubble from "@/components/chat/OrderBubble";
 import MealBuilder from "@/components/chat/MealBuilder";
+import FinalizeDealButton from "@/components/chat/FinalizeDealButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ type ConversationMeta = {
   vendor_id: string;
   buyer_unread: number;
   vendor_unread: number;
-  listing: { id: string; title: string | null; image_url: string | null; status: string | null } | null;
+  listing: { id: string; title: string | null; image_url: string | null; status: string | null; price: number | null; price_label: string | null } | null;
   vendor: { id: string; name: string | null; user_id: string | null; vendor_type: string | null; accepts_orders: boolean | null } | null;
 };
 
@@ -98,6 +99,7 @@ export default function ConversationPage() {
     bank_account_name: string;
   } | null>(null);
   const [showMealBuilder, setShowMealBuilder] = useState(false);
+  const [hasMarketplaceOrder, setHasMarketplaceOrder] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +122,14 @@ export default function ConversationPage() {
     !isVendorSide &&
     vendor?.vendor_type === "food" &&
     vendor?.accepts_orders !== false;
+
+  // Show Finalize Deal for non-food vendors with no order yet, after 2+ messages
+  const isNonFoodVendor = vendor?.vendor_type !== 'food';
+  const canShowFinalizeDeal =
+    !isVendorSide &&
+    isNonFoodVendor &&
+    !hasMarketplaceOrder &&
+    messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
 
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     bottomRef.current?.scrollIntoView({ behavior });
@@ -175,7 +185,7 @@ export default function ConversationPage() {
         .from("conversations")
         .select(`
           id, listing_id, order_id, buyer_id, vendor_id, buyer_unread, vendor_unread,
-          listing:listings(id, title, image_url, status),
+          listing:listings(id, title, image_url, status, price, price_label),
           vendor:vendors(id, name, user_id, vendor_type, accepts_orders, bank_name, bank_account_number, bank_account_name)
         `)
         .eq("id", conversationId)
@@ -192,6 +202,9 @@ export default function ConversationPage() {
 
       setMeta(conv);
       metaRef.current = conv;
+
+      // Hide FinalizeDealButton if conversation already has an order
+      if (conv.order_id) setHasMarketplaceOrder(true);
 
       // Load order status if this conversation has an order
       if (conv.order_id) {
@@ -385,6 +398,19 @@ export default function ConversationPage() {
           body: text.length > 60 ? text.slice(0, 60) + "…" : text,
           href: `/inbox/${conversationId}`,
         });
+
+        // Fire push to other party (vendor→buyer or buyer→vendor)
+        void fetch('/api/internal/push-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: otherUserId,
+            title: 'New message',
+            body: text.length > 80 ? text.slice(0, 80) + '…' : text,
+            href: `/inbox/${conversationId}`,
+            tag: `msg-${conversationId}`,
+          }),
+        }).catch(() => {});
       }
     } catch {
       // Rollback optimistic on failure
@@ -545,6 +571,7 @@ export default function ConversationPage() {
                       onBuyerConfirm={handleBuyerConfirmFromChat}
                       onVendorConfirmPayment={handleVendorConfirmFromChat}
                       onPaymentDispute={handlePaymentDisputeFromChat}
+                      orderLabel={vendor?.vendor_type !== 'food' ? '🏷️ Marketplace Order' : undefined}
                     />
                   ) : (
                     <div
@@ -604,6 +631,17 @@ export default function ConversationPage() {
           </div>
         </div>
       ) : null}
+
+      {canShowFinalizeDeal && meta && (
+        <FinalizeDealButton
+          conversationId={conversationId}
+          listingId={meta.listing_id ?? ''}
+          vendorId={meta.vendor_id}
+          listingTitle={listing?.title ?? undefined}
+          listingPrice={listing?.price ?? null}
+          onOrderCreated={() => setHasMarketplaceOrder(true)}
+        />
+      )}
 
       {/* Input bar */}
       <div className="border-t bg-white px-4 py-3">

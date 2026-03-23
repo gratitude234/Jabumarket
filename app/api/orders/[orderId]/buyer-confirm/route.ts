@@ -49,27 +49,26 @@ export async function POST(
       .eq('id', order.vendor_id)
       .single()
 
-    const notifTitle = '💸 Payment submitted'
-    const notifBody  = "A buyer says they've transferred payment. Check your account and confirm."
+    const notifHref = order.conversation_id ? `/inbox/${order.conversation_id}` : '/vendor/orders';
 
     if (vendor?.user_id) {
       // In-app notification for vendor
       try {
         await admin.from('notifications').insert({
           user_id: vendor.user_id,
-          type: 'payment_submitted',
-          title: notifTitle,
-          body:  notifBody,
-          href:  '/vendor/orders',
+          type: 'payment_received',
+          title: 'Buyer says payment sent',
+          body:  `₦${(order.total as number).toLocaleString()} — check your account and confirm receipt.`,
+          href:  notifHref,
         })
       } catch { /* non-critical */ }
 
       // Push notification to vendor's device(s)
       try {
         await sendVendorPush(order.vendor_id, {
-          title: notifTitle,
-          body:  notifBody,
-          href:  '/vendor/orders',
+          title: 'Payment transfer received',
+          body:  `Buyer confirmed ₦${(order.total as number).toLocaleString()} sent. Check and confirm.`,
+          href:  notifHref,
           tag:   `payment-${orderId}`,
         })
       } catch { /* non-critical */ }

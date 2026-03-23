@@ -8,6 +8,18 @@ import { Card, SkeletonCard } from "./_components/StudyUI";
 // Every individual user's prefs/streak/forYou are still fetched client-side.
 export const revalidate = 60;
 
+export const metadata = {
+  title: "Study Hub",
+  description:
+    "Course materials, MCQ practice sets, Q&A forum, AI study plans and GPA calculator for JABU students.",
+  openGraph: {
+    title: "Study Hub — Jabumarket",
+    description:
+      "Course materials, MCQ practice sets, Q&A forum, AI study plans and GPA calculator for JABU students.",
+    type: "website",
+  },
+};
+
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 export type StudyCounts = {

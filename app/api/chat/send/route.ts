@@ -195,6 +195,14 @@ export async function POST(req: Request) {
         })
         .eq('id', body.conversation_id);
 
+      // Write order_id back to the conversation
+      if (order?.id) {
+        await admin
+          .from('conversations')
+          .update({ order_id: order.id })
+          .eq('id', body.conversation_id);
+      }
+
       // 4. Create a notification for the vendor
       const { data: vendor } = await admin
         .from('vendors')

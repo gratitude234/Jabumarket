@@ -19,6 +19,18 @@ import type { FoodVendorData } from "@/app/food/FoodVendorGrid";
 import { isOpenNow } from "@/lib/vendorSchedule";
 import { cn } from "@/lib/utils";
 
+export const metadata = {
+  title: "Explore",
+  description:
+    "Browse phones, laptops, fashion, food, services and more listed by JABU students and verified vendors.",
+  openGraph: {
+    title: "Explore — Jabumarket",
+    description:
+      "Browse phones, laptops, fashion, food, services and more listed by JABU students and verified vendors.",
+    type: "website",
+  },
+};
+
 type ExploreTab = "listings" | "vendors" | "delivery" | "transport" | "food";
 type SortKey = "relevance" | "newest" | "price_asc" | "price_desc";
 type StatusKey = "active" | "inactive" | "sold";

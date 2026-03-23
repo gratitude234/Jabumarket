@@ -1,6 +1,8 @@
 // app/vendors/[id]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isOpenNow } from "@/lib/vendorSchedule";
 import type { ListingRow, VendorRow } from "@/lib/types";
@@ -16,6 +18,72 @@ import VendorReviews, { VendorRatingBadge } from "@/components/vendor/VendorRevi
 import FoodOrderCTA from "@/components/vendor/FoodOrderCTA";
 import AskSellerButton from "@/components/listing/AskSellerButton";
 import RequestCallbackButton from "@/components/listing/RequestCallbackButton";
+
+async function getSiteOrigin() {
+  const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envBase) return envBase.replace(/\/$/, "");
+  const h = await headers();
+  const host = h.get("x-forwarded-host")?.split(",")[0]?.trim() || h.get("host");
+  const proto = h.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  if (!host) return "";
+  return `${proto}://${host}`;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string } | Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await Promise.resolve(params);
+  const supabase = await createSupabaseServerClient();
+
+  const { data } = await supabase
+    .from("vendors")
+    .select("id, name, description, avatar_url, vendor_type, location, verified")
+    .eq("id", id)
+    .maybeSingle();
+
+  const origin = await getSiteOrigin();
+  const url = origin ? `${origin}/vendors/${id}` : `/vendors/${id}`;
+
+  if (!data) {
+    return {
+      title: "Vendor — Jabumarket",
+      alternates: { canonical: url },
+    };
+  }
+
+  const typeLabel =
+    data.vendor_type === "food"
+      ? "Food Vendor"
+      : data.vendor_type === "mall"
+      ? "Campus Shop"
+      : "Vendor";
+  const name = data.name ?? "Vendor";
+  const title = `${name} · ${typeLabel}`;
+  const desc =
+    data.description?.trim() ||
+    `Browse listings from ${name} on Jabumarket${data.location ? ` · ${data.location}` : ""}.`;
+
+  return {
+    title,
+    description: desc.slice(0, 160),
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description: desc.slice(0, 160),
+      url,
+      siteName: "Jabumarket",
+      type: "profile",
+      ...(data.avatar_url ? { images: [data.avatar_url] } : {}),
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description: desc.slice(0, 160),
+    },
+  };
+}
 
 type SortKey = "newest" | "price_asc" | "price_desc";
 

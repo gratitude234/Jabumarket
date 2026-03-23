@@ -213,6 +213,27 @@ export default async function ListingPage({
   const vendorInitial = (vendor?.name ?? "V")[0].toUpperCase();
   const avatarUrl = (vendor as any)?.avatar_url as string | null | undefined;
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: listing.title ?? "Listing",
+    description: desc || undefined,
+    image: galleryImages.length > 0 ? galleryImages : undefined,
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "NGN",
+      price: listing.price ?? undefined,
+      availability:
+        listing.status === "active"
+          ? "https://schema.org/InStock"
+          : "https://schema.org/SoldOut",
+      url: listingUrl,
+      seller: vendor?.name
+        ? { "@type": "Person", name: vendor.name }
+        : undefined,
+    },
+  };
+
   const statusBadge = isSold ? (
     <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white">SOLD</span>
   ) : isInactive ? (
@@ -227,6 +248,10 @@ export default async function ListingPage({
 
   return (
     <div className="overflow-x-hidden pb-28 lg:pb-10">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <ListingViewTracker listingId={listing.id} title={listing.title ?? undefined} />
 
       {/* ── Top bar ──────────────────────────────────────────────────── */}

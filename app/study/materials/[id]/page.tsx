@@ -45,10 +45,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: `${title} — JABU Study`,
     description: desc.slice(0, 160),
+    alternates: { canonical: `/study/materials/${id}` },
     openGraph: {
       title,
       description: desc.slice(0, 160),
       type: "article",
+      siteName: "Jabumarket",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description: desc.slice(0, 160),
     },
   };
 }

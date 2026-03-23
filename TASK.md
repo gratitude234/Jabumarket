@@ -1,491 +1,617 @@
-Read CLAUDE.md first. Then read these files before touching anything:
-- app/api/orders/create/route.ts
-- app/api/orders/[orderId]/status/route.ts
-- app/my-orders/page.tsx
-- app/vendor/orders/page.tsx
-- app/vendor/setup/page.tsx
-- app/api/vendor/setup/route.ts
-- components/chat/OrderBubble.tsx
-- lib/types.ts
+Implement the following fixes to the Jabumarket messaging system. Work through each task in order. Audit the existing code in each file before making any changes.
 
-List ALL files you will modify or create before starting.
+---
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MIGRATION — Present as standalone file first.
-Stop and wait for confirmation before any other task.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Create: supabase/migrations/[timestamp]_manual_payment.sql
+## TASK 1 — Write order_id back to conversations when an order is created
 
--- Payment fields on orders
-ALTER TABLE public.orders
-  ADD COLUMN IF NOT EXISTS payment_method text
-    CHECK (payment_method IN ('transfer', 'cash')),
-  ADD COLUMN IF NOT EXISTS payment_status text
-    NOT NULL DEFAULT 'unpaid'
-    CHECK (payment_status IN (
-      'unpaid', 'buyer_confirmed', 'vendor_confirmed'
-    )),
-  ADD COLUMN IF NOT EXISTS receipt_url text,
-  ADD COLUMN IF NOT EXISTS paid_at timestamptz,
-  ADD COLUMN IF NOT EXISTS payment_note text;
+File: `app/api/chat/send/route.ts`
 
--- Account details on vendors
-ALTER TABLE public.vendors
-  ADD COLUMN IF NOT EXISTS bank_name text,
-  ADD COLUMN IF NOT EXISTS bank_account_number text,
-  ADD COLUMN IF NOT EXISTS bank_account_name text;
+After the order is successfully inserted (after the `if (orderErr)` block), update the conversation's `order_id` field:
+```ts
+if (order?.id) {
+  await admin
+    .from('conversations')
+    .update({ order_id: order.id })
+    .eq('id', body.conversation_id);
+}
+```
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 1 — Add bank account fields to vendor setup
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Files: app/vendor/setup/page.tsx,
-       app/api/vendor/setup/route.ts
+Place this immediately after the `// 3. Update conversation preview` block so order_id is always set when a food order is created through chat.
 
-Read both files fully before editing.
+---
 
-In the vendor setup form (page.tsx), add a new section
-after the existing fields titled "Payment details":
+## TASK 2 — Send push notification to buyer when vendor replies
 
-  <div className="space-y-3">
-    <p className="text-sm font-semibold text-zinc-900">
-      Payment details
-    </p>
-    <p className="text-xs text-zinc-500">
-      Students will transfer to this account when they order.
-      Make sure it's correct.
-    </p>
+File: `app/inbox/[conversationId]/page.tsx`
 
-    {/* Bank name */}
-    <input
-      placeholder="Bank name (e.g. GTBank, Access, Opay)"
-      value={bankName}
-      onChange={e => setBankName(e.target.value)}
-      className="w-full rounded-2xl border bg-zinc-50 px-4
-        py-3 text-sm outline-none focus:ring-2
-        focus:ring-zinc-900/10"
-    />
+The `send()` function already inserts an in-app notification for the other party. It does NOT call any push API. After the `notifications.insert` block inside `send()`, add a fire-and-forget push call:
+```ts
+// Fire push to other party (vendor→buyer or buyer→vendor)
+void fetch('/api/user/push', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    user_id: otherUserId,
+    title: 'New message',
+    body: text.length > 80 ? text.slice(0, 80) + '…' : text,
+    href: `/inbox/${conversationId}`,
+    tag: `msg-${conversationId}`,
+  }),
+}).catch(() => {});
+```
 
-    {/* Account number */}
-    <input
-      placeholder="Account number (10 digits)"
-      inputMode="numeric"
-      maxLength={10}
-      value={accountNumber}
-      onChange={e => setAccountNumber(
-        e.target.value.replace(/\D/g, '').slice(0, 10)
-      )}
-      className="w-full rounded-2xl border bg-zinc-50 px-4
-        py-3 text-sm outline-none focus:ring-2
-        focus:ring-zinc-900/10"
-    />
+Then check what `app/api/user/push/route.ts` currently does. If it only subscribes/unsubscribes and does not support sending a push to a user_id, create a new route `app/api/internal/push-user/route.ts`:
+```ts
+// app/api/internal/push-user/route.ts
+// Internal-only: send a push notification to a user by user_id
+// Called server-to-server or from client send() in conversation view
 
-    {/* Account name */}
-    <input
-      placeholder="Account name (as it appears on your bank)"
-      value={accountName}
-      onChange={e => setAccountName(e.target.value)}
-      className="w-full rounded-2xl border bg-zinc-50 px-4
-        py-3 text-sm outline-none focus:ring-2
-        focus:ring-zinc-900/10"
-    />
-  </div>
+import { NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { sendUserPush } from '@/lib/webPush';
 
-Add state: bankName, accountNumber, accountName
-These fields are optional — vendor can skip and add later.
-If provided, validate account number is exactly 10 digits.
+export async function POST(req: Request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ ok: false }, { status: 401 });
 
-In app/api/vendor/setup/route.ts:
-Add bank_name, bank_account_number, bank_account_name
-to the vendor UPDATE payload if provided in the body.
+    const body = await req.json() as {
+      user_id: string;
+      title: string;
+      body: string;
+      href: string;
+      tag?: string;
+    };
 
-Also add a standalone edit endpoint for updating bank
-details later without going through the full setup:
+    if (!body.user_id || !body.title) {
+      return NextResponse.json({ ok: false, message: 'Missing fields' }, { status: 400 });
+    }
 
-Create: app/api/vendor/bank-details/route.ts
-PATCH handler:
-- Require auth, resolve vendor by user_id
-- Body: { bank_name, bank_account_number, bank_account_name }
-- Validate account_number is 10 digits if provided
-- UPDATE vendors SET bank_name, bank_account_number,
-  bank_account_name WHERE id = vendor.id
-- Return { ok: true }
+    // Security: caller must be a participant in the conversation referenced by href
+    // (href format: /inbox/[conversationId])
+    const conversationId = body.href?.split('/inbox/')?.[1]?.split('?')?.[0];
+    if (conversationId) {
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('buyer_id, vendor_id')
+        .eq('id', conversationId)
+        .maybeSingle();
 
-Add a "Payment details" card to the vendor dashboard
-(app/vendor/page.tsx — read first) showing current
-bank details with an "Edit" button that opens an
-inline edit form calling this endpoint.
-If bank details are not set, show a banner:
-  "Add your account number so students can pay you →"
-  with an inline form to fill it in.
+      if (!conv) return NextResponse.json({ ok: false }, { status: 403 });
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 2 — Show account number to buyer after ordering
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Files: app/my-orders/page.tsx,
-       components/chat/OrderBubble.tsx
+      // Get caller's vendor_id if any
+      const { data: vendor } = await supabase
+        .from('vendors')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      const callerVendorId = vendor?.id ?? null;
 
-In my-orders/page.tsx:
-Fetch orders with vendor bank details:
-  .select(`
-    ...,
-    vendor:vendors(
-      name, avatar_url,
-      bank_name, bank_account_number, bank_account_name
-    )
-  `)
+      const isBuyer = conv.buyer_id === user.id;
+      const isVendor = callerVendorId && conv.vendor_id === callerVendorId;
+      if (!isBuyer && !isVendor) return NextResponse.json({ ok: false }, { status: 403 });
+    }
 
-For orders where:
-  payment_status = 'unpaid' AND
-  payment_method IS NULL OR payment_method = 'transfer' AND
-  status NOT IN ('cancelled', 'delivered')
+    await sendUserPush(body.user_id, {
+      title: body.title,
+      body: body.body,
+      href: body.href,
+      tag: body.tag ?? `msg-${Date.now()}`,
+    });
 
-Show a payment card below the order summary:
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, message: e?.message }, { status: 500 });
+  }
+}
+```
 
-  <div className="mt-3 rounded-2xl border border-blue-200
-    bg-blue-50 p-4 space-y-3">
+Update the `send()` function in `app/inbox/[conversationId]/page.tsx` to call `/api/internal/push-user` instead of `/api/user/push`.
 
-    <p className="text-sm font-semibold text-blue-900">
-      Transfer payment details
-    </p>
+---
 
-    {vendor.bank_account_number ? (
-      <>
-        <div className="rounded-xl bg-white border p-3
-          space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-500">Bank</span>
-            <span className="text-sm font-semibold
-              text-zinc-900">{vendor.bank_name}</span>
+## TASK 3 — Notify vendor when buyer confirms payment
+
+File: `app/api/orders/[orderId]/buyer-confirm/route.ts`
+
+Read this file fully before editing. After the payment_status is updated to `buyer_confirmed`, add:
+
+1. An in-app notification for the vendor:
+```ts
+// Notify vendor that buyer has confirmed payment
+try {
+  const { data: order } = await admin
+    .from('orders')
+    .select('vendor_id, total, conversation_id')
+    .eq('id', orderId)
+    .single();
+
+  if (order) {
+    const { data: vendor } = await admin
+      .from('vendors')
+      .select('user_id, name')
+      .eq('id', order.vendor_id)
+      .single();
+
+    if (vendor?.user_id) {
+      await admin.from('notifications').insert({
+        user_id: vendor.user_id,
+        type: 'payment_received',
+        title: 'Buyer says payment sent',
+        body: `₦${order.total.toLocaleString()} — check your account and confirm receipt.`,
+        href: order.conversation_id ? `/inbox/${order.conversation_id}` : `/vendor/orders`,
+      });
+
+      void sendVendorPush(order.vendor_id, {
+        title: 'Payment transfer received',
+        body: `Buyer confirmed ₦${order.total.toLocaleString()} sent. Check and confirm.`,
+        href: order.conversation_id ? `/inbox/${order.conversation_id}` : `/vendor/orders`,
+        tag: `payment-${orderId}`,
+      });
+    }
+  }
+} catch (_) {}
+```
+
+Import `sendVendorPush` from `@/lib/webPush` at the top if not already imported.
+
+---
+
+## TASK 4 — Marketplace "Finalize deal" order flow
+
+This is the highest-impact change. It extends the food order's OrderBubble + payment flow to non-food marketplace listing conversations.
+
+### 4a — Create a new API route for marketplace orders
+
+Create file: `app/api/orders/create-marketplace/route.ts`
+
+This route creates a simple marketplace order (not food) with server-side validation:
+```ts
+// app/api/orders/create-marketplace/route.ts
+// Buyer finalizes a marketplace deal: creates a lightweight order record
+// tied to a conversation. No menu validation — price is user-agreed.
+
+import { NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { sendVendorPush } from '@/lib/webPush';
+
+function jsonError(message: string, status: number, code?: string) {
+  return NextResponse.json({ ok: false, code, message }, { status });
+}
+
+export async function POST(req: Request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
+
+    const body = await req.json() as {
+      conversation_id: string;
+      listing_id: string;
+      vendor_id: string;
+      agreed_price: number;
+      payment_method: 'transfer' | 'cash';
+      note?: string;
+    };
+
+    const { conversation_id, listing_id, vendor_id, agreed_price, payment_method, note } = body;
+
+    if (!conversation_id || !listing_id || !vendor_id || !agreed_price) {
+      return jsonError('Missing required fields', 400, 'bad_request');
+    }
+    if (!Number.isFinite(agreed_price) || agreed_price <= 0) {
+      return jsonError('Invalid price', 400, 'invalid_price');
+    }
+
+    const admin = createSupabaseAdminClient();
+
+    // Verify conversation belongs to this buyer
+    const { data: conv } = await admin
+      .from('conversations')
+      .select('buyer_id, vendor_id, order_id')
+      .eq('id', conversation_id)
+      .single();
+
+    if (!conv) return jsonError('Conversation not found', 404, 'not_found');
+    if (conv.buyer_id !== user.id) return jsonError('Forbidden', 403, 'forbidden');
+    if (conv.vendor_id !== vendor_id) return jsonError('Vendor mismatch', 400, 'vendor_mismatch');
+    if (conv.order_id) return jsonError('This conversation already has an order', 400, 'order_exists');
+
+    // Fetch listing title for the order payload
+    const { data: listing } = await admin
+      .from('listings')
+      .select('title, price, category')
+      .eq('id', listing_id)
+      .single();
+
+    if (!listing) return jsonError('Listing not found', 404, 'listing_not_found');
+
+    // Fetch vendor bank details for transfer orders
+    const { data: vendor } = await admin
+      .from('vendors')
+      .select('user_id, name, bank_name, bank_account_number, bank_account_name')
+      .eq('id', vendor_id)
+      .single();
+
+    if (!vendor) return jsonError('Vendor not found', 404, 'vendor_not_found');
+
+    if (payment_method === 'transfer') {
+      const hasBank = !!(vendor.bank_account_number && vendor.bank_account_name && vendor.bank_name);
+      if (!hasBank) {
+        return jsonError(
+          'This seller has not set up bank transfer details yet. Ask them to add their bank details in their profile, or use cash payment.',
+          400,
+          'vendor_no_bank_details'
+        );
+      }
+    }
+
+    // Build a lightweight order payload compatible with OrderBubble
+    const orderPayload = {
+      lines: [{
+        item_id: listing_id,
+        name: listing.title ?? 'Item',
+        emoji: '🏷️',
+        category: listing.category ?? 'Item',
+        qty: 1,
+        unit_name: 'piece',
+        price_per_unit: agreed_price,
+        line_total: agreed_price,
+      }],
+      total: agreed_price,
+      order_type: 'pickup' as const,
+    };
+
+    const textBody = `🏷️ Marketplace order — ${listing.title ?? 'Item'} — ₦${agreed_price.toLocaleString()}`;
+
+    // Insert order message
+    const { data: msg, error: msgErr } = await admin
+      .from('messages')
+      .insert({
+        conversation_id,
+        sender_id: user.id,
+        body: textBody,
+        type: 'order',
+        order_payload: orderPayload,
+      })
+      .select()
+      .single();
+
+    if (msgErr) return jsonError(msgErr.message, 500, 'msg_insert_failed');
+
+    // Insert order record
+    const { data: order, error: orderErr } = await admin
+      .from('orders')
+      .insert({
+        conversation_id,
+        message_id: msg.id,
+        buyer_id: user.id,
+        vendor_id,
+        items: orderPayload,
+        total: agreed_price,
+        note: note ?? null,
+        payment_method,
+        order_type: 'pickup',
+      })
+      .select()
+      .single();
+
+    if (orderErr) return jsonError(orderErr.message, 500, 'order_insert_failed');
+
+    // Link order to conversation + update preview
+    await admin
+      .from('conversations')
+      .update({
+        order_id: order.id,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: textBody,
+      })
+      .eq('id', conversation_id);
+
+    // Notify vendor
+    if (vendor.user_id) {
+      try {
+        await admin.from('notifications').insert({
+          user_id: vendor.user_id,
+          type: 'new_order',
+          title: 'New marketplace order',
+          body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
+          href: `/inbox/${conversation_id}`,
+        });
+        void sendVendorPush(vendor_id, {
+          title: 'New order from buyer',
+          body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
+          href: `/inbox/${conversation_id}`,
+          tag: `order-${order.id}`,
+        });
+      } catch (_) {}
+    }
+
+    return NextResponse.json({ ok: true, message: msg, order });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  }
+}
+```
+
+### 4b — Create the FinalizeDealButton component
+
+Create file: `components/chat/FinalizeDealButton.tsx`
+
+This is a client component that renders inside the conversation view for non-food listings. It opens an inline panel where the buyer enters the agreed price and payment method, then calls `/api/orders/create-marketplace`.
+```tsx
+'use client';
+// components/chat/FinalizeDealButton.tsx
+// Shown inside a marketplace conversation (non-food vendor) after enough
+// messages have been exchanged. Lets the buyer formalize an agreed deal
+// as a structured order without leaving the chat.
+
+import { useState } from 'react';
+import { Loader2, CheckCircle2, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+type Props = {
+  conversationId: string;
+  listingId: string;
+  vendorId: string;
+  listingTitle?: string;
+  listingPrice?: number | null;
+  onOrderCreated: (orderId: string) => void;
+};
+
+function onlyDigits(s: string) {
+  return s.replace(/[^\d]/g, '');
+}
+
+export default function FinalizeDealButton({
+  conversationId,
+  listingId,
+  vendorId,
+  listingTitle,
+  listingPrice,
+  onOrderCreated,
+}: Props) {
+  const [open, setOpen] = useState(false);
+  const [priceDigits, setPriceDigits] = useState(listingPrice ? String(listingPrice) : '');
+  const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'cash'>('transfer');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (done) return null;
+
+  async function handleCreate() {
+    const price = parseInt(priceDigits, 10);
+    if (!priceDigits || !Number.isFinite(price) || price <= 0) {
+      setError('Enter the agreed price');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/orders/create-marketplace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          listing_id: listingId,
+          vendor_id: vendorId,
+          agreed_price: price,
+          payment_method: paymentMethod,
+          note: note.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.message ?? 'Failed to create order');
+      setDone(true);
+      onOrderCreated(json.order.id);
+    } catch (err: any) {
+      setError(err.message ?? 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mx-4 mb-2">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition flex items-center justify-center gap-2"
+        >
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          Finalize deal
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-4 mb-2">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-zinc-900">Finalize this deal</p>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); setError(null); }}
+            className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700"
+            aria-label="Close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {listingTitle && (
+          <p className="text-xs text-zinc-500 truncate">🏷️ {listingTitle}</p>
+        )}
+
+        {/* Agreed price */}
+        <div>
+          <label className="block text-xs font-semibold text-zinc-500 mb-1">Agreed price</label>
+          <div className="flex items-center gap-2 rounded-xl border bg-zinc-50 px-3 py-2.5 focus-within:bg-white focus-within:ring-2 focus-within:ring-zinc-900/10">
+            <span className="text-sm font-semibold text-zinc-400">₦</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder={listingPrice ? listingPrice.toLocaleString('en-NG') : '0'}
+              value={priceDigits ? parseInt(priceDigits, 10).toLocaleString('en-NG') : ''}
+              onChange={(e) => setPriceDigits(onlyDigits(e.target.value))}
+              className="w-full bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:font-normal placeholder:text-zinc-400"
+              autoFocus
+            />
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-500">
-              Account
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold
-                text-zinc-900 font-mono">
-                {vendor.bank_account_number}
-              </span>
-              {/* Copy button */}
+        </div>
+
+        {/* Payment method */}
+        <div>
+          <label className="block text-xs font-semibold text-zinc-500 mb-1">Payment method</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['transfer', 'cash'] as const).map((m) => (
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    vendor.bank_account_number
-                  )
-                  setCopied(order.id)
-                  setTimeout(() => setCopied(null), 2000)
-                }}
-                className="rounded-lg border bg-white px-2
-                  py-1 text-xs font-semibold text-zinc-700"
+                key={m}
+                type="button"
+                onClick={() => setPaymentMethod(m)}
+                className={cn(
+                  'rounded-xl border py-2 text-xs font-semibold transition',
+                  paymentMethod === m
+                    ? 'border-zinc-900 bg-zinc-900 text-white'
+                    : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
+                )}
               >
-                {copied === order.id ? '✓ Copied' : 'Copy'}
+                {m === 'transfer' ? '🏦 Bank transfer' : '💵 Cash on pickup'}
               </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-500">Name</span>
-            <span className="text-sm font-semibold
-              text-zinc-900">{vendor.bank_account_name}</span>
-          </div>
-          <div className="flex items-center justify-between
-            border-t pt-2">
-            <span className="text-xs text-zinc-500">
-              Amount
-            </span>
-            <span className="text-base font-bold
-              text-zinc-900">
-              ₦{order.total.toLocaleString('en-NG')}
-            </span>
+            ))}
           </div>
         </div>
 
-        <p className="text-xs text-blue-700">
-          Transfer exactly ₦{order.total.toLocaleString()}
-          then tap "I've paid" below.
+        {/* Optional note */}
+        <textarea
+          placeholder="Add a note — e.g. pickup location, condition agreed…"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          className="w-full resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-xs text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
+        />
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={loading || !priceDigits}
+          className={cn(
+            'w-full rounded-2xl py-3 text-sm font-semibold text-white transition',
+            loading || !priceDigits
+              ? 'bg-zinc-300 cursor-not-allowed'
+              : 'bg-zinc-900 hover:bg-zinc-700'
+          )}
+        >
+          {loading
+            ? <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+            : <span className="flex items-center justify-center gap-2"><CheckCircle2 className="h-4 w-4" /> Create order</span>
+          }
+        </button>
+
+        <p className="text-[11px] text-zinc-400 text-center">
+          This creates a formal order record. Both parties will be notified.
         </p>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleBuyerConfirm(order.id)}
-            disabled={confirming === order.id}
-            className="flex-1 rounded-xl bg-zinc-900 py-2.5
-              text-sm font-bold text-white disabled:opacity-50"
-          >
-            {confirming === order.id
-              ? 'Confirming…'
-              : "I've paid ✓"}
-          </button>
-          <button
-            onClick={() => handleMarkCash(order.id)}
-            className="rounded-xl border px-3 py-2.5
-              text-xs font-semibold text-zinc-600"
-          >
-            Pay cash
-          </button>
-        </div>
-      </>
-    ) : (
-      <p className="text-sm text-blue-700">
-        This vendor hasn't added their account details yet.
-        Message them to get their account number.
-      </p>
-    )}
-  </div>
-
-Add state: copied (string | null), confirming (string | null)
-
-handleBuyerConfirm(orderId):
-  POST /api/orders/[orderId]/buyer-confirm
-  On success: update local order payment_status
-    to 'buyer_confirmed'
-  Show: "Payment submitted — waiting for vendor to confirm"
-
-handleMarkCash(orderId):
-  PATCH to new endpoint /api/orders/[orderId]/payment-method
-  Body: { payment_method: 'cash' }
-  On success: hide the payment card entirely
-
-For orders where payment_status = 'buyer_confirmed':
-Show a pending state instead of the payment card:
-  <div className="mt-3 rounded-2xl border border-amber-200
-    bg-amber-50 p-3 flex items-center gap-2">
-    <span className="text-amber-600">⏳</span>
-    <p className="text-sm text-amber-800">
-      Payment submitted — waiting for vendor to confirm
-      receipt.
-    </p>
-  </div>
-
-For orders where payment_status = 'vendor_confirmed':
-Show confirmed state:
-  <div className="mt-3 rounded-2xl border border-emerald-200
-    bg-emerald-50 p-3 flex items-center gap-2">
-    <span>✅</span>
-    <p className="text-sm text-emerald-800 font-semibold">
-      Payment confirmed by vendor
-    </p>
-  </div>
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 3 — API: Buyer confirms payment
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Create: app/api/orders/[orderId]/buyer-confirm/route.ts
-
-POST handler:
-- Require auth. Verify caller is order.buyer_id.
-- Fetch order. Validate:
-  - payment_status = 'unpaid'
-  - status NOT IN ('cancelled', 'delivered')
-- UPDATE orders SET
-    payment_status = 'buyer_confirmed',
-    payment_method = 'transfer',
-    paid_at = now()
-  WHERE id = orderId
-- Notify vendor:
-    INSERT into notifications:
-    {
-      user_id: vendor.user_id,
-      type: 'payment_submitted',
-      title: '💸 Payment submitted',
-      body: 'A buyer says they've transferred payment.
-             Check your account and confirm.',
-      href: '/vendor/orders',
-    }
-- Post a message in the conversation (if conversation_id exists):
-    INSERT into messages:
-    {
-      conversation_id: order.conversation_id,
-      sender_id: caller_user_id,
-      body: '💸 I have transferred ₦{order.total}. Please
-             confirm once you receive it.',
-      type: 'text',
-    }
-    Update conversation last_message_preview accordingly.
-- Return { ok: true }
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 4 — API: Set payment method to cash
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Create: app/api/orders/[orderId]/payment-method/route.ts
-
-PATCH handler:
-- Require auth. Verify caller is order.buyer_id.
-- Body: { payment_method: 'cash' }
-- Validate payment_method is 'cash' only (transfer is
-  set via buyer-confirm, not here)
-- UPDATE orders SET payment_method = 'cash'
-  WHERE id = orderId
-- Notify vendor:
-    {
-      type: 'payment_cash',
-      title: 'Cash payment',
-      body: 'Buyer will pay cash on pickup/delivery.',
-      href: '/vendor/orders',
-    }
-- Post message in conversation:
-    '🤝 I'll pay cash on pickup.'
-- Return { ok: true }
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 5 — Vendor confirms payment received
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/vendor/orders/page.tsx (read first)
-
-For orders where payment_status = 'buyer_confirmed':
-Show a prominent "Confirm payment received" action
-on the order card — amber/warning color to draw
-attention:
-
-  <div className="mt-3 rounded-2xl border border-amber-300
-    bg-amber-50 p-3 space-y-2">
-    <p className="text-sm font-semibold text-amber-900">
-      Buyer says they've paid
-    </p>
-    <p className="text-xs text-amber-700">
-      Check your {vendor.bank_name} account for
-      ₦{order.total.toLocaleString()} then confirm below.
-    </p>
-    <button
-      onClick={() => handleVendorConfirm(order.id)}
-      disabled={confirming === order.id}
-      className="w-full rounded-xl bg-emerald-600 py-2.5
-        text-sm font-bold text-white disabled:opacity-50"
-    >
-      {confirming === order.id
-        ? 'Confirming…'
-        : '✓ Payment received — start preparing'}
-    </button>
-  </div>
-
-handleVendorConfirm(orderId):
-  POST /api/orders/[orderId]/vendor-confirm-payment
-  On success: update local order:
-    payment_status → 'vendor_confirmed'
-    status → 'preparing'
-
-Create: app/api/orders/[orderId]/vendor-confirm-payment/route.ts
-
-POST handler:
-- Require auth. Verify caller is the vendor
-  (vendors.user_id = caller, vendors.id = order.vendor_id)
-- Fetch order. Validate payment_status = 'buyer_confirmed'
-- UPDATE orders SET
-    payment_status = 'vendor_confirmed',
-    status = 'preparing'
-  WHERE id = orderId
-- Notify buyer:
-    {
-      type: 'payment_confirmed',
-      title: '✅ Payment confirmed!',
-      body: 'Vendor confirmed your transfer.
-             Your order is now being prepared.',
-      href: '/my-orders',
-    }
-- Post message in conversation:
-    '✅ Payment received! Your order is being prepared.'
-- Return { ok: true }
-
-Also handle the dispute case — add a "Payment not
-received" button next to the confirm button:
-
-Create: app/api/orders/[orderId]/payment-dispute/route.ts
-
-POST handler (vendor only):
-- UPDATE orders SET payment_status = 'unpaid'
-  (resets to unpaid — buyer sees the payment card again)
-- Notify buyer:
-    {
-      type: 'payment_dispute',
-      title: 'Payment not confirmed',
-      body: 'Vendor could not confirm your transfer.
-             Please check and resend, or contact them
-             in chat.',
-      href: '/my-orders',
-    }
-- Post message in conversation:
-    '⚠️ I could not confirm your transfer. Please
-     check and resend, or message me if you need help.'
-- Return { ok: true }
-
-Show "Payment not received" as a small secondary text
-button below the confirm button on vendor orders page.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 6 — Update OrderBubble to show payment status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: components/chat/OrderBubble.tsx
-
-Add payment_status to Props:
-  payment_status?: string
-
-In the footer section of the bubble (below total),
-add a payment status line:
-
-  {payment_status && payment_status !== 'unpaid' && (
-    <div className="flex items-center justify-between
-      border-t border-zinc-100 px-4 py-2">
-      <span className="text-xs text-zinc-500">Payment</span>
-      <span className={cn(
-        'text-xs font-semibold',
-        payment_status === 'vendor_confirmed'
-          ? 'text-emerald-600'
-          : payment_status === 'buyer_confirmed'
-          ? 'text-amber-600'
-          : 'text-zinc-500'
-      )}>
-        {payment_status === 'vendor_confirmed'
-          ? '✅ Confirmed'
-          : payment_status === 'buyer_confirmed'
-          ? '⏳ Awaiting vendor confirmation'
-          : payment_status}
-      </span>
+      </div>
     </div>
-  )}
+  );
+}
+```
 
-In the conversation page
-(app/inbox/[conversationId]/page.tsx — read first),
-pass payment_status to OrderBubble from the order
-data already fetched via orderStatus state.
-You'll need to also fetch payment_status alongside
-the existing status query.
+### 4c — Wire FinalizeDealButton into the conversation view
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK 7 — Realtime payment status updates
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/my-orders/page.tsx
+File: `app/inbox/[conversationId]/page.tsx`
 
-The existing Realtime subscription on orders already
-handles status updates. Extend it to also handle
-payment_status changes:
+1. Add import at the top:
+```ts
+import FinalizeDealButton from '@/components/chat/FinalizeDealButton';
+```
 
-In the Realtime UPDATE handler, when payload.new
-includes payment_status, update the local order:
+2. Add state for whether to show the button:
+```ts
+const [hasMarketplaceOrder, setHasMarketplaceOrder] = useState(false);
+```
 
-  setOrders(prev => prev.map(o =>
-    o.id === payload.new.id
-      ? {
-          ...o,
-          status: payload.new.status ?? o.status,
-          payment_status:
-            payload.new.payment_status ?? o.payment_status,
-        }
-      : o
-  ))
+3. In the initial load `useEffect`, after loading messages, detect if the conversation already has an order tied to it:
+```ts
+// Hide FinalizeDealButton if conversation already has an order
+if (conv.order_id) setHasMarketplaceOrder(true);
+```
 
-This means when vendor confirms payment, the buyer's
-screen updates instantly without a reload.
+4. Determine whether to show the button. Add this derived value after the `canShowMealButton` declaration:
+```ts
+// Show Finalize Deal for non-food vendors with no order yet, after 2+ messages
+const isNonFoodVendor = vendor?.vendor_type !== 'food';
+const canShowFinalizeDeal =
+  !isVendorSide &&
+  isNonFoodVendor &&
+  !hasMarketplaceOrder &&
+  messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
+```
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RULES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Present migration first. Wait for confirmation.
-- Implement tasks in order 1→7
-- Read every file fully before editing
-- No `any` types on new code
-- All new API routes: { ok: true } or
-  { ok: false, message, code }
-- All notifications wrapped in try/catch —
-  never block the main action
-- All conversation message inserts wrapped in try/catch
-- After all tasks: list every file created or changed,
-  confirm each task number done
+5. Render the button just above the input bar (before `{/* Input bar */}`):
+```tsx
+{canShowFinalizeDeal && meta && (
+  <FinalizeDealButton
+    conversationId={conversationId}
+    listingId={meta.listing_id ?? ''}
+    vendorId={meta.vendor_id}
+    listingTitle={listing?.title ?? undefined}
+    listingPrice={null}
+    onOrderCreated={() => setHasMarketplaceOrder(true)}
+  />
+)}
+```
+
+6. When the listing price is available in meta, pass it. The listing price is not currently in the conversation meta — the listing join only selects `id, title, image_url, status`. Update the listing select in the conversations query inside the initial load to also fetch `price` and `price_label`:
+```ts
+listing:listings(id, title, image_url, status, price, price_label)
+```
+Update `ConversationMeta.listing` type to include `price: number | null; price_label: string | null`.
+Pass `listingPrice={listing?.price ?? null}` to FinalizeDealButton.
+
+### 4d — Update OrderBubble header label for non-food orders
+
+File: `components/chat/OrderBubble.tsx`
+
+Add a `orderLabel` prop to OrderBubble:
+```ts
+orderLabel?: string;
+```
+
+Change the hardcoded header from:
+```tsx
+<span className="text-xs font-semibold text-white">🛒 Meal Order</span>
+```
+To:
+```tsx
+<span className="text-xs font-semibold text-white">{props.orderLabel ?? '🛒 Meal Order'}</span>
+```
+
+In `app/inbox/[conversationId]/page.tsx`, detect order type when passing to OrderBubble. If `vendor?.vendor_type !== 'food'`, pass `orderLabel="🏷️ Marketplace Order"` to the OrderBubble component.
+
+---
+
+## VERIFICATION CHECKLIST
+
+After implementing all tasks, confirm:
+
+- [ ] `app/api/chat/send/route.ts` — writes `order_id` to conversations after food order creation
+- [ ] `app/api/internal/push-user/route.ts` — new file exists, secured with conversation participant check
+- [ ] `app/inbox/[conversationId]/page.tsx` — `send()` calls `/api/internal/push-user` after the notifications insert
+- [ ] `app/api/orders/[orderId]/buyer-confirm/route.ts` — notifies vendor in-app + push when buyer confirms payment
+- [ ] `app/api/orders/create-marketplace/route.ts` — new file exists, creates order + links to conversation + notifies vendor
+- [ ] `components/chat/FinalizeDealButton.tsx` — new file exists
+- [ ] `app/inbox/[conversationId]/page.tsx` — imports and renders FinalizeDealButton for non-food conversations with 2+ messages
+- [ ] `components/chat/OrderBubble.tsx` — accepts `orderLabel` prop, defaults to "🛒 Meal Order"
+- [ ] No TypeScript errors in any modified or created file
+- [ ] Existing food order flow is completely untouched — MealBuilder, OrderBubble, payment panel all still work as before

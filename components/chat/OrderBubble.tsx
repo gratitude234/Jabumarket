@@ -41,6 +41,7 @@ type Props = {
   // Vendor-side actions
   onVendorConfirmPayment?: () => Promise<void>;
   onPaymentDispute?:       () => void;
+  orderLabel?: string;
 };
 
 function fmt(n: number) { return `₦${n.toLocaleString()}`; }
@@ -400,6 +401,7 @@ export default function OrderBubble({
   onBuyerConfirm,
   onVendorConfirmPayment,
   onPaymentDispute,
+  orderLabel,
 }: Props) {
   const st = status && STATUS_STYLES[status] ? STATUS_STYLES[status] : STATUS_STYLES.pending;
 
@@ -411,7 +413,7 @@ export default function OrderBubble({
       )}>
         {/* Header */}
         <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5">
-          <span className="text-xs font-semibold text-white">🛒 Meal Order</span>
+          <span className="text-xs font-semibold text-white">{orderLabel ?? '🛒 Meal Order'}</span>
           <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', st.className)}>
             {st.label}
           </span>
