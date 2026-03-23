@@ -22,7 +22,6 @@ async function getVendor() {
     .from('vendors')
     .select('id, user_id, name, description, location, whatsapp, phone, opens_at, closes_at, accepts_orders, accepts_delivery, delivery_fee, verification_status, vendor_type, avatar_url, day_schedule, bank_name, bank_account_number, bank_account_name, payment_note')
     .eq('user_id', user.id)
-    .eq('vendor_type', 'food')
     .maybeSingle();
 
   return { user, vendor };
@@ -32,7 +31,7 @@ export async function GET() {
   try {
     const { user, vendor } = await getVendor();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
-    if (!vendor) return jsonError('Not a food vendor', 403, 'not_vendor');
+    if (!vendor) return jsonError('Not a vendor', 403, 'not_vendor');
 
     return NextResponse.json({ ok: true, vendor });
   } catch (e: any) {
@@ -44,7 +43,7 @@ export async function PATCH(req: Request) {
   try {
     const { user, vendor } = await getVendor();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
-    if (!vendor) return jsonError('Not a food vendor', 403, 'not_vendor');
+    if (!vendor) return jsonError('Not a vendor', 403, 'not_vendor');
 
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return jsonError('No body', 400, 'bad_request');

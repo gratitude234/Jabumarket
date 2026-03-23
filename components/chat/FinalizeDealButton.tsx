@@ -67,7 +67,11 @@ export default function FinalizeDealButton({
       setDone(true);
       onOrderCreated(json.order.id);
     } catch (err: any) {
-      setError(err.message ?? 'Something went wrong');
+      if (err.message?.includes('bank transfer details')) {
+        setError("This seller hasn't added their bank account yet. Ask them to add it in their vendor profile, or choose cash payment instead.");
+      } else {
+        setError(err.message ?? 'Something went wrong');
+      }
     } finally {
       setLoading(false);
     }
@@ -145,6 +149,12 @@ export default function FinalizeDealButton({
             ))}
           </div>
         </div>
+
+        {paymentMethod === 'transfer' && (
+          <p className="text-[11px] text-zinc-400">
+            You'll see their bank details after creating the order.
+          </p>
+        )}
 
         {/* Optional note */}
         <textarea

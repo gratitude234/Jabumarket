@@ -1,617 +1,319 @@
-Implement the following fixes to the Jabumarket messaging system. Work through each task in order. Audit the existing code in each file before making any changes.
+## PHASE 1 — READ THESE FILES FIRST (do not write any code yet)
+
+Read every file listed below fully before touching anything. After reading, write one line per file summarising what it currently does and flag anything relevant to payment handling.
+
+- `app/vendor/page.tsx` — focus on: where BankDetailsCard is rendered, what vendor_type check gates it, what the vendor select query fetches
+- `app/vendor/setup/page.tsx` — full file: what fields it manages, what it saves
+- `app/api/vendor/setup/route.ts` — full file: note the `.eq('vendor_type', 'food')` guard
+- `app/api/vendor/bank-details/route.ts` — full file
+- `app/api/orders/[orderId]/status/route.ts` — focus on: VALID_TRANSITIONS, the payment guard block, the `preparing` status messages, the `building StatusMessage` function
+- `app/api/orders/[orderId]/vendor-confirm-payment/route.ts` — full file: note where it hardcodes `status: 'preparing'`
+- `app/api/orders/create-marketplace/route.ts` — full file (created in previous task)
+- `components/chat/FinalizeDealButton.tsx` — full file (created in previous task)
+- `components/chat/OrderBubble.tsx` — focus on: the hardcoded "Meal Order" header, BuyerPaymentPanel, VendorPaymentPanel
+- `app/my-orders/page.tsx` — focus on: the payment panel section, the bank details display, the "Pay cash" button logic
+- `lib/types.ts` — focus on: VendorRow type definition
+
+Only proceed to Phase 2 after reading all files above.
 
 ---
 
-## TASK 1 — Write order_id back to conversations when an order is created
+## PHASE 2 — IMPLEMENT
 
-File: `app/api/chat/send/route.ts`
-
-After the order is successfully inserted (after the `if (orderErr)` block), update the conversation's `order_id` field:
-```ts
-if (order?.id) {
-  await admin
-    .from('conversations')
-    .update({ order_id: order.id })
-    .eq('id', body.conversation_id);
-}
-```
-
-Place this immediately after the `// 3. Update conversation preview` block so order_id is always set when a food order is created through chat.
+Work through each task in order. Do not skip ahead.
 
 ---
 
-## TASK 2 — Send push notification to buyer when vendor replies
+### TASK 1 — Remove the food-only guard from `/api/vendor/setup`
 
-File: `app/inbox/[conversationId]/page.tsx`
+File: `app/api/vendor/setup/route.ts`
 
-The `send()` function already inserts an in-app notification for the other party. It does NOT call any push API. After the `notifications.insert` block inside `send()`, add a fire-and-forget push call:
-```ts
-// Fire push to other party (vendor→buyer or buyer→vendor)
-void fetch('/api/user/push', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    user_id: otherUserId,
-    title: 'New message',
-    body: text.length > 80 ? text.slice(0, 80) + '…' : text,
-    href: `/inbox/${conversationId}`,
-    tag: `msg-${conversationId}`,
-  }),
-}).catch(() => {});
-```
+The `getVendor()` helper has `.eq('vendor_type', 'food')` — this means non-food vendors who call this endpoint get a 403 "Not a food vendor" error. They can never save bank details through this route.
 
-Then check what `app/api/user/push/route.ts` currently does. If it only subscribes/unsubscribes and does not support sending a push to a user_id, create a new route `app/api/internal/push-user/route.ts`:
-```ts
-// app/api/internal/push-user/route.ts
-// Internal-only: send a push notification to a user by user_id
-// Called server-to-server or from client send() in conversation view
+Remove the `.eq('vendor_type', 'food')` line from the `getVendor()` query so it fetches any vendor belonging to the authenticated user regardless of type.
 
-import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { sendUserPush } from '@/lib/webPush';
-
-export async function POST(req: Request) {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ ok: false }, { status: 401 });
-
-    const body = await req.json() as {
-      user_id: string;
-      title: string;
-      body: string;
-      href: string;
-      tag?: string;
-    };
-
-    if (!body.user_id || !body.title) {
-      return NextResponse.json({ ok: false, message: 'Missing fields' }, { status: 400 });
-    }
-
-    // Security: caller must be a participant in the conversation referenced by href
-    // (href format: /inbox/[conversationId])
-    const conversationId = body.href?.split('/inbox/')?.[1]?.split('?')?.[0];
-    if (conversationId) {
-      const { data: conv } = await supabase
-        .from('conversations')
-        .select('buyer_id, vendor_id')
-        .eq('id', conversationId)
-        .maybeSingle();
-
-      if (!conv) return NextResponse.json({ ok: false }, { status: 403 });
-
-      // Get caller's vendor_id if any
-      const { data: vendor } = await supabase
-        .from('vendors')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      const callerVendorId = vendor?.id ?? null;
-
-      const isBuyer = conv.buyer_id === user.id;
-      const isVendor = callerVendorId && conv.vendor_id === callerVendorId;
-      if (!isBuyer && !isVendor) return NextResponse.json({ ok: false }, { status: 403 });
-    }
-
-    await sendUserPush(body.user_id, {
-      title: body.title,
-      body: body.body,
-      href: body.href,
-      tag: body.tag ?? `msg-${Date.now()}`,
-    });
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message }, { status: 500 });
-  }
-}
-```
-
-Update the `send()` function in `app/inbox/[conversationId]/page.tsx` to call `/api/internal/push-user` instead of `/api/user/push`.
+Keep everything else in the file identical.
 
 ---
 
-## TASK 3 — Notify vendor when buyer confirms payment
+### TASK 2 — Add bank details + payment_note to the non-food vendor settings page
 
-File: `app/api/orders/[orderId]/buyer-confirm/route.ts`
+File: `app/vendor/setup/page.tsx`
 
-Read this file fully before editing. After the payment_status is updated to `buyer_confirmed`, add:
+This page currently handles food vendor settings (hours, delivery, menu). Non-food vendors also land here from `/vendor/setup`. They need to be able to set their bank details and an optional payment note so buyers can pay them.
 
-1. An in-app notification for the vendor:
+1. Read the current state fields at the top of the component. Add these new state variables:
 ```ts
-// Notify vendor that buyer has confirmed payment
-try {
-  const { data: order } = await admin
-    .from('orders')
-    .select('vendor_id, total, conversation_id')
-    .eq('id', orderId)
-    .single();
-
-  if (order) {
-    const { data: vendor } = await admin
-      .from('vendors')
-      .select('user_id, name')
-      .eq('id', order.vendor_id)
-      .single();
-
-    if (vendor?.user_id) {
-      await admin.from('notifications').insert({
-        user_id: vendor.user_id,
-        type: 'payment_received',
-        title: 'Buyer says payment sent',
-        body: `₦${order.total.toLocaleString()} — check your account and confirm receipt.`,
-        href: order.conversation_id ? `/inbox/${order.conversation_id}` : `/vendor/orders`,
-      });
-
-      void sendVendorPush(order.vendor_id, {
-        title: 'Payment transfer received',
-        body: `Buyer confirmed ₦${order.total.toLocaleString()} sent. Check and confirm.`,
-        href: order.conversation_id ? `/inbox/${order.conversation_id}` : `/vendor/orders`,
-        tag: `payment-${orderId}`,
-      });
-    }
-  }
-} catch (_) {}
+const [bankName, setBankName]       = useState('');
+const [accountNumber, setAccountNumber] = useState('');
+const [accountName, setAccountName] = useState('');
+const [paymentNote, setPaymentNote] = useState('');
 ```
 
-Import `sendVendorPush` from `@/lib/webPush` at the top if not already imported.
-
----
-
-## TASK 4 — Marketplace "Finalize deal" order flow
-
-This is the highest-impact change. It extends the food order's OrderBubble + payment flow to non-food marketplace listing conversations.
-
-### 4a — Create a new API route for marketplace orders
-
-Create file: `app/api/orders/create-marketplace/route.ts`
-
-This route creates a simple marketplace order (not food) with server-side validation:
+2. In the `useEffect` that loads the vendor data, after setting existing fields, also populate the bank state:
 ```ts
-// app/api/orders/create-marketplace/route.ts
-// Buyer finalizes a marketplace deal: creates a lightweight order record
-// tied to a conversation. No menu validation — price is user-agreed.
-
-import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { createSupabaseAdminClient } from '@/lib/supabase/admin';
-import { sendVendorPush } from '@/lib/webPush';
-
-function jsonError(message: string, status: number, code?: string) {
-  return NextResponse.json({ ok: false, code, message }, { status });
-}
-
-export async function POST(req: Request) {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
-
-    const body = await req.json() as {
-      conversation_id: string;
-      listing_id: string;
-      vendor_id: string;
-      agreed_price: number;
-      payment_method: 'transfer' | 'cash';
-      note?: string;
-    };
-
-    const { conversation_id, listing_id, vendor_id, agreed_price, payment_method, note } = body;
-
-    if (!conversation_id || !listing_id || !vendor_id || !agreed_price) {
-      return jsonError('Missing required fields', 400, 'bad_request');
-    }
-    if (!Number.isFinite(agreed_price) || agreed_price <= 0) {
-      return jsonError('Invalid price', 400, 'invalid_price');
-    }
-
-    const admin = createSupabaseAdminClient();
-
-    // Verify conversation belongs to this buyer
-    const { data: conv } = await admin
-      .from('conversations')
-      .select('buyer_id, vendor_id, order_id')
-      .eq('id', conversation_id)
-      .single();
-
-    if (!conv) return jsonError('Conversation not found', 404, 'not_found');
-    if (conv.buyer_id !== user.id) return jsonError('Forbidden', 403, 'forbidden');
-    if (conv.vendor_id !== vendor_id) return jsonError('Vendor mismatch', 400, 'vendor_mismatch');
-    if (conv.order_id) return jsonError('This conversation already has an order', 400, 'order_exists');
-
-    // Fetch listing title for the order payload
-    const { data: listing } = await admin
-      .from('listings')
-      .select('title, price, category')
-      .eq('id', listing_id)
-      .single();
-
-    if (!listing) return jsonError('Listing not found', 404, 'listing_not_found');
-
-    // Fetch vendor bank details for transfer orders
-    const { data: vendor } = await admin
-      .from('vendors')
-      .select('user_id, name, bank_name, bank_account_number, bank_account_name')
-      .eq('id', vendor_id)
-      .single();
-
-    if (!vendor) return jsonError('Vendor not found', 404, 'vendor_not_found');
-
-    if (payment_method === 'transfer') {
-      const hasBank = !!(vendor.bank_account_number && vendor.bank_account_name && vendor.bank_name);
-      if (!hasBank) {
-        return jsonError(
-          'This seller has not set up bank transfer details yet. Ask them to add their bank details in their profile, or use cash payment.',
-          400,
-          'vendor_no_bank_details'
-        );
-      }
-    }
-
-    // Build a lightweight order payload compatible with OrderBubble
-    const orderPayload = {
-      lines: [{
-        item_id: listing_id,
-        name: listing.title ?? 'Item',
-        emoji: '🏷️',
-        category: listing.category ?? 'Item',
-        qty: 1,
-        unit_name: 'piece',
-        price_per_unit: agreed_price,
-        line_total: agreed_price,
-      }],
-      total: agreed_price,
-      order_type: 'pickup' as const,
-    };
-
-    const textBody = `🏷️ Marketplace order — ${listing.title ?? 'Item'} — ₦${agreed_price.toLocaleString()}`;
-
-    // Insert order message
-    const { data: msg, error: msgErr } = await admin
-      .from('messages')
-      .insert({
-        conversation_id,
-        sender_id: user.id,
-        body: textBody,
-        type: 'order',
-        order_payload: orderPayload,
-      })
-      .select()
-      .single();
-
-    if (msgErr) return jsonError(msgErr.message, 500, 'msg_insert_failed');
-
-    // Insert order record
-    const { data: order, error: orderErr } = await admin
-      .from('orders')
-      .insert({
-        conversation_id,
-        message_id: msg.id,
-        buyer_id: user.id,
-        vendor_id,
-        items: orderPayload,
-        total: agreed_price,
-        note: note ?? null,
-        payment_method,
-        order_type: 'pickup',
-      })
-      .select()
-      .single();
-
-    if (orderErr) return jsonError(orderErr.message, 500, 'order_insert_failed');
-
-    // Link order to conversation + update preview
-    await admin
-      .from('conversations')
-      .update({
-        order_id: order.id,
-        last_message_at: new Date().toISOString(),
-        last_message_preview: textBody,
-      })
-      .eq('id', conversation_id);
-
-    // Notify vendor
-    if (vendor.user_id) {
-      try {
-        await admin.from('notifications').insert({
-          user_id: vendor.user_id,
-          type: 'new_order',
-          title: 'New marketplace order',
-          body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
-          href: `/inbox/${conversation_id}`,
-        });
-        void sendVendorPush(vendor_id, {
-          title: 'New order from buyer',
-          body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
-          href: `/inbox/${conversation_id}`,
-          tag: `order-${order.id}`,
-        });
-      } catch (_) {}
-    }
-
-    return NextResponse.json({ ok: true, message: msg, order });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
-  }
-}
+setBankName((v as any).bank_name ?? '');
+setAccountNumber((v as any).bank_account_number ?? '');
+setAccountName((v as any).bank_account_name ?? '');
+setPaymentNote((v as any).payment_note ?? '');
 ```
 
-### 4b — Create the FinalizeDealButton component
+3. In the save handler (the function that calls `PATCH /api/vendor/setup`), include these fields in the patch body:
+```ts
+bank_name: bankName.trim() || null,
+bank_account_number: accountNumber.trim() || null,
+bank_account_name: accountName.trim() || null,
+payment_note: paymentNote.trim() || null,
+```
 
-Create file: `components/chat/FinalizeDealButton.tsx`
+4. Add a "Payment details" section to the form JSX. Place it after the existing profile fields (name, description, location) and before any food-specific sections. Gate the food-specific sections (hours, delivery fee, accepts_delivery) behind `{vendor?.vendor_type === 'food' && (...)}` so they only show for food vendors.
 
-This is a client component that renders inside the conversation view for non-food listings. It opens an inline panel where the buyer enters the agreed price and payment method, then calls `/api/orders/create-marketplace`.
+The payment section JSX:
 ```tsx
-'use client';
-// components/chat/FinalizeDealButton.tsx
-// Shown inside a marketplace conversation (non-food vendor) after enough
-// messages have been exchanged. Lets the buyer formalize an agreed deal
-// as a structured order without leaving the chat.
+{/* ── Payment details ─────────────────────────────────────────────── */}
+<div className="space-y-3">
+  <div>
+    <p className="text-sm font-semibold text-zinc-900">Payment details</p>
+    <p className="text-xs text-zinc-500 mt-0.5">
+      Buyers will see these details when finalizing a deal with you.
+    </p>
+  </div>
 
-import { useState } from 'react';
-import { Loader2, CheckCircle2, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-type Props = {
-  conversationId: string;
-  listingId: string;
-  vendorId: string;
-  listingTitle?: string;
-  listingPrice?: number | null;
-  onOrderCreated: (orderId: string) => void;
-};
-
-function onlyDigits(s: string) {
-  return s.replace(/[^\d]/g, '');
-}
-
-export default function FinalizeDealButton({
-  conversationId,
-  listingId,
-  vendorId,
-  listingTitle,
-  listingPrice,
-  onOrderCreated,
-}: Props) {
-  const [open, setOpen] = useState(false);
-  const [priceDigits, setPriceDigits] = useState(listingPrice ? String(listingPrice) : '');
-  const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'cash'>('transfer');
-  const [note, setNote] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  if (done) return null;
-
-  async function handleCreate() {
-    const price = parseInt(priceDigits, 10);
-    if (!priceDigits || !Number.isFinite(price) || price <= 0) {
-      setError('Enter the agreed price');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/orders/create-marketplace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          listing_id: listingId,
-          vendor_id: vendorId,
-          agreed_price: price,
-          payment_method: paymentMethod,
-          note: note.trim() || undefined,
-        }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.message ?? 'Failed to create order');
-      setDone(true);
-      onOrderCreated(json.order.id);
-    } catch (err: any) {
-      setError(err.message ?? 'Something went wrong');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <div className="mx-4 mb-2">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 transition flex items-center justify-center gap-2"
-        >
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          Finalize deal
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-4 mb-2">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-zinc-900">Finalize this deal</p>
-          <button
-            type="button"
-            onClick={() => { setOpen(false); setError(null); }}
-            className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700"
-            aria-label="Close"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        {listingTitle && (
-          <p className="text-xs text-zinc-500 truncate">🏷️ {listingTitle}</p>
-        )}
-
-        {/* Agreed price */}
-        <div>
-          <label className="block text-xs font-semibold text-zinc-500 mb-1">Agreed price</label>
-          <div className="flex items-center gap-2 rounded-xl border bg-zinc-50 px-3 py-2.5 focus-within:bg-white focus-within:ring-2 focus-within:ring-zinc-900/10">
-            <span className="text-sm font-semibold text-zinc-400">₦</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder={listingPrice ? listingPrice.toLocaleString('en-NG') : '0'}
-              value={priceDigits ? parseInt(priceDigits, 10).toLocaleString('en-NG') : ''}
-              onChange={(e) => setPriceDigits(onlyDigits(e.target.value))}
-              className="w-full bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:font-normal placeholder:text-zinc-400"
-              autoFocus
-            />
-          </div>
-        </div>
-
-        {/* Payment method */}
-        <div>
-          <label className="block text-xs font-semibold text-zinc-500 mb-1">Payment method</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['transfer', 'cash'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setPaymentMethod(m)}
-                className={cn(
-                  'rounded-xl border py-2 text-xs font-semibold transition',
-                  paymentMethod === m
-                    ? 'border-zinc-900 bg-zinc-900 text-white'
-                    : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
-                )}
-              >
-                {m === 'transfer' ? '🏦 Bank transfer' : '💵 Cash on pickup'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Optional note */}
-        <textarea
-          placeholder="Add a note — e.g. pickup location, condition agreed…"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={2}
-          className="w-full resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-xs text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
-        />
-
-        {error && <p className="text-xs text-red-500">{error}</p>}
-
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={loading || !priceDigits}
-          className={cn(
-            'w-full rounded-2xl py-3 text-sm font-semibold text-white transition',
-            loading || !priceDigits
-              ? 'bg-zinc-300 cursor-not-allowed'
-              : 'bg-zinc-900 hover:bg-zinc-700'
-          )}
-        >
-          {loading
-            ? <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-            : <span className="flex items-center justify-center gap-2"><CheckCircle2 className="h-4 w-4" /> Create order</span>
-          }
-        </button>
-
-        <p className="text-[11px] text-zinc-400 text-center">
-          This creates a formal order record. Both parties will be notified.
-        </p>
-      </div>
-    </div>
-  );
-}
-```
-
-### 4c — Wire FinalizeDealButton into the conversation view
-
-File: `app/inbox/[conversationId]/page.tsx`
-
-1. Add import at the top:
-```ts
-import FinalizeDealButton from '@/components/chat/FinalizeDealButton';
-```
-
-2. Add state for whether to show the button:
-```ts
-const [hasMarketplaceOrder, setHasMarketplaceOrder] = useState(false);
-```
-
-3. In the initial load `useEffect`, after loading messages, detect if the conversation already has an order tied to it:
-```ts
-// Hide FinalizeDealButton if conversation already has an order
-if (conv.order_id) setHasMarketplaceOrder(true);
-```
-
-4. Determine whether to show the button. Add this derived value after the `canShowMealButton` declaration:
-```ts
-// Show Finalize Deal for non-food vendors with no order yet, after 2+ messages
-const isNonFoodVendor = vendor?.vendor_type !== 'food';
-const canShowFinalizeDeal =
-  !isVendorSide &&
-  isNonFoodVendor &&
-  !hasMarketplaceOrder &&
-  messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
-```
-
-5. Render the button just above the input bar (before `{/* Input bar */}`):
-```tsx
-{canShowFinalizeDeal && meta && (
-  <FinalizeDealButton
-    conversationId={conversationId}
-    listingId={meta.listing_id ?? ''}
-    vendorId={meta.vendor_id}
-    listingTitle={listing?.title ?? undefined}
-    listingPrice={null}
-    onOrderCreated={() => setHasMarketplaceOrder(true)}
+  <input
+    type="text"
+    placeholder="Bank name (e.g. GTBank, Opay, Palmpay)"
+    value={bankName}
+    onChange={(e) => setBankName(e.target.value)}
+    className="w-full rounded-2xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
   />
+  <input
+    type="text"
+    inputMode="numeric"
+    placeholder="Account number (10 digits)"
+    value={accountNumber}
+    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+    className="w-full rounded-2xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
+  />
+  <input
+    type="text"
+    placeholder="Account name (as it appears on your bank)"
+    value={accountName}
+    onChange={(e) => setAccountName(e.target.value)}
+    className="w-full rounded-2xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
+  />
+  <input
+    type="text"
+    placeholder="Payment note (optional) — e.g. 'Send exact amount, add your name as ref'"
+    value={paymentNote}
+    maxLength={120}
+    onChange={(e) => setPaymentNote(e.target.value)}
+    className="w-full rounded-2xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
+  />
+</div>
+```
+
+---
+
+### TASK 3 — Show bank details setup prompt on the non-food vendor dashboard
+
+File: `app/vendor/page.tsx`
+
+Currently `BankDetailsCard` is rendered inside the food vendor dashboard view. Non-food vendors (student, mall, other) also have a vendor dashboard but their bank details are never surfaced.
+
+1. Check the vendor select query — ensure it includes `bank_name, bank_account_number, bank_account_name, payment_note`. It currently does. Good.
+
+2. The `BankDetailsCard` component is already in this file. Find where it renders (around line 1034) and check whether it is inside a food-vendor-only block. If it is, move it outside so it renders for all vendor types.
+
+3. Add a warning banner above the bank details card that only shows when all three bank fields are null/empty:
+```tsx
+{!(vendor as any).bank_account_number && (
+  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+    <p className="font-semibold text-amber-900">⚠️ Bank details missing</p>
+    <p className="mt-0.5 text-xs text-amber-700">
+      Buyers cannot finalize deals with you until you add your bank account. Add it below.
+    </p>
+  </div>
 )}
 ```
 
-6. When the listing price is available in meta, pass it. The listing price is not currently in the conversation meta — the listing join only selects `id, title, image_url, status`. Update the listing select in the conversations query inside the initial load to also fetch `price` and `price_label`:
+Place this banner immediately above the `<BankDetailsCard ... />` render.
+
+---
+
+### TASK 4 — Fix `vendor-confirm-payment` hardcoded `preparing` status for non-food orders
+
+File: `app/api/orders/[orderId]/vendor-confirm-payment/route.ts`
+
+Currently when a vendor confirms payment, the route always sets `status: 'preparing'`. For food orders this is correct — the kitchen starts cooking. For marketplace orders (student/mall/other vendor selling a product), `preparing` makes no sense — the item already exists, payment was the last step before handover. The correct next status is `ready`.
+
+1. In the route, after fetching the order, also fetch the vendor type:
 ```ts
-listing:listings(id, title, image_url, status, price, price_label)
+const { data: vendorData } = await admin
+  .from('vendors')
+  .select('id, user_id, vendor_type')
+  .eq('id', order.vendor_id)
+  .single()
 ```
-Update `ConversationMeta.listing` type to include `price: number | null; price_label: string | null`.
-Pass `listingPrice={listing?.price ?? null}` to FinalizeDealButton.
 
-### 4d — Update OrderBubble header label for non-food orders
-
-File: `components/chat/OrderBubble.tsx`
-
-Add a `orderLabel` prop to OrderBubble:
+2. Determine the next status based on vendor type:
 ```ts
-orderLabel?: string;
+const isFood = vendorData?.vendor_type === 'food';
+const nextStatus = isFood ? 'preparing' : 'ready';
 ```
 
-Change the hardcoded header from:
-```tsx
-<span className="text-xs font-semibold text-white">🛒 Meal Order</span>
-```
-To:
-```tsx
-<span className="text-xs font-semibold text-white">{props.orderLabel ?? '🛒 Meal Order'}</span>
+3. Use `nextStatus` in the update:
+```ts
+await admin
+  .from('orders')
+  .update({
+    payment_status: 'vendor_confirmed',
+    status: nextStatus,
+  })
+  .eq('id', orderId)
 ```
 
-In `app/inbox/[conversationId]/page.tsx`, detect order type when passing to OrderBubble. If `vendor?.vendor_type !== 'food'`, pass `orderLabel="🏷️ Marketplace Order"` to the OrderBubble component.
+4. Update the notification body to reflect the correct next step:
+```ts
+const notifBody = isFood
+  ? 'Vendor confirmed your transfer. Your order is now being prepared.'
+  : 'Vendor confirmed your transfer. Your item is ready for pickup.';
+```
+
+5. Update the chat message body the same way:
+```ts
+const msgBody = isFood
+  ? '✅ Payment received! Your order is being prepared.'
+  : '✅ Payment received! Your item is ready for collection.';
+```
+
+---
+
+### TASK 5 — Fix status route messages and transitions for marketplace orders
+
+File: `app/api/orders/[orderId]/status/route.ts`
+
+The `buildStatusMessage` function returns food-specific copy ("Your meal is being prepared", "ready for pickup") for all order types. Non-food orders need neutral language.
+
+1. The route already fetches `order_type` from the order. Also fetch `vendor_id` and then vendor type. Add to the select:
+```ts
+.select('id, vendor_id, buyer_id, conversation_id, status, order_type, payment_status, payment_method')
+```
+Then after fetching the order, fetch vendor type:
+```ts
+const { data: vendorData } = await admin
+  .from('vendors')
+  .select('vendor_type')
+  .eq('id', order.vendor_id)
+  .maybeSingle();
+const isFood = vendorData?.vendor_type === 'food';
+```
+
+2. Update `buildStatusMessage` to accept an `isFood` boolean parameter and return appropriate copy:
+```ts
+function buildStatusMessage(newStatus: string, orderType: string, isFood: boolean, eta?: number): string {
+  switch (newStatus) {
+    case 'preparing':
+      if (!isFood) return eta
+        ? `✅ Order confirmed — item ready in ~${eta} mins`
+        : '✅ Order confirmed — your item is being arranged';
+      return eta
+        ? `👨‍🍳 Order accepted — ready in ~${eta} mins`
+        : '👨‍🍳 Order accepted and being prepared';
+    case 'ready':
+      if (!isFood) return orderType === 'delivery'
+        ? '🛵 Your item is ready — rider is on the way!'
+        : '🔔 Your item is ready for collection!';
+      return orderType === 'delivery'
+        ? '🛵 Your order is ready — rider is on the way!'
+        : '🔔 Your order is ready for pickup!';
+    case 'delivered': return isFood
+      ? '✅ Order delivered. Enjoy your meal!'
+      : '✅ Item delivered. Enjoy!';
+    case 'cancelled': return '❌ Order cancelled';
+    default: return `Order status updated: ${newStatus}`;
+  }
+}
+```
+
+3. Pass `isFood` wherever `buildStatusMessage` is called in the route.
+
+4. Update `STATUS_TITLES` to use neutral language where it currently says "meal":
+```ts
+const STATUS_TITLES: Record<string, string> = {
+  confirmed: 'Order confirmed',
+  preparing: 'Order in progress',
+  ready:     'Ready!',
+  delivered: 'Order delivered',
+  cancelled: 'Order cancelled',
+};
+```
+
+---
+
+### TASK 6 — Surface payment details for non-food vendors in the buyer's order card
+
+File: `app/my-orders/page.tsx`
+
+The payment panel in this file already handles the bank transfer flow for food vendors. Non-food orders created via `create-marketplace` will have `payment_method: 'transfer'` and the same `vendor.bank_account_number` fields — so the existing UI will mostly work. But there are two fixes needed:
+
+1. The "Pay cash" button currently shows for all non-food orders. Find the button (around the `confirming === order.id` section) and check — if `order.items` contains a `lines[0]` with an emoji of `🏷️` (marketplace order indicator), it came from `create-marketplace`. The cash button should still show for marketplace orders since `create-marketplace` allows `payment_method: 'cash'`. So leave the cash button visible for both.
+
+2. The status label "Preparing" makes no sense for marketplace orders. Find where `STATUS_STYLES` is defined and add a helper that returns the right label based on vendor type:
+```ts
+function getStatusLabel(status: string, vendorType: string | null): string {
+  if (status === 'preparing' && vendorType !== 'food') return 'Confirmed';
+  if (status === 'ready' && vendorType !== 'food') return 'Ready for collection';
+  return STATUS_STYLES[status]?.label ?? status;
+}
+```
+Use this helper wherever status labels are rendered on order cards, passing `order.vendor?.vendor_type`.
+
+3. Ensure the vendor join in the orders query includes `vendor_type`. Check the select — if `vendor_type` is missing from the vendor join, add it:
+```ts
+vendor:vendors(name, avatar_url, bank_name, bank_account_number, bank_account_name, vendor_type, payment_note)
+```
+
+---
+
+### TASK 7 — Add bank details setup prompt in FinalizeDealButton
+
+File: `components/chat/FinalizeDealButton.tsx`
+
+When a buyer attempts to finalize a deal with `payment_method: 'transfer'` and the API returns `vendor_no_bank_details` error code, show a clear, helpful message rather than a generic error string.
+
+In the `handleCreate` catch block, check for this specific error:
+```ts
+} catch (err: any) {
+  if (err.message?.includes('bank transfer details')) {
+    setError("This seller hasn't added their bank account yet. Ask them to add it in their vendor profile, or choose cash payment instead.");
+  } else {
+    setError(err.message ?? 'Something went wrong');
+  }
+}
+```
+
+Also: when `paymentMethod === 'transfer'` is selected, show a small info note below the payment method buttons:
+```tsx
+{paymentMethod === 'transfer' && (
+  <p className="text-[11px] text-zinc-400">
+    You'll see their bank details after creating the order.
+  </p>
+)}
+```
 
 ---
 
 ## VERIFICATION CHECKLIST
 
-After implementing all tasks, confirm:
+After all tasks are complete:
 
-- [ ] `app/api/chat/send/route.ts` — writes `order_id` to conversations after food order creation
-- [ ] `app/api/internal/push-user/route.ts` — new file exists, secured with conversation participant check
-- [ ] `app/inbox/[conversationId]/page.tsx` — `send()` calls `/api/internal/push-user` after the notifications insert
-- [ ] `app/api/orders/[orderId]/buyer-confirm/route.ts` — notifies vendor in-app + push when buyer confirms payment
-- [ ] `app/api/orders/create-marketplace/route.ts` — new file exists, creates order + links to conversation + notifies vendor
-- [ ] `components/chat/FinalizeDealButton.tsx` — new file exists
-- [ ] `app/inbox/[conversationId]/page.tsx` — imports and renders FinalizeDealButton for non-food conversations with 2+ messages
-- [ ] `components/chat/OrderBubble.tsx` — accepts `orderLabel` prop, defaults to "🛒 Meal Order"
-- [ ] No TypeScript errors in any modified or created file
-- [ ] Existing food order flow is completely untouched — MealBuilder, OrderBubble, payment panel all still work as before
+- [ ] `app/api/vendor/setup/route.ts` — `.eq('vendor_type', 'food')` guard is removed from `getVendor()`
+- [ ] `app/vendor/setup/page.tsx` — bank fields (bankName, accountNumber, accountName, paymentNote) are in state, loaded on mount, saved on submit, and rendered in the form for all vendor types
+- [ ] `app/vendor/setup/page.tsx` — food-specific sections (hours, delivery fee, accepts_delivery toggle) are gated behind `vendor?.vendor_type === 'food'`
+- [ ] `app/vendor/page.tsx` — `BankDetailsCard` renders for all vendor types, with a missing-bank warning banner above it
+- [ ] `app/api/orders/[orderId]/vendor-confirm-payment/route.ts` — food vendors transition to `preparing`, non-food vendors transition to `ready`
+- [ ] `app/api/orders/[orderId]/status/route.ts` — `buildStatusMessage` uses food-neutral copy for non-food vendors
+- [ ] `app/my-orders/page.tsx` — vendor join includes `vendor_type`, status labels are correct for marketplace orders
+- [ ] `components/chat/FinalizeDealButton.tsx` — handles `vendor_no_bank_details` error with a helpful message
+- [ ] No TypeScript errors in any modified file
+- [ ] Food vendor order flow is completely untouched — test mentally: MealBuilder → order → payment → preparing still works as before

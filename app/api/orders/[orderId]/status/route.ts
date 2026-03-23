@@ -17,21 +17,29 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   ready:     ['delivered'],
 };
 
-function buildStatusMessage(newStatus: string, orderType: string, eta?: number): string {
+function buildStatusMessage(newStatus: string, orderType: string, isFood: boolean, eta?: number): string {
   switch (newStatus) {
     case 'confirmed':
       return eta
         ? `✅ Order confirmed! Ready in about ${eta} minute${eta === 1 ? '' : 's'}`
         : "✅ Order confirmed — we're on it!";
     case 'preparing':
+      if (!isFood) return eta
+        ? `✅ Order confirmed — item ready in ~${eta} mins`
+        : '✅ Order confirmed — your item is being arranged';
       return eta
         ? `👨‍🍳 Order accepted — ready in ~${eta} mins`
         : '👨‍🍳 Order accepted and being prepared';
     case 'ready':
+      if (!isFood) return orderType === 'delivery'
+        ? '🛵 Your item is ready — rider is on the way!'
+        : '🔔 Your item is ready for collection!';
       return orderType === 'delivery'
         ? '🛵 Your order is ready — rider is on the way!'
         : '🔔 Your order is ready for pickup!';
-    case 'delivered': return '✅ Order delivered. Enjoy your meal!';
+    case 'delivered': return isFood
+      ? '✅ Order delivered. Enjoy your meal!'
+      : '✅ Item delivered. Enjoy!';
     case 'cancelled': return '❌ Order cancelled';
     default:          return `Order status updated: ${newStatus}`;
   }
@@ -39,8 +47,8 @@ function buildStatusMessage(newStatus: string, orderType: string, eta?: number):
 
 const STATUS_TITLES: Record<string, string> = {
   confirmed: 'Order confirmed',
-  preparing: 'Your meal is being prepared',
-  ready:     'Order ready!',
+  preparing: 'Order in progress',
+  ready:     'Ready!',
   delivered: 'Order delivered',
   cancelled: 'Order cancelled',
 };
@@ -81,12 +89,14 @@ export async function PATCH(
     // Verify caller is this vendor
     const { data: vendor } = await admin
       .from('vendors')
-      .select('id, user_id')
+      .select('id, user_id, vendor_type')
       .eq('id', order.vendor_id)
       .eq('user_id', user.id)
       .single();
 
     if (!vendor) return jsonError('You are not the vendor for this order', 403, 'forbidden');
+
+    const isFood = vendor.vendor_type === 'food';
 
     // Validate transition
     const allowed = VALID_TRANSITIONS[order.status];
@@ -129,7 +139,7 @@ export async function PATCH(
       } catch (_) {}
     }
 
-    const msgBody = buildStatusMessage(newStatus, order.order_type ?? 'pickup', eta);
+    const msgBody = buildStatusMessage(newStatus, order.order_type ?? 'pickup', isFood, eta);
 
     // Post status message in conversation
     if (order.conversation_id) {

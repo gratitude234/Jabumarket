@@ -548,52 +548,56 @@ export default function VendorSetupPage() {
           : <ToggleLeft className="h-8 w-8 text-zinc-400 shrink-0" />}
       </button>
 
-      {/* Delivery toggle */}
-      <button
-        type="button"
-        onClick={toggleDelivery}
-        className={cn(
-          'w-full flex items-center justify-between rounded-3xl border p-5 text-left transition-all shadow-sm',
-          form.accepts_delivery
-            ? 'border-blue-300 bg-blue-50'
-            : 'border-zinc-200 bg-white'
-        )}
-      >
-        <div>
-          <p className={cn('text-base font-bold', form.accepts_delivery ? 'text-blue-900' : 'text-zinc-900')}>
-            {form.accepts_delivery ? '🛵 Offering delivery' : '🛵 No delivery'}
-          </p>
-          <p className={cn('mt-0.5 text-sm', form.accepts_delivery ? 'text-blue-700' : 'text-zinc-500')}>
+      {vendorType === 'food' && (
+        <>
+          {/* Delivery toggle */}
+          <button
+            type="button"
+            onClick={toggleDelivery}
+            className={cn(
+              'w-full flex items-center justify-between rounded-3xl border p-5 text-left transition-all shadow-sm',
+              form.accepts_delivery
+                ? 'border-blue-300 bg-blue-50'
+                : 'border-zinc-200 bg-white'
+            )}
+          >
+            <div>
+              <p className={cn('text-base font-bold', form.accepts_delivery ? 'text-blue-900' : 'text-zinc-900')}>
+                {form.accepts_delivery ? '🛵 Offering delivery' : '🛵 No delivery'}
+              </p>
+              <p className={cn('mt-0.5 text-sm', form.accepts_delivery ? 'text-blue-700' : 'text-zinc-500')}>
+                {form.accepts_delivery
+                  ? 'Customers can select delivery at checkout'
+                  : 'Pickup only — toggle on to enable delivery'}
+              </p>
+            </div>
             {form.accepts_delivery
-              ? 'Customers can select delivery at checkout'
-              : 'Pickup only — toggle on to enable delivery'}
-          </p>
-        </div>
-        {form.accepts_delivery
-          ? <ToggleRight className="h-8 w-8 text-blue-600 shrink-0" />
-          : <ToggleLeft className="h-8 w-8 text-zinc-400 shrink-0" />}
-      </button>
+              ? <ToggleRight className="h-8 w-8 text-blue-600 shrink-0" />
+              : <ToggleLeft className="h-8 w-8 text-zinc-400 shrink-0" />}
+          </button>
 
-      {/* Delivery fee (only when delivery is enabled) */}
-      {form.accepts_delivery && (
-        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
-          <p className="text-sm font-semibold text-zinc-900">Delivery fee</p>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-zinc-500">₦</span>
-            <input
-              type="number"
-              min={0}
-              step={50}
-              value={form.delivery_fee}
-              onChange={(e) => set('delivery_fee', Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-              placeholder="0"
-            />
-          </div>
-          <p className="text-[11px] text-zinc-400">
-            This fee is added to the order total at checkout. Set to 0 for free delivery.
-          </p>
-        </div>
+          {/* Delivery fee (only when delivery is enabled) */}
+          {form.accepts_delivery && (
+            <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
+              <p className="text-sm font-semibold text-zinc-900">Delivery fee</p>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-zinc-500">₦</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={form.delivery_fee}
+                  onChange={(e) => set('delivery_fee', Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  placeholder="0"
+                />
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                This fee is added to the order total at checkout. Set to 0 for free delivery.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {/* Profile form */}
@@ -689,43 +693,45 @@ export default function VendorSetupPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
-          <p className="text-sm font-semibold text-zinc-900">Opening hours</p>
+        {vendorType === 'food' && (
+          <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-4">
+            <p className="text-sm font-semibold text-zinc-900">Opening hours</p>
 
-          {/* Global default hours — always shown, used as fallback */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                <Clock className="h-3.5 w-3.5" /> Default open
-              </label>
-              <input
-                type="time"
-                value={form.opens_at}
-                onChange={(e) => set('opens_at', e.target.value)}
-                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-              />
+            {/* Global default hours — always shown, used as fallback */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  <Clock className="h-3.5 w-3.5" /> Default open
+                </label>
+                <input
+                  type="time"
+                  value={form.opens_at}
+                  onChange={(e) => set('opens_at', e.target.value)}
+                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  <Clock className="h-3.5 w-3.5" /> Default close
+                </label>
+                <input
+                  type="time"
+                  value={form.closes_at}
+                  onChange={(e) => set('closes_at', e.target.value)}
+                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                <Clock className="h-3.5 w-3.5" /> Default close
-              </label>
-              <input
-                type="time"
-                value={form.closes_at}
-                onChange={(e) => set('closes_at', e.target.value)}
-                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-              />
-            </div>
+            <p className="text-[11px] text-zinc-400">Applied on any day without a custom schedule.</p>
+
+            <DayScheduleEditor
+              globalOpensAt={form.opens_at}
+              globalClosesAt={form.closes_at}
+              schedule={form.day_schedule}
+              onChange={(s) => set('day_schedule', s as any)}
+            />
           </div>
-          <p className="text-[11px] text-zinc-400">Applied on any day without a custom schedule.</p>
-
-          <DayScheduleEditor
-            globalOpensAt={form.opens_at}
-            globalClosesAt={form.closes_at}
-            schedule={form.day_schedule}
-            onChange={(s) => set('day_schedule', s as any)}
-          />
-        </div>
+        )}
 
         {banner && (
           <p className={cn(

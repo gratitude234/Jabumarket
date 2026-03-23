@@ -1031,6 +1031,14 @@ function VendorDashboardPageInner() {
       {weekData.length > 0 && <WeekChart days={weekData} />}
 
       {/* Bank account */}
+      {!(vendor as any).bank_account_number && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <p className="font-semibold text-amber-900">⚠️ Bank details missing</p>
+          <p className="mt-0.5 text-xs text-amber-700">
+            Buyers cannot finalize deals with you until you add your bank account. Add it below.
+          </p>
+        </div>
+      )}
       <BankDetailsCard
         vendor={vendor}
         onSaved={(patch) => setVendor((prev) => prev ? { ...prev, ...patch } as VendorRow : prev)}

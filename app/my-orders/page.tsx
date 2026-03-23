@@ -66,6 +66,12 @@ const STATUS_STYLES: Record<string, {
   cancelled: { label: 'Cancelled', dotClass: 'bg-zinc-400',    textClass: 'text-zinc-500',    ringClass: '' },
 };
 
+function getStatusLabel(status: string, vendorType: string | null): string {
+  if (status === 'preparing' && vendorType !== 'food') return 'Confirmed';
+  if (status === 'ready' && vendorType !== 'food') return 'Ready for collection';
+  return STATUS_STYLES[status]?.label ?? status;
+}
+
 const ACTIVE = ['pending', 'confirmed', 'preparing', 'ready'];
 
 const TABS = [
@@ -754,7 +760,7 @@ export default function MyOrdersPage() {
                   </div>
                   <span className={cn('flex shrink-0 items-center gap-1.5 text-xs font-semibold', st.textClass)}>
                     <span className={cn('h-2 w-2 rounded-full', st.dotClass, isActive && 'animate-pulse')} />
-                    {st.label}
+                    {getStatusLabel(order.status, order.vendor.vendor_type)}
                   </span>
                 </div>
 

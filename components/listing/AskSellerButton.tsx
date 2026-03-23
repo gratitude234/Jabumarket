@@ -113,7 +113,7 @@ export default function AskSellerButton({
           p_listing_id: listingId,
           p_event: "contact_click",
           p_amount: 1,
-        }).catch(() => {});
+        }).then(null, () => {});
         router.push(`/inbox/${convId}`);
       } else {
         setError("Couldn't open chat. Please try again.");

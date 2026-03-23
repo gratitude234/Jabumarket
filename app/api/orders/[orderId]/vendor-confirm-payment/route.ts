@@ -35,25 +35,30 @@ export async function POST(
     }
 
     // Verify caller is the vendor for this order
-    const { data: vendor } = await admin
+    const { data: vendorData } = await admin
       .from('vendors')
-      .select('id, user_id')
+      .select('id, user_id, vendor_type')
       .eq('id', order.vendor_id)
       .eq('user_id', user.id)
       .single()
 
-    if (!vendor) return jsonError('Forbidden', 403, 'forbidden')
+    if (!vendorData) return jsonError('Forbidden', 403, 'forbidden')
+
+    const isFood = vendorData.vendor_type === 'food'
+    const nextStatus = isFood ? 'preparing' : 'ready'
 
     await admin
       .from('orders')
       .update({
         payment_status: 'vendor_confirmed',
-        status: 'preparing',
+        status: nextStatus,
       })
       .eq('id', orderId)
 
     const notifTitle = '✅ Payment confirmed!'
-    const notifBody  = 'Vendor confirmed your transfer. Your order is now being prepared.'
+    const notifBody = isFood
+      ? 'Vendor confirmed your transfer. Your order is now being prepared.'
+      : 'Vendor confirmed your transfer. Your item is ready for pickup.'
 
     // In-app notification for buyer
     try {
@@ -78,7 +83,9 @@ export async function POST(
 
     if (order.conversation_id) {
       try {
-        const msgBody = '✅ Payment received! Your order is being prepared.'
+        const msgBody = isFood
+          ? '✅ Payment received! Your order is being prepared.'
+          : '✅ Payment received! Your item is ready for collection.'
         await admin.from('messages').insert({
           conversation_id: order.conversation_id,
           sender_id: user.id,
