@@ -33,7 +33,6 @@ export default function MobileTopBar() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // Conversation pages are full-screen — they have their own header
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
 
   const showSearch =
@@ -41,8 +40,7 @@ export default function MobileTopBar() {
     (pathname !== "/") &&
     (pathname.startsWith("/explore") || pathname.startsWith("/vendors") || pathname.startsWith("/study"));
 
-  if (isConversationPage) return null;
-
+  // ── All hooks must run unconditionally before any early return ──────────────
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);
 
@@ -73,6 +71,10 @@ export default function MobileTopBar() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, pathname, showSearch]);
+
+  // ── Early return AFTER all hooks ────────────────────────────────────────────
+  // Conversation pages are full-screen — they have their own header
+  if (isConversationPage) return null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();

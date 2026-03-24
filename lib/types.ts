@@ -147,10 +147,15 @@ export type RiderRow = {
   phone: string | null;
   whatsapp: string | null;
   zone: string | null;
+  zones_covered: string[];
   fee_note: string | null;
   is_available: boolean | null;
   verified: boolean;
   created_at: string | null;
+  user_id: string | null;
+  pin_hash: string | null;
+  response_time_note: string | null;
+  availability_note: string | null;
 };
 export type DeliveryStatus = "open" | "accepted" | "picked_up" | "delivered" | "cancelled";
 

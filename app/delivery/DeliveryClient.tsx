@@ -177,21 +177,8 @@ export default function DeliveryClient({
         }
       }
 
-      // If a rider was selected, open WhatsApp for them
-      if (selectedRider) {
-        const wa = selectedRider.whatsapp ?? selectedRider.phone ?? "";
-        if (wa) {
-          const msg = [
-            "Hi, I need delivery on JABU MARKET.",
-            `Item: ${listing.title}`,
-            listing.pickup ? `Pickup: ${listing.pickup}` : "",
-            `Drop-off: ${dropoff.trim()}`,
-            note.trim() ? `Note: ${note.trim()}` : "",
-          ].filter(Boolean).join("\n");
-          const waLink = getWhatsAppLink(wa, msg);
-          if (waLink) window.open(waLink, "_blank", "noopener");
-        }
-      }
+      // Rider will be notified in-app if they have an account linked.
+      // No WhatsApp fallback — all communication is in-app.
 
       setStep("done");
     } catch (err: any) {
@@ -282,8 +269,8 @@ export default function DeliveryClient({
           <h2 className="text-lg font-bold text-zinc-900">Request submitted!</h2>
           <p className="mt-2 text-sm text-zinc-600">
             {selectedRider
-              ? `We've opened WhatsApp with ${selectedRider.name ?? "the rider"}. Confirm the delivery details with them directly.`
-              : "Your request is logged. Pick a rider below and contact them on WhatsApp."}
+              ? `${selectedRider.name ?? 'Your rider'} has been notified in-app. You'll get updates as the delivery progresses.`
+              : "Your request is logged. A rider will be assigned and you'll be notified when they accept."}
           </p>
 
           <div className="mt-4 rounded-2xl border bg-zinc-50 p-3 text-left text-sm">
@@ -309,27 +296,6 @@ export default function DeliveryClient({
           </div>
         </div>
 
-        {/* Still show riders so they can WhatsApp one if none selected */}
-        {!selectedRider && (
-          <>
-            <p className="px-1 text-sm font-semibold text-zinc-900">Pick a rider to contact on WhatsApp</p>
-            <RiderDirectory
-              riders={filteredRiders}
-              all={riders}
-              q={q} setQ={setQ}
-              zone={zone} setZone={setZone}
-              availabilityFilter={availabilityFilter} setAvailabilityFilter={setAvailabilityFilter}
-              verifiedOnly={verifiedOnly} setVerifiedOnly={setVerifiedOnly}
-              showFilters={showFilters} setShowFilters={setShowFilters}
-              onCopyPhone={copyPhone}
-              copyingId={copyingId}
-              selectable={false}
-              selectedRider={null}
-              onSelectRider={() => {}}
-              buildWaMessage={(r) => buildWaMsg(listing, dropoff, note)}
-            />
-          </>
-        )}
         {toast && <Toast text={toast} />}
       </div>
     );

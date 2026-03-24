@@ -82,7 +82,7 @@ export async function sendPush(
 async function fanOut(
   subs: { endpoint: string; p256dh: string; auth: string }[],
   payload: PushPayload,
-  table: 'user_push_subscriptions' | 'vendor_push_subscriptions',
+  table: 'user_push_subscriptions' | 'vendor_push_subscriptions' | 'rider_push_subscriptions',
 ): Promise<void> {
   if (!subs.length) return
 
@@ -118,6 +118,27 @@ export async function sendUserPush(
       .eq('user_id', userId)
 
     await fanOut(subs ?? [], payload, 'user_push_subscriptions')
+  } catch {
+    // Never throw — push is fire-and-forget
+  }
+}
+
+/**
+ * Send a Web Push notification to all devices of a given rider.
+ * Auto-removes expired subscriptions. Never throws.
+ */
+export async function sendRiderPush(
+  riderId: string,
+  payload: PushPayload,
+): Promise<void> {
+  try {
+    const admin = createSupabaseAdminClient()
+    const { data: subs } = await admin
+      .from('rider_push_subscriptions')
+      .select('endpoint, p256dh, auth')
+      .eq('rider_id', riderId)
+
+    await fanOut(subs ?? [], payload, 'rider_push_subscriptions')
   } catch {
     // Never throw — push is fire-and-forget
   }

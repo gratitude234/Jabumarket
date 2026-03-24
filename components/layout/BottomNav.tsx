@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, BookOpen, MessageCircle, User, Store } from "lucide-react";
+import { Home, Search, BookOpen, MessageCircle, User, Store, Truck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -135,16 +135,47 @@ function useVendorMode() {
   return { isVendor: Boolean(vendorId), pendingCount };
 }
 
+// ── Rider mode: detect linked rider account ────────────────────────────────────
+
+function useRiderMode() {
+  const [isRider, setIsRider] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+
+      const { data } = await supabase
+        .from("riders")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!cancelled && data) setIsRider(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  return isRider;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function BottomNav() {
   const pathname    = usePathname();
   const inboxUnread = useInboxUnread();
   const { isVendor, pendingCount } = useVendorMode();
+  const isRider = useRiderMode();
 
   // Conversation pages are full-screen chat — no bottom nav
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
   if (isConversationPage) return null;
+
+  const meItem    = { href: "/me",               label: "Me",    icon: User,  badge: null };
+  const riderItem = { href: "/rider/dashboard",  label: "Rider", icon: Truck, badge: null };
 
   const studentItems = [
     { href: "/",        label: "Home",     icon: Home,            badge: null },
@@ -156,7 +187,8 @@ export default function BottomNav() {
       icon: MessageCircle,
       badge: inboxUnread > 0 ? (inboxUnread > 99 ? "99+" : String(inboxUnread)) : null,
     },
-    { href: "/me",      label: "Me",       icon: User,            badge: null },
+    ...(isRider ? [riderItem] : []),
+    meItem,
   ];
 
   // For approved vendors: swap Explore slot → Vendor Orders
@@ -177,7 +209,8 @@ export default function BottomNav() {
       badge: inboxUnread > 0 ? (inboxUnread > 99 ? "99+" : String(inboxUnread)) : null,
       badgeUrgent: false,
     },
-    { href: "/me",            label: "Me",       icon: User,          badge: null },
+    ...(isRider ? [riderItem] : []),
+    meItem,
   ];
 
   const items = isVendor ? vendorItems : studentItems;

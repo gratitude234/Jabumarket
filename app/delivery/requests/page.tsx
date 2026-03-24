@@ -79,25 +79,44 @@ export default function DeliveryRequestsPage() {
   const [requests, setRequests] = useState<RequestWithListing[]>([]);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  async function loadRequests(uid: string) {
+    const { data } = await supabase
+      .from("delivery_requests")
+      .select(`
+        id, listing_id, buyer_id, vendor_id, rider_id,
+        dropoff, note, status, created_at, updated_at,
+        listing:listings(id, title, image_url),
+        rider:riders(id, name, phone, whatsapp, zone)
+      `)
+      .eq("buyer_id", uid)
+      .order("created_at", { ascending: false });
+    setRequests((data as any[]) ?? []);
+  }
+
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace("/login?next=/delivery/requests"); return; }
 
-      const { data } = await supabase
-        .from("delivery_requests")
-        .select(`
-          id, listing_id, buyer_id, vendor_id, rider_id,
-          dropoff, note, status, created_at, updated_at,
-          listing:listings(id, title, image_url),
-          rider:riders(id, name, phone, whatsapp)
-        `)
-        .eq("buyer_id", user.id)
-        .order("created_at", { ascending: false });
-
-      setRequests((data as any[]) ?? []);
+      await loadRequests(user.id);
       setLoading(false);
+
+      // Real-time status updates
+      channel = supabase
+        .channel(`delivery-requests:${user.id}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'delivery_requests',
+          filter: `buyer_id=eq.${user.id}`,
+        }, () => loadRequests(user.id))
+        .subscribe();
     })();
+
+    return () => { if (channel) supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function cancel(id: string) {
@@ -203,10 +222,14 @@ export default function DeliveryRequestsPage() {
 
                 {/* Rider info */}
                 {rider && (
-                  <div className="mt-2 rounded-2xl border bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-                    <span className="font-semibold">Rider:</span> {rider.name ?? "Unnamed"}
+                  <div className="mt-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-900">
+                    <p className="font-semibold text-blue-800 mb-0.5">Your rider</p>
+                    <p className="font-medium">{rider.name ?? "Unnamed"}</p>
+                    {(rider as any).zone && (
+                      <p className="mt-0.5 text-blue-700">Zone: {(rider as any).zone}</p>
+                    )}
                     {(rider.phone ?? rider.whatsapp) && (
-                      <span> · +{rider.phone ?? rider.whatsapp}</span>
+                      <p className="mt-0.5 text-blue-700">+{rider.phone ?? rider.whatsapp}</p>
                     )}
                   </div>
                 )}
