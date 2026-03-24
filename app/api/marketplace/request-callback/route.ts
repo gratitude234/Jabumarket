@@ -45,12 +45,17 @@ export async function POST(req: Request) {
       .eq('buyer_id', user.id)
       .maybeSingle();
 
+    let conversationId: string | null = null;
+
     if (!existing) {
-      await admin
+      const { data: newConvo } = await admin
         .from('conversations')
         .insert({ listing_id, buyer_id: user.id, vendor_id })
         .select('id')
         .single();
+      conversationId = newConvo?.id ?? null;
+    } else {
+      conversationId = existing.id;
     }
 
     if (vendorUserId && vendorUserId !== user.id) {
@@ -63,7 +68,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, conversation_id: conversationId });
   } catch (e: unknown) {
     const err = e as { message?: string };
     return NextResponse.json({ ok: false, message: err?.message ?? 'Error' });

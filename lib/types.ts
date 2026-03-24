@@ -73,8 +73,12 @@ export type VendorRow = {
   description?: string | null;
   avatar_url?: string | null;
   accepts_orders?: boolean | null;
+  accepts_delivery?: boolean | null;
+  delivery_fee?: number | null;
   opens_at?: string | null;
   closes_at?: string | null;
+  day_schedule?: any[] | null;
+  pause_until?: string | null;
 };
 
 export type VendorVerificationRequestRow = {

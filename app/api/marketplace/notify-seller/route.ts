@@ -42,6 +42,17 @@ export async function POST(req: Request) {
         body: `A buyer just messaged you about "${listingTitle}"`,
         href: `/inbox/${conversation_id}`,
       });
+
+      // Push so vendor is alerted even when the browser tab is closed
+      try {
+        const { sendVendorPush } = await import('@/lib/webPush');
+        void sendVendorPush(vendor_id, {
+          title: 'New inquiry',
+          body: `Someone messaged you about "${listingTitle}"`,
+          href: `/inbox/${conversation_id}`,
+          tag: `inquiry-${conversation_id}`,
+        });
+      } catch { /* push failure must never crash the notification */ }
     }
 
     return NextResponse.json({ ok: true });

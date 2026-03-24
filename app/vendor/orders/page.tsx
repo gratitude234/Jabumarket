@@ -133,7 +133,7 @@ function EtaSheet({
 
 // ── Order card ──────────────────────────────────────────────────────────────────
 
-type RiderOption = { id: string; name: string | null; zone: string | null; whatsapp: string | null };
+type RiderOption = { id: string; name: string | null; zone: string | null; zones_covered: string[] };
 
 function OrderItem({
   order,
@@ -174,7 +174,7 @@ function OrderItem({
     setRidersLoading(true);
     const { data } = await supabase
       .from('riders')
-      .select('id, name, zone, whatsapp')
+      .select('id, name, zone, zones_covered')
       .eq('is_available', true)
       .eq('verified', true)
       .limit(5);
@@ -394,8 +394,8 @@ function OrderItem({
         </div>
       )}
 
-      {/* Rider assignment — only for delivery orders that are ready */}
-      {order.order_type === 'delivery' && order.status === 'ready' && !assigned && (
+      {/* Rider assignment — for delivery orders that are preparing or ready */}
+      {order.order_type === 'delivery' && ['preparing', 'ready'].includes(order.status) && !assigned && (
         <div className="mt-3">
           {!riderPanelOpen ? (
             <button
@@ -431,17 +431,12 @@ function OrderItem({
                       >
                         <p className="text-xs font-semibold text-zinc-900">{r.name ?? 'Rider'}</p>
                         {r.zone && <p className="text-[11px] text-zinc-500">Zone: {r.zone}</p>}
+                        {(r.zones_covered?.length > 0 || r.zone) && (
+                          <p className="text-[11px] text-zinc-500">
+                            Covers: {r.zones_covered?.length > 0 ? r.zones_covered.join(', ') : r.zone}
+                          </p>
+                        )}
                       </button>
-                      {r.whatsapp && (
-                        <a
-                          href={`https://wa.me/${r.whatsapp.replace(/[^\d]/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 no-underline hover:bg-emerald-100"
-                        >
-                          WhatsApp
-                        </a>
-                      )}
                     </div>
                   ))}
 
@@ -667,8 +662,8 @@ export default function VendorOrdersPage() {
       .from('orders')
       .select('id, conversation_id, buyer_id, items, total, status, payment_status, payment_method, receipt_url, pickup_note, order_type, delivery_address, created_at')
       .eq('vendor_id', vid)
-      .order('created_at', { ascending: false })
-      .limit(200);
+      .in('status', ['pending', 'confirmed', 'preparing', 'ready'])
+      .order('created_at', { ascending: false });
     setOrders((data as OrderCard[]) ?? []);
   }, []);
 

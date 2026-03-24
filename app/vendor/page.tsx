@@ -666,12 +666,32 @@ function VendorDashboardPageInner() {
 
       const { data: v } = await supabase
         .from('vendors')
-        .select('id, user_id, name, description, location, whatsapp, accepts_orders, verification_status, vendor_type, opens_at, closes_at, rejection_reason, bank_name, bank_account_number, bank_account_name')
+        .select('id, user_id, name, description, location, whatsapp, accepts_orders, verification_status, vendor_type, opens_at, closes_at, rejection_reason, suspended_at, suspension_reason, pause_until, bank_name, bank_account_number, bank_account_name')
         .eq('user_id', authData.user.id)
         .maybeSingle();
 
       if (v) {
         setVendor(v as VendorRow);
+
+        // Auto-resume if pause_until has elapsed — vendor forgot to un-pause
+        if (
+          (v as any).pause_until &&
+          new Date((v as any).pause_until) < new Date() &&
+          !v.accepts_orders
+        ) {
+          try {
+            await supabase
+              .from('vendors')
+              .update({ accepts_orders: true, pause_until: null, pause_reason: null })
+              .eq('id', v.id);
+            setVendor((prev: any) => prev ? {
+              ...prev,
+              accepts_orders: true,
+              pause_until: null,
+              pause_reason: null,
+            } : prev);
+          } catch { /* non-critical — vendor can resume manually */ }
+        }
 
         if ((v as VendorRow).verification_status === 'approved') {
           // Fetch last 7 days of orders in one query
@@ -998,7 +1018,20 @@ function VendorDashboardPageInner() {
 
   // ── Rejected ──────────────────────────────────────────────────────────────
   if (status === 'rejected') {
-    return <RejectedResubmit vendor={vendor} onResubmitted={() => router.replace('/vendor?applied=1')} />;
+    return (
+      <div className="mx-auto max-w-md space-y-4 pt-8">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Application rejected</p>
+          {vendor.rejection_reason && (
+            <p className="mt-1 text-xs text-amber-800">{vendor.rejection_reason}</p>
+          )}
+          <p className="mt-2 text-xs text-amber-700">
+            Fix the issues above and resubmit from the register page.
+          </p>
+        </div>
+        <RejectedResubmit vendor={vendor} onResubmitted={() => router.replace('/vendor?applied=1')} />
+      </div>
+    );
   }
 
   // ── Approved dashboard ─────────────────────────────────────────────────────
@@ -1093,6 +1126,16 @@ function VendorDashboardPageInner() {
         <h1 className="text-xl font-bold text-zinc-900">{vendor.name}</h1>
         <p className="mt-0.5 text-sm text-zinc-500">Vendor Dashboard</p>
       </div>
+
+      {(vendor as any).suspended_at && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-semibold text-red-800">Your account is suspended</p>
+          {(vendor as any).suspension_reason && (
+            <p className="mt-1 text-xs text-red-700">{(vendor as any).suspension_reason}</p>
+          )}
+          <p className="mt-2 text-xs text-red-600">Contact support to resolve this.</p>
+        </div>
+      )}
 
       {/* Onboarding checklist — shown until menu + hours + bank are set */}
       {showChecklist && (

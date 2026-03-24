@@ -18,7 +18,7 @@ export async function POST(
   const admin = createSupabaseAdminClient();
   const { data: request } = await admin
     .from('delivery_requests')
-    .select('id, buyer_id, status')
+    .select('id, buyer_id, status, rider_id')
     .eq('id', requestId)
     .single();
 
@@ -27,6 +27,35 @@ export async function POST(
   if (request.status !== 'open') return NextResponse.json({ ok: false, message: 'Cannot cancel — request is not open' }, { status: 400 });
 
   await admin.from('delivery_requests').update({ status: 'cancelled' }).eq('id', requestId);
+
+  // Notify the assigned rider if one exists
+  try {
+    if (request.rider_id) {
+      const { data: rider } = await admin
+        .from('riders')
+        .select('id, user_id')
+        .eq('id', request.rider_id)
+        .maybeSingle();
+
+      if (rider?.user_id) {
+        await admin.from('notifications').insert({
+          user_id: rider.user_id,
+          type: 'delivery_cancelled',
+          title: 'Delivery cancelled',
+          body: 'The buyer cancelled this delivery request.',
+          href: '/rider/dashboard',
+        });
+
+        const { sendRiderPush } = await import('@/lib/webPush');
+        void sendRiderPush(rider.id, {
+          title: 'Delivery cancelled',
+          body: 'The buyer cancelled this delivery request.',
+          href: '/rider/dashboard',
+          tag: `cancel-${requestId}`,
+        });
+      }
+    }
+  } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true });
 }

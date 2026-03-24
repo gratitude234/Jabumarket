@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Phone, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 interface Props {
   vendorId: string;
@@ -13,6 +15,7 @@ interface Props {
 export default function RequestCallbackButton({ vendorId, listingId }: Props) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   async function handleRequest() {
     if (state !== "idle") return;
@@ -24,13 +27,19 @@ export default function RequestCallbackButton({ vendorId, listingId }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vendor_id: vendorId, listing_id: listingId }),
       });
-      const json = (await res.json()) as { ok: boolean; message?: string };
+      const json = (await res.json()) as { ok: boolean; message?: string; conversation_id?: string };
       if (!json.ok) {
         setState("error");
         setErrMsg(json.message ?? "Couldn't send request. Try messaging instead.");
         return;
       }
       setState("done");
+      setConversationId(json.conversation_id ?? null);
+      void supabase.rpc("listing_stats_increment", {
+        p_listing_id: listingId,
+        p_event: "contact_click",
+        p_amount: 1,
+      });
     } catch {
       setState("error");
       setErrMsg("Couldn't send request. Try messaging instead.");
@@ -68,6 +77,14 @@ export default function RequestCallbackButton({ vendorId, listingId }: Props) {
       {state === "error" && errMsg ? (
         <p className="text-center text-xs text-red-500">{errMsg}</p>
       ) : null}
+      {state === "done" && conversationId && (
+        <Link
+          href={`/inbox/${conversationId}`}
+          className="block text-center text-xs font-medium text-zinc-600 underline"
+        >
+          Open chat →
+        </Link>
+      )}
     </div>
   );
 }

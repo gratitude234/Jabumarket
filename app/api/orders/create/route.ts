@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { OrderPayload, OrderLine } from '@/types/meal-builder';
 import { sendVendorPush } from '@/lib/webPush';
+import { isOpenNow } from '@/lib/vendorSchedule';
 
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
@@ -25,15 +26,13 @@ export async function POST(req: Request) {
       pickup_note?: string;
       order_type?: 'pickup' | 'delivery';
       delivery_address?: string | null;
-      delivery_fee?: number;
     } | null;
 
     if (!body?.vendor_id || !body?.order_payload) {
       return jsonError('Missing vendor_id or order_payload', 400, 'bad_request');
     }
 
-    const { vendor_id, order_payload, pickup_note, order_type, delivery_address, delivery_fee: rawDeliveryFee } = body;
-    const serverDeliveryFee = order_type === 'delivery' ? Math.max(0, Math.round(rawDeliveryFee ?? 0)) : 0;
+    const { vendor_id, order_payload, pickup_note, order_type, delivery_address } = body;
     const lines: OrderLine[] = order_payload.lines ?? [];
 
     if (lines.length === 0) {
@@ -45,13 +44,41 @@ export async function POST(req: Request) {
     // ── Validate vendor ─────────────────────────────────────────────────────────
     const { data: vendor, error: vendorErr } = await admin
       .from('vendors')
-      .select('id, user_id, vendor_type, accepts_orders, bank_account_number, bank_account_name, bank_name')
+      .select('id, user_id, vendor_type, accepts_orders, accepts_delivery, delivery_fee, opens_at, closes_at, day_schedule, bank_account_number, bank_account_name, bank_name')
       .eq('id', vendor_id)
       .single();
 
     if (vendorErr || !vendor) return jsonError('Vendor not found', 404, 'vendor_not_found');
     if (vendor.vendor_type !== 'food') return jsonError('Not a food vendor', 400, 'not_food_vendor');
     if (!vendor.accepts_orders) return jsonError('Vendor is not accepting orders right now', 400, 'not_accepting');
+
+    // Always read from DB — never trust client-supplied delivery_fee
+    const serverDeliveryFee = order_type === 'delivery'
+      ? Math.max(0, (vendor as any).delivery_fee ?? 0)
+      : 0;
+
+    if (order_type === 'delivery' && !(vendor as any).accepts_delivery) {
+      return jsonError('This vendor does not accept delivery orders', 400, 'delivery_not_accepted');
+    }
+
+    if (order_type === 'delivery' && !delivery_address?.trim()) {
+      return jsonError('Delivery address is required', 400, 'missing_address');
+    }
+
+    // Reject orders when the stall is outside its operating hours.
+    // isOpenNow returns true | false | null (null = no schedule set = allow).
+    const stallOpen = isOpenNow({
+      opens_at: (vendor as any).opens_at ?? null,
+      closes_at: (vendor as any).closes_at ?? null,
+      day_schedule: (vendor as any).day_schedule ?? null,
+    });
+    if (stallOpen === false) {
+      return jsonError(
+        'This stall is currently closed. Check their hours and try again.',
+        400,
+        'stall_closed',
+      );
+    }
 
     // ── Bank details guard ──────────────────────────────────────────────────────
     // Food vendors must have bank transfer details set up before they can receive
