@@ -1,26 +1,18 @@
-# Jabumarket — Vendor System Fixes
+# Jabumarket — Buy Flow UX Improvements
 # Claude Code Implementation Prompt
-# Covers all 15 tasks from the vendor audit
 
 ---
 
 ## PHASE 1 — READ THESE FILES FIRST (do not write any code yet)
 
-Read every file listed. After reading, write one line per file summarising what it currently does and flag anything that conflicts with the tasks below.
+Read every file listed fully. After reading, write one line per file summarising what it does and flag anything relevant to the tasks below.
 
-- `app/vendor/page.tsx` — full file, note: the vendor_type check (or lack of one) in the approved dashboard branch, the checklist logic, the status branching
-- `app/vendor/create/page.tsx` — full file, note: what fields are collected, where it redirects after creation
-- `app/vendor/register/page.tsx` — full file, note: what fields are collected for food vendors
-- `app/me/page.tsx` — full file, note: how vendor data is loaded, what is passed to ListingsTab, how tabs are built
-- `app/me/_components/ListingsTab.tsx` — full file, note: the broken .eq('vendor_id', userId) query
-- `app/me/_components/OverviewTab.tsx` — full file
-- `app/me/_components/ContextBanner.tsx` — full file
-- `app/me/_components/QuickActions.tsx` — full file
-- `app/me/_components/types.ts` — full file, note: Vendor type fields
-- `app/my-listings/page.tsx` — focus on: per-listing actions (edit, bump, toggle), whether mark-as-sold is available inline
-- `app/vendors/[id]/page.tsx` — focus on: suspended_at check, bank_account_number display, storefront link
-- `app/vendor/setup/page.tsx` — full file
-- `app/api/vendor/setup/route.ts` — full file, note: the .eq('vendor_type', 'food') guard
+- `app/listing/[id]/page.tsx` — full file. Note: where AskSellerButton renders (mobile bottom bar + desktop), the isSold/isActive/negotiable flags, vendor_type usage, and the listing data shape
+- `app/inbox/[conversationId]/page.tsx` — full file. Note: the canShowFinalizeDeal logic, the 2-message gate, the quick reply chips section, the hasMarketplaceOrder state, and where FinalizeDealButton renders
+- `components/chat/FinalizeDealButton.tsx` — full file. Note: all props, the open/closed panel state, the handleCreate function and what it calls
+- `components/listing/AskSellerButton.tsx` — full file. Note: openConversation(), handleMessage(), handleOffer(), the authWall inline state
+- `app/explore/page.tsx` — focus on: the ListingCard component at the bottom, how it links to listings, its vendor/stats props
+- `app/api/orders/create-marketplace/route.ts` — full file. Note: required body fields, the conversation_id check, vendor bank guard
 
 Only proceed to Phase 2 after reading all files.
 
@@ -32,609 +24,828 @@ Work through every task in order. Do not skip any.
 
 ---
 
-### TASK 1 — Fix the ListingsTab broken query
+### TASK 1 — Remove the 2-message gate on FinalizeDealButton
 
-File: `app/me/_components/ListingsTab.tsx`
+File: `app/inbox/[conversationId]/page.tsx`
 
-The component receives `userId` and queries `.eq('vendor_id', userId)`. This is wrong — `vendor_id` on listings is the vendor row's UUID, not the auth user's UUID.
+Find this block:
+```ts
+const canShowFinalizeDeal =
+  !isVendorSide &&
+  isNonFoodVendor &&
+  !hasMarketplaceOrder &&
+  messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
+```
 
-1. Change the prop from `userId: string | null` to `vendorId: string | null`
-2. Update the query to `.eq('vendor_id', vendorId!)`
-3. Update all references inside the component from `userId` to `vendorId`
+Remove the `.filter(...).length >= 2` condition entirely. Replace with:
+```ts
+const canShowFinalizeDeal =
+  !isVendorSide &&
+  isNonFoodVendor &&
+  !hasMarketplaceOrder;
+```
 
-File: `app/me/page.tsx`
+The buyer should be able to finalize immediately — they shouldn't have to send fake messages just to unlock the purchase button.
 
-The ListingsTab is called as `<ListingsTab userId={me?.id ?? null} />`. Change this to:
+---
+
+### TASK 2 — Replace passive quick reply chips with action-oriented chips
+
+File: `app/inbox/[conversationId]/page.tsx`
+
+Find the quick reply chips section:
 ```tsx
-<ListingsTab vendorId={vendor?.id ?? null} />
-```
-
-Also fix the listings count query in the load function — it currently queries `.eq('vendor_id', user.id)`. Change it to use the vendor's id once the vendor row is loaded. Move the listings count fetch inside the vendor data block:
-```ts
-// After vendor is loaded:
-if (vendorRes.data?.id) {
-  const listingsRes = await supabase
-    .from('listings')
-    .select('id', { count: 'exact', head: true })
-    .eq('vendor_id', vendorRes.data.id);
-  setListingsCount(listingsRes.count ?? 0);
-}
-```
-
----
-
-### TASK 2 — Add "Mark as sold" quick action to /my-listings
-
-File: `app/my-listings/page.tsx`
-
-Read the existing per-listing action buttons (edit, bump, toggle active/inactive, delete). Add a "Mark sold" button that appears only when `listing.status === 'active'`.
-
-The button should:
-1. Call a PATCH on the listing row setting `status: 'sold'`
-2. Update the local state optimistically
-3. Show a brief success state (change button label to "Sold ✓" for 2 seconds)
-
-Add it next to the existing Edit button in the listing row actions. Use the existing Supabase client pattern. The update call:
-```ts
-await supabase
-  .from('listings')
-  .update({ status: 'sold' })
-  .eq('id', listingId);
-```
-
-Label: "Mark sold" — small, destructive-looking but not red (use zinc-700 border with zinc-50 bg). On success briefly show "Sold ✓" in emerald before resetting the listing row to show the sold badge.
-
----
-
-### TASK 3 — Add bank details to /vendor/create onboarding
-
-File: `app/vendor/create/page.tsx`
-
-After the existing location field, add three new fields to the form:
-
-```tsx
-{/* Bank details */}
-<div className="space-y-1.5">
-  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-    Payment details <span className="normal-case font-normal text-zinc-400">(buyers pay you here)</span>
-  </p>
-  <input
-    type="text"
-    placeholder="Bank name (e.g. GTBank, Opay, Palmpay)"
-    value={bankName}
-    onChange={(e) => setBankName(e.target.value)}
-    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-  />
-  <input
-    type="text"
-    inputMode="numeric"
-    placeholder="Account number (10 digits)"
-    value={accountNumber}
-    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-  />
-  <input
-    type="text"
-    placeholder="Account name (as on your bank)"
-    value={accountName}
-    onChange={(e) => setAccountName(e.target.value)}
-    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-  />
-  <p className="text-[11px] text-zinc-400">You can add this later — but buyers need it to pay you.</p>
-</div>
-```
-
-Add state variables:
-```ts
-const [bankName, setBankName] = useState('');
-const [accountNumber, setAccountNumber] = useState('');
-const [accountName, setAccountName] = useState('');
-```
-
-In `handleSubmit`, include these fields in the insert if they have values:
-```ts
-...(bankName.trim() ? { bank_name: bankName.trim() } : {}),
-...(accountNumber.trim().length === 10 ? { bank_account_number: accountNumber.trim() } : {}),
-...(accountName.trim() ? { bank_account_name: accountName.trim() } : {}),
-```
-
----
-
-### TASK 4 — Add bank details to /vendor/register food vendor form
-
-File: `app/vendor/register/page.tsx`
-
-Read the existing form fields. After the description field and before the hours fields, add the same three bank fields from Task 3 (bank name, account number, account name). Add the same state variables. Include them in the insert on submit using the same conditional spread pattern.
-
-Add a small note below the bank section:
-```tsx
-<p className="text-[11px] text-zinc-400">
-  Required before you can receive orders. You can also add this after approval.
-</p>
-```
-
----
-
-### TASK 5 — Add bank details to the food vendor onboarding checklist
-
-File: `app/vendor/page.tsx`
-
-The `ChecklistState` type has `hasMenuItems`, `hasHours`, `hasGoneLive`. Add `hasBankDetails: boolean`.
-
-In the checklist load block (after fetching menuItems), add:
-```ts
-hasBankDetails: !!(v.bank_name && v.bank_account_number && v.bank_account_name),
-```
-
-The vendor select query already includes bank fields. If it doesn't, add `bank_name, bank_account_number, bank_account_name` to the select.
-
-In `OnboardingChecklist`, add a fourth step after hasHours:
-```ts
-{
-  done: checklist.hasBankDetails,
-  label: checklist.hasBankDetails ? 'Bank details added' : 'Add your bank details',
-  sub: checklist.hasBankDetails
-    ? 'Buyers can pay you directly.'
-    : 'Required before buyers can complete payment.',
-  href: '/vendor/setup',
-},
-```
-
-Update `showChecklist` to also check `!checklist.hasBankDetails`:
-```ts
-const showChecklist = !checklist.hasMenuItems || !checklist.hasHours || !checklist.hasBankDetails;
-```
-
----
-
-### TASK 6 — Build a normal vendor dashboard branch in /vendor/page.tsx
-
-File: `app/vendor/page.tsx`
-
-The approved dashboard currently renders food-only content regardless of `vendor_type`. Add a branch immediately before the `const showChecklist = ...` line in the approved dashboard section:
-
-```ts
-const isFoodVendor = vendor.vendor_type === 'food';
-```
-
-Then wrap the entire food dashboard JSX in `{isFoodVendor ? (...food dashboard...) : (...normal vendor dashboard...)}`.
-
-The normal vendor dashboard JSX to build (replace the current return for non-food vendors):
-
-```tsx
-return (
-  <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
-    <div>
-      <h1 className="text-xl font-bold text-zinc-900">{vendor.name}</h1>
-      <p className="mt-0.5 text-sm text-zinc-500">
-        {vendor.vendor_type === 'mall' ? 'Campus shop' : 'Student vendor'} · Seller dashboard
-      </p>
+{messages.length === 0 ? (
+  <div className="bg-white px-4 pt-3 pb-0">
+    <div className="flex flex-wrap gap-2">
+      {["Is this still available?", "Can you do lower?", "Where can we meet?"].map((chip) => (
+        ...
+      ))}
     </div>
+  </div>
+) : null}
+```
 
-    {/* Bank details warning — most critical */}
-    {!(vendor as any).bank_account_number && (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-900">Bank details missing</p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            Buyers cannot finalize deals until you add your bank account number.
-          </p>
-        </div>
-        <Link
-          href="/vendor/setup"
-          className="shrink-0 self-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 no-underline"
-        >
-          Add now →
-        </Link>
-      </div>
-    )}
+Replace the entire block with this new version. The chips must be context-aware: if the vendor is non-food and no order exists yet, show transactional chips. Always show the passive chips below as secondary options.
 
-    {/* Storefront link */}
-    <div className="rounded-2xl border bg-white p-4 shadow-sm flex items-center justify-between gap-4">
-      <div>
-        <p className="text-sm font-semibold text-zinc-900">Your storefront</p>
-        <p className="mt-0.5 text-xs text-zinc-500 font-mono truncate">
-          jabumarket.com/vendors/{vendor.id}
-        </p>
-      </div>
-      <div className="flex gap-2 shrink-0">
+```tsx
+{messages.length === 0 && !isVendorSide ? (
+  <div className="bg-white px-4 pt-3 pb-0 space-y-2">
+    {/* Primary action chips — non-food only */}
+    {isNonFoodVendor && !hasMarketplaceOrder && (
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(`${window.location.origin}/vendors/${vendor.id}`).catch(() => {});
-          }}
-          className="rounded-xl border bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+          onClick={() => setShowFinalizePanelFromChip(true)}
+          disabled={sending}
+          className="inline-flex items-center gap-1.5 rounded-full border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
         >
-          Copy link
+          I'll take it — sort payment
         </button>
-        <Link
-          href={`/vendors/${vendor.id}`}
-          className="rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 no-underline"
+        {listing?.price && (
+          <button
+            type="button"
+            onClick={() => send(`I'd like to make an offer on "${listing?.title ?? 'this item'}"`)}
+            disabled={sending}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            Make an offer
+          </button>
+        )}
+      </div>
+    )}
+    {/* Passive chips */}
+    <div className="flex flex-wrap gap-2">
+      {["Is this still available?", "Where can we meet?"].map((chip) => (
+        <button
+          key={chip}
+          type="button"
+          onClick={() => send(chip)}
+          disabled={sending}
+          className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
-          View →
-        </Link>
-      </div>
-    </div>
-
-    {/* Quick stats */}
-    <NormalVendorStats vendorId={vendor.id} />
-
-    {/* Quick links */}
-    <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-2">
-      <p className="text-sm font-semibold text-zinc-900 mb-3">Manage</p>
-      <QuickLink href="/my-listings"   icon={<Store className="h-5 w-5" />}        label="My listings" />
-      <QuickLink href="/inbox"         icon={<MessageCircle className="h-5 w-5" />} label="Messages" />
-      <QuickLink href="/vendor/setup"  icon={<Settings className="h-5 w-5" />}      label="Edit profile & bank details" />
-      <QuickLink href={`/vendors/${vendor.id}`} icon={<ArrowRight className="h-5 w-5" />} label="View storefront" />
+          {chip}
+        </button>
+      ))}
     </div>
   </div>
-);
+) : null}
 ```
 
-Add the `NormalVendorStats` component near the top of the file (before the main export):
-```tsx
-function NormalVendorStats({ vendorId }: { vendorId: string }) {
-  const [stats, setStats] = useState<{ listings: number; active: number; messages: number } | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const [listingsRes, convoRes] = await Promise.all([
-        supabase.from('listings').select('id, status').eq('vendor_id', vendorId),
-        supabase.from('conversations').select('id, vendor_unread').eq('vendor_id', vendorId),
-      ]);
-      const listings = listingsRes.data ?? [];
-      const convos = convoRes.data ?? [];
-      setStats({
-        listings: listings.length,
-        active: listings.filter((l: any) => l.status === 'active').length,
-        messages: convos.reduce((sum: number, c: any) => sum + (c.vendor_unread ?? 0), 0),
-      });
-    })();
-  }, [vendorId]);
-
-  if (!stats) return null;
-
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
-        <p className="text-2xl font-bold text-zinc-900">{stats.listings}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">Total listings</p>
-      </div>
-      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
-        <p className="text-2xl font-bold text-zinc-900">{stats.active}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">Active now</p>
-      </div>
-      <div className="rounded-2xl border bg-white p-4 shadow-sm text-center">
-        <p className={cn('text-2xl font-bold', stats.messages > 0 ? 'text-red-600' : 'text-zinc-900')}>{stats.messages}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">Unread messages</p>
-      </div>
-    </div>
-  );
-}
+Add a new state variable at the top of the component (near the other useState declarations):
+```ts
+const [showFinalizePanelFromChip, setShowFinalizePanelFromChip] = useState(false);
 ```
 
-Add `MessageCircle` to the imports at the top of the file.
+Then update the FinalizeDealButton render to pass this state so tapping "I'll take it" opens the panel immediately:
 
----
-
-### TASK 7 — Fix vendor_type-specific quick links in the approved food dashboard
-
-File: `app/vendor/page.tsx`
-
-Still inside the food dashboard branch (the one with the order queue, WeekChart, BankDetailsCard), the Quick Links section hardcodes food-specific links. These are now inside `isFoodVendor === true`, so this is already correct after Task 6. No change needed here — but verify the food quick links ("Manage menu", "View orders", "Edit profile & hours") are only rendered inside the `isFoodVendor` branch.
-
----
-
-### TASK 8 — Fix /vendor page pending state for normal vendors
-
-File: `app/vendor/page.tsx`
-
-The `if (status === 'pending')` branch renders "While you wait — get ahead" with links to `/vendor/menu` and `/vendor/setup`. This is food-only content. Normal vendors in pending state should see different content.
-
-Wrap the "while you wait" section inside the pending block with a vendor_type check:
+Find the FinalizeDealButton render block and update:
 ```tsx
-{vendor.vendor_type === 'food' ? (
-  /* existing food "while you wait" with menu + setup links */
-) : (
-  <div className="rounded-3xl border bg-white p-5 shadow-sm space-y-3">
-    <p className="text-sm font-semibold text-zinc-900">While you wait — get ahead</p>
-    <p className="text-sm text-zinc-500">
-      Your verification is being reviewed. In the meantime, post your first listing so buyers find you straight away.
-    </p>
-    <Link href="/post"
-      className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
-      <div className="flex items-center gap-3">
-        <Store className="h-5 w-5 text-zinc-600" />
-        <div>
-          <p className="text-sm font-semibold text-zinc-900">Post a listing</p>
-          <p className="text-xs text-zinc-500">Add a product or service to start selling</p>
-        </div>
-      </div>
-      <ArrowRight className="h-4 w-4 text-zinc-400" />
-    </Link>
-    <Link href="/vendor/setup"
-      className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 no-underline hover:bg-zinc-100">
-      <div className="flex items-center gap-3">
-        <Settings className="h-5 w-5 text-zinc-600" />
-        <div>
-          <p className="text-sm font-semibold text-zinc-900">Add bank details</p>
-          <p className="text-xs text-zinc-500">So buyers can pay you when a deal is agreed</p>
-        </div>
-      </div>
-      <ArrowRight className="h-4 w-4 text-zinc-400" />
-    </Link>
-  </div>
+{canShowFinalizeDeal && meta && (
+  <FinalizeDealButton
+    conversationId={conversationId}
+    listingId={meta.listing_id ?? ''}
+    vendorId={meta.vendor_id}
+    listingTitle={listing?.title ?? undefined}
+    listingPrice={listing?.price ?? null}
+    openOnMount={showFinalizePanelFromChip}
+    onOrderCreated={() => setHasMarketplaceOrder(true)}
+  />
 )}
 ```
 
 ---
 
-### TASK 9 — Surface storefront link and bank details warning in /me
+### TASK 3 — Update FinalizeDealButton to support openOnMount prop
 
-File: `app/me/_components/types.ts`
+File: `components/chat/FinalizeDealButton.tsx`
 
-Add to the `Vendor` type:
+Add `openOnMount?: boolean` to the Props type:
 ```ts
-bank_name: string | null;
-bank_account_number: string | null;
-bank_account_name: string | null;
+type Props = {
+  conversationId: string;
+  listingId: string;
+  vendorId: string;
+  listingTitle?: string;
+  listingPrice?: number | null;
+  openOnMount?: boolean;
+  onOrderCreated: (orderId: string) => void;
+};
 ```
 
-File: `app/me/page.tsx`
-
-The vendor select query needs to include these fields. Add to the select string:
-```
-bank_name, bank_account_number, bank_account_name
-```
-
-File: `app/me/_components/ContextBanner.tsx`
-
-Add a missing bank details banner for non-food vendors. Insert this logic after the verified vendor banner check and before the study pending check:
-
+Update the component to accept and use it:
 ```tsx
-// Bank details warning for non-food vendors
-if (roles.isVendor && vendor?.vendor_type !== 'food' && !vendor?.bank_account_number) {
+export default function FinalizeDealButton({
+  conversationId,
+  listingId,
+  vendorId,
+  listingTitle,
+  listingPrice,
+  openOnMount = false,
+  onOrderCreated,
+}: Props) {
+  const [open, setOpen] = useState(openOnMount);
+  ...
+```
+
+Change `const [open, setOpen] = useState(false)` to `const [open, setOpen] = useState(openOnMount)`.
+
+Also, after a successful order creation, show a success banner instead of just hiding the button. Replace the `setDone(true)` section in `handleCreate`:
+
+After `onOrderCreated(json.order.id)` fires, show:
+```tsx
+if (done) {
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-      <span className="mt-0.5 text-lg leading-none">⚠️</span>
-      <div className="flex-1">
-        <p className="text-sm font-semibold text-amber-900">Bank details missing</p>
-        <p className="text-xs text-amber-700 mt-0.5">
-          Buyers cannot finalize deals until you add your bank account number.
-        </p>
+    <div className="mx-4 mb-2">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <p className="text-sm font-semibold text-emerald-800">Order created!</p>
+        </div>
+        <a
+          href="/my-orders"
+          className="shrink-0 rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 no-underline"
+        >
+          Track order →
+        </a>
       </div>
-      <Link
-        href="/vendor/setup"
-        className="shrink-0 self-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800"
-      >
-        Add now →
-      </Link>
     </div>
   );
 }
 ```
 
-The priority order for banners must be:
-1. Verification state banners (existing — under_review, requested, rejected, unverified)
-2. Bank details warning (new — only show when NOT in an active verification state)
-3. Verified + bank missing (new — show "verified but no bank" case)
-4. Study pending (existing)
-5. Sell CTA for non-vendors (existing)
-
-Restructure the logic so the bank warning only shows when the verification status is NOT `under_review`, `requested`, or `rejected` — i.e. only show it when the vendor is either verified or unverified-with-no-pending-request.
+Replace the existing `if (done) return null;` with this JSX block above.
 
 ---
 
-### TASK 10 — Update OverviewTab to show full verification status and storefront link
+### TASK 4 — Add "Buy now" button to listing detail page
 
-File: `app/me/_components/OverviewTab.tsx`
+File: `app/listing/[id]/page.tsx`
 
-The isVendor block currently shows:
+Add a new import at the top:
+```ts
+import BuyNowButton from '@/components/listing/BuyNowButton';
 ```
-Store: [name]
-Verification: Not verified
+
+**Where to show it:**
+- Only for non-food vendors (`vendor?.vendor_type !== 'food'`)
+- Only when `isActive && !isSold`
+- Show it prominently — as the PRIMARY action, with "Message seller" becoming secondary
+
+**Mobile bottom bar** — find the mobile sticky bottom bar section and update it:
+
+Replace:
+```tsx
+<div className="flex-1">
+  <AskSellerButton
+    listingId={listing.id}
+    vendorId={listing.vendor_id}
+    ...
+  />
+</div>
+<SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
 ```
 
-Replace it with richer content for non-food vendors:
+With:
+```tsx
+{vendor?.vendor_type !== 'food' ? (
+  <>
+    <div className="flex-1">
+      <BuyNowButton
+        listingId={listing.id}
+        vendorId={listing.vendor_id}
+        listingTitle={listing.title ?? undefined}
+        listingPrice={listing.price}
+      />
+    </div>
+    <AskSellerButton
+      listingId={listing.id}
+      vendorId={listing.vendor_id}
+      listingTitle={listing.title ?? undefined}
+      listingPrice={listing.price}
+      negotiable={listing.negotiable ?? false}
+      isSold={isSold}
+      variant="icon"
+    />
+    <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
+  </>
+) : (
+  <>
+    <div className="flex-1">
+      <AskSellerButton
+        listingId={listing.id}
+        vendorId={listing.vendor_id}
+        listingTitle={listing.title ?? undefined}
+        listingPrice={listing.price}
+        negotiable={listing.negotiable ?? false}
+        isSold={isSold}
+      />
+    </div>
+    <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
+  </>
+)}
+```
+
+**Desktop CTAs** — inside `{/* Desktop CTAs — hidden on mobile (bottom bar handles it) */}`, prepend the BuyNowButton before AskSellerButton for non-food vendors:
 
 ```tsx
-{roles.isVendor && !roles.isFoodVendor ? (
-  <div className="rounded-2xl border p-3 space-y-2">
-    <div className="text-sm font-semibold text-zinc-900">Your store</div>
-    <div className="text-sm text-zinc-700">
-      <span className="text-zinc-500">Name:</span> <span className="font-medium">{vendor?.name ?? '—'}</span>
-    </div>
-    <div className="text-sm text-zinc-700">
-      <span className="text-zinc-500">Verification:</span>{' '}
-      <span className="font-medium">
-        {vendor?.verified ? '✅ Verified'
-          : vendor?.verification_status === 'requested' || vendor?.verification_status === 'under_review' ? '⏳ Under review'
-          : vendor?.verification_status === 'rejected' ? '❌ Rejected'
-          : 'Not verified'}
-      </span>
-    </div>
-    {vendor?.id && (
-      <Link
-        href={`/vendors/${vendor.id}`}
-        className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-zinc-900"
-      >
-        View your storefront →
-      </Link>
+{listing.vendor_id ? (
+  <div className="hidden lg:block space-y-2 pt-1">
+    {vendor?.vendor_type !== 'food' && isActive && !isSold && (
+      <BuyNowButton
+        listingId={listing.id}
+        vendorId={listing.vendor_id}
+        listingTitle={listing.title ?? undefined}
+        listingPrice={listing.price}
+        size="full"
+      />
     )}
+    <AskSellerButton ... />
+    ...
   </div>
 ) : null}
 ```
 
 ---
 
-### TASK 11 — Update QuickActions for normal vendors
+### TASK 5 — Create the BuyNowButton component
 
-File: `app/me/_components/QuickActions.tsx`
+Create file: `components/listing/BuyNowButton.tsx`
 
-Normal vendors (non-food) currently get the generic buyer-focused card array. Add a specific non-food vendor card grid inserted before the generic fallback:
-
-```tsx
-if (roles.isVendor && !roles.isFoodVendor) {
-  const vendorCards = [
-    { href: '/my-listings', icon: <LayoutDashboard className="h-4 w-4" />, title: 'My listings',      desc: 'Manage your active listings' },
-    { href: '/inbox',       icon: <MessageCircle className="h-4 w-4" />,   title: 'Messages',         desc: 'Buyer enquiries and orders' },
-    { href: '/vendor/setup', icon: <Settings className="h-4 w-4" />,      title: 'Vendor settings',  desc: 'Profile, bank details' },
-    { href: '/post',        icon: <PlusSquare className="h-4 w-4" />,      title: 'Post listing',     desc: 'Add a product or service' },
-    { href: '/me?tab=verification', icon: <ShieldCheck className="h-4 w-4" />, title: 'Verification', desc: 'Upload docs & request' },
-    { href: '/saved',       icon: <Bookmark className="h-4 w-4" />,        title: 'Saved items',      desc: 'Items you bookmarked' },
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {vendorCards.map((c) => (
-        <Link key={c.title} href={c.href} className="rounded-2xl border bg-white p-3 shadow-sm transition hover:bg-zinc-50">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-xl border bg-white p-2">{c.icon}</div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-zinc-900">{c.title}</div>
-              <div className="mt-0.5 text-xs text-zinc-600">{c.desc}</div>
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-```
-
-Add `MessageCircle, PlusSquare` to the imports at the top of the file.
-
----
-
-### TASK 12 — Add suspended vendor check to storefront and food vendor grid
-
-File: `app/vendors/[id]/page.tsx`
-
-After loading the vendor, add a suspended check before rendering the storefront:
-```ts
-if ((vendor as any).suspended_at) {
-  return (
-    <div className="mx-auto max-w-xl pt-12 text-center px-4">
-      <p className="text-lg font-semibold text-zinc-900">This store is currently unavailable</p>
-      <p className="mt-2 text-sm text-zinc-500">This vendor account has been suspended.</p>
-      <Link href="/explore" className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 no-underline">
-        Browse other vendors →
-      </Link>
-    </div>
-  );
-}
-```
-
-The vendor select query must include `suspended_at`. Add it to the select string.
-
-For the food vendor grid — check whether it lives in `app/food/page.tsx`, `app/food/FoodVendorGrid.tsx`, or the food tab inside `app/explore/page.tsx`. Whichever file queries food vendors, add `.is('suspended_at', null)` to exclude suspended vendors from the grid.
-
----
-
-### TASK 13 — Add kitchen pause mechanism to food vendor system
-
-This requires a DB migration. Create the migration file first, then update the UI.
-
-Create file: `supabase/migrations/20260324_vendor_pause.sql`
-
-```sql
-ALTER TABLE public.vendors
-  ADD COLUMN IF NOT EXISTS pause_until timestamptz,
-  ADD COLUMN IF NOT EXISTS pause_reason text;
-```
-
-File: `app/vendor/page.tsx`
-
-Add pause state near the other useState declarations:
-```ts
-const [pausing, setPausing] = useState(false);
-```
-
-Add a "Pause for" button row below the accepts_orders toggle button, only visible when `vendor.accepts_orders === true`. Place it inside the food dashboard branch only:
+This component does everything FinalizeDealButton does, but it works from the listing page before a conversation exists. When tapped:
+1. Opens an inline panel (same design as FinalizeDealButton)
+2. On submit: first creates/finds a conversation, then calls `/api/orders/create-marketplace`
+3. On success: redirects to `/inbox/[conversationId]` where the OrderBubble is already visible
 
 ```tsx
-{vendor.accepts_orders && (
-  <div className="flex gap-2 px-5 pb-4 -mt-2">
-    <p className="text-xs text-zinc-500 self-center mr-1">Pause for:</p>
-    {[15, 30, 60].map((mins) => (
+'use client';
+// components/listing/BuyNowButton.tsx
+// Primary purchase CTA on listing detail pages for non-food vendors.
+// Creates a conversation + marketplace order in one tap, then navigates to inbox.
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Loader2, ShoppingBag, X, CheckCircle2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+
+type Props = {
+  listingId: string;
+  vendorId: string;
+  listingTitle?: string;
+  listingPrice?: number | null;
+  size?: 'full' | 'compact';
+};
+
+function onlyDigits(s: string) {
+  return s.replace(/[^\d]/g, '');
+}
+
+export default function BuyNowButton({
+  listingId,
+  vendorId,
+  listingTitle,
+  listingPrice,
+  size = 'full',
+}: Props) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [priceDigits, setPriceDigits] = useState(listingPrice ? String(listingPrice) : '');
+  const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'cash'>('transfer');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [authWall, setAuthWall] = useState(false);
+
+  async function getOrCreateConversation(userId: string): Promise<string | null> {
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('buyer_id', userId)
+      .maybeSingle();
+
+    if (existing?.id) return existing.id;
+
+    const { data: created, error: insertErr } = await supabase
+      .from('conversations')
+      .insert({ listing_id: listingId, buyer_id: userId, vendor_id: vendorId })
+      .select('id')
+      .single();
+
+    if (insertErr || !created) {
+      // Race: try fetching again
+      const { data: retry } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('listing_id', listingId)
+        .eq('buyer_id', userId)
+        .maybeSingle();
+      return retry?.id ?? null;
+    }
+
+    return created.id;
+  }
+
+  async function handleBuyNow() {
+    const price = parseInt(priceDigits, 10);
+    if (!priceDigits || !Number.isFinite(price) || price <= 0) {
+      setError('Enter the price');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+
+      if (!user) {
+        setAuthWall(true);
+        setLoading(false);
+        return;
+      }
+
+      const conversationId = await getOrCreateConversation(user.id);
+      if (!conversationId) throw new Error('Could not open conversation');
+
+      const res = await fetch('/api/orders/create-marketplace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          listing_id: listingId,
+          vendor_id: vendorId,
+          agreed_price: price,
+          payment_method: paymentMethod,
+          note: note.trim() || undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.message ?? 'Failed to create order');
+
+      // Navigate to inbox where the OrderBubble + payment flow is ready
+      router.push(`/inbox/${conversationId}`);
+    } catch (err: any) {
+      if (err.message?.includes('bank transfer details')) {
+        setError("This seller hasn't added their bank account yet. Try cash payment or message them instead.");
+      } else if (err.message?.includes('already has an order')) {
+        setError('You already have an active order for this item. Check your inbox.');
+      } else {
+        setError(err.message ?? 'Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Auth wall
+  if (authWall) {
+    return (
+      <div className="rounded-2xl border bg-zinc-50 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-zinc-900">Sign in to buy</p>
+          <button type="button" onClick={() => setAuthWall(false)}>
+            <X className="h-4 w-4 text-zinc-400" />
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">Create a free account in under a minute.</p>
+        <div className="flex gap-2">
+          <a
+            href={`/signup?next=/listing/${listingId}`}
+            className="flex-1 rounded-2xl bg-zinc-900 px-4 py-2.5 text-center text-sm font-semibold text-white no-underline hover:bg-zinc-800"
+          >
+            Sign up free
+          </a>
+          <a
+            href={`/login?next=/listing/${listingId}`}
+            className="flex-1 rounded-2xl border bg-white px-4 py-2.5 text-center text-sm font-semibold text-zinc-900 no-underline hover:bg-zinc-50"
+          >
+            Log in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Closed state — just the button
+  if (!open) {
+    return (
       <button
-        key={mins}
         type="button"
-        disabled={pausing}
-        onClick={async () => {
-          setPausing(true);
-          const pauseUntil = new Date(Date.now() + mins * 60 * 1000).toISOString();
-          await supabase
-            .from('vendors')
-            .update({ accepts_orders: false, pause_until: pauseUntil, pause_reason: `Paused for ${mins} min` })
-            .eq('id', vendor.id);
-          setVendor((prev) => prev ? { ...prev, accepts_orders: false } as VendorRow : prev);
-          setPausing(false);
-        }}
-        className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+        onClick={() => setOpen(true)}
+        className={cn(
+          'inline-flex items-center justify-center gap-2 rounded-2xl font-semibold transition',
+          size === 'full'
+            ? 'w-full px-4 py-3 text-sm bg-zinc-900 text-white hover:bg-zinc-700'
+            : 'px-4 py-2.5 text-sm bg-zinc-900 text-white hover:bg-zinc-700'
+        )}
       >
-        {mins}m
+        <ShoppingBag className="h-4 w-4" />
+        Buy now
       </button>
-    ))}
-  </div>
+    );
+  }
+
+  // Open panel
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 shadow-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-zinc-900">
+          {listingTitle ? `Buy: ${listingTitle.slice(0, 40)}${listingTitle.length > 40 ? '…' : ''}` : 'Complete purchase'}
+        </p>
+        <button
+          type="button"
+          onClick={() => { setOpen(false); setError(null); }}
+          className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Price */}
+      <div>
+        <label className="block text-xs font-semibold text-zinc-500 mb-1">
+          {listingPrice ? 'Confirm price' : 'Agreed price'}
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border bg-zinc-50 px-3 py-2.5 focus-within:bg-white focus-within:ring-2 focus-within:ring-zinc-900/10">
+          <span className="text-sm font-semibold text-zinc-400">₦</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder={listingPrice ? listingPrice.toLocaleString('en-NG') : '0'}
+            value={priceDigits ? parseInt(priceDigits, 10).toLocaleString('en-NG') : ''}
+            onChange={(e) => setPriceDigits(onlyDigits(e.target.value))}
+            className="w-full bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:font-normal placeholder:text-zinc-400"
+            autoFocus
+          />
+        </div>
+      </div>
+
+      {/* Payment method */}
+      <div>
+        <label className="block text-xs font-semibold text-zinc-500 mb-1">Payment</label>
+        <div className="grid grid-cols-2 gap-2">
+          {(['transfer', 'cash'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setPaymentMethod(m)}
+              className={cn(
+                'rounded-xl border py-2 text-xs font-semibold transition',
+                paymentMethod === m
+                  ? 'border-zinc-900 bg-zinc-900 text-white'
+                  : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
+              )}
+            >
+              {m === 'transfer' ? '🏦 Bank transfer' : '💵 Cash on pickup'}
+            </button>
+          ))}
+        </div>
+        {paymentMethod === 'transfer' && (
+          <p className="mt-1 text-[11px] text-zinc-400">
+            Seller's bank details will appear in chat after ordering.
+          </p>
+        )}
+      </div>
+
+      {/* Note */}
+      <textarea
+        placeholder="Add a note — e.g. pickup location, condition question…"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        className="w-full resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-xs text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900/10 placeholder:text-zinc-400"
+      />
+
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
+      <button
+        type="button"
+        onClick={handleBuyNow}
+        disabled={loading || !priceDigits}
+        className={cn(
+          'w-full rounded-2xl py-3 text-sm font-semibold text-white transition',
+          loading || !priceDigits
+            ? 'bg-zinc-300 cursor-not-allowed'
+            : 'bg-zinc-900 hover:bg-zinc-700'
+        )}
+      >
+        {loading ? (
+          <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+        ) : (
+          <span className="flex items-center justify-center gap-2">
+            <CheckCircle2 className="h-4 w-4" />
+            Confirm order
+          </span>
+        )}
+      </button>
+
+      <p className="text-[11px] text-zinc-400 text-center">
+        Creates an order and opens chat. No payment taken yet.
+      </p>
+    </div>
+  );
+}
+```
+
+---
+
+### TASK 6 — Add listing context strip inside conversation
+
+File: `app/inbox/[conversationId]/page.tsx`
+
+The conversation header currently shows a 40×40px thumbnail with just the listing title. Add a collapsible listing context card that shows below the header — visible by default, collapsible so it doesn't crowd the chat on small screens.
+
+Find the top bar section. After the role context strip (the green/indigo banner that says "You're the seller/buyer in this chat"), add:
+
+```tsx
+{/* Listing context strip — collapsible */}
+{listing && !loading && (
+  <ListingContextStrip listing={listing} />
 )}
 ```
 
-When the vendor toggles back on (accepts_orders → true in the `toggleOrders` or equivalent handler), also clear pause fields:
-```ts
-await supabase
-  .from('vendors')
-  .update({ accepts_orders: true, pause_until: null, pause_reason: null })
-  .eq('id', vendor.id);
+Create the `ListingContextStrip` component inside the same file (or as a separate file — your choice based on size):
+
+```tsx
+function ListingContextStrip({
+  listing,
+}: {
+  listing: { id: string; title: string | null; image_url: string | null; status: string | null; price?: number | null; price_label?: string | null };
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="w-full border-t bg-zinc-50 px-4 py-1.5 text-left text-[11px] text-zinc-400 hover:bg-zinc-100 flex items-center justify-between"
+      >
+        <span className="truncate">{listing.title ?? 'Listing'}</span>
+        <span className="shrink-0 ml-2">▾ Show details</span>
+      </button>
+    );
+  }
+
+  const isSold = listing.status === 'sold';
+  const priceText = (listing as any).price != null
+    ? `₦${Number((listing as any).price).toLocaleString('en-NG')}`
+    : (listing as any).price_label?.trim() || null;
+
+  return (
+    <div className="border-t bg-zinc-50 px-4 py-2.5 flex items-center gap-3">
+      {listing.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={listing.image_url}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-xl object-cover border border-zinc-200"
+        />
+      ) : (
+        <div className="h-10 w-10 shrink-0 rounded-xl bg-zinc-200 border border-zinc-200" />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="truncate text-xs font-semibold text-zinc-900">{listing.title ?? 'Listing'}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          {priceText && (
+            <span className="text-xs font-bold text-zinc-900">{priceText}</span>
+          )}
+          {isSold && (
+            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SOLD</span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <a
+          href={`/listing/${listing.id}`}
+          className="text-[11px] text-zinc-500 hover:text-zinc-900 no-underline"
+        >
+          View →
+        </a>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="text-zinc-400 hover:text-zinc-600"
+          aria-label="Hide listing details"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 ```
+
+For this to work, the listing data in the conversation meta needs `price` and `price_label`. The current query only selects `id, title, image_url, status`. Update the listing join in the conversation query inside the initial load `useEffect`:
+
+Find:
+```ts
+listing:listings(id, title, image_url, status),
+```
+Replace with:
+```ts
+listing:listings(id, title, image_url, status, price, price_label),
+```
+
+Also update the `ConversationMeta.listing` type to include these fields:
+```ts
+listing: {
+  id: string;
+  title: string | null;
+  image_url: string | null;
+  status: string | null;
+  price: number | null;
+  price_label: string | null;
+} | null;
+```
+
+Add `useState` import for collapsed state (it's already imported — just use it in the component).
 
 ---
 
-### TASK 14 — Add "after creation" onboarding redirect for normal vendors
+### TASK 7 — Fix auth redirect on AskSellerButton (replace inline auth wall with redirect)
 
-File: `app/vendor/create/page.tsx`
+File: `components/listing/AskSellerButton.tsx`
 
-Instead of `router.replace('/me')` after successful creation, redirect to `/vendor`:
+The current auth wall shows an inline panel when a user is not logged in. This breaks intent — the user was mid-flow on the listing page and now has to complete sign-up inside a small inline component, then re-tap.
+
+In `openConversation()`, when there's no user, instead of `setAuthWall(true)`, redirect to login with the listing page as the return destination:
+
+Find:
 ```ts
-router.replace('/vendor');
+if (!user) {
+  setAuthWall(true);
+  return null;
+}
 ```
 
-This lands the new vendor on their normal vendor dashboard (Task 6) which immediately shows the bank details warning, storefront link, and quick actions.
+Replace with:
+```ts
+if (!user) {
+  // Redirect to login with return destination so buyer comes back to the listing
+  window.location.href = `/login?next=/listing/${listingId}`;
+  return null;
+}
+```
+
+Do the same in `handleOffer()` where `setAuthWall(true)` also appears.
+
+Remove the `authWall` state variable and the entire `{authWall && (...)}` JSX block at the bottom of the component since it's no longer needed.
 
 ---
 
-### TASK 15 — Remove /api/vendor/setup food-only guard
+### TASK 8 — Add a quick "message seller" icon to listing cards on /explore
 
-File: `app/api/vendor/setup/route.ts`
+File: `app/explore/page.tsx`
 
-Read the `getVendor()` helper. It has `.eq('vendor_type', 'food')` in the vendor select query. Remove that line so all vendor types can load and save their profile data through this route.
+The `ListingCard` component renders as a plain `<Link>` — the whole card is tappable. Add a small chat icon button in the bottom-right of the card body that opens a conversation without navigating to the listing detail.
 
-Keep everything else in the file identical — only remove the `.eq('vendor_type', 'food')` filter.
+This requires the card to know the vendor's user context. The card already receives `vendor` as a prop which includes `vendor_id` on the listing. Add a chat icon that calls a minimal `openConversation` (same logic as AskSellerButton but inline).
+
+Find the `ListingCard` component. In the bottom row (where location and timeAgo are shown), add a chat button to the right:
+
+```tsx
+{/* Quick contact button — only for active, non-food listings */}
+{!isSold && !isInactive && listing.vendor_id && vendor?.vendor_type !== 'food' && (
+  <QuickMessageButton
+    listingId={listing.id}
+    vendorId={listing.vendor_id}
+  />
+)}
+```
+
+Add the `QuickMessageButton` component just above the `ListingCard` function:
+
+```tsx
+function QuickMessageButton({ listingId, vendorId }: { listingId: string; vendorId: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (loading) return;
+    setLoading(true);
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const { supabase } = await import('@/lib/supabase');
+    const { data: authData } = await supabase.auth.getUser();
+    const user = authData?.user;
+
+    if (!user) {
+      window.location.href = `/login?next=/listing/${listingId}`;
+      return;
+    }
+
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('buyer_id', user.id)
+      .maybeSingle();
+
+    if (existing?.id) {
+      router.push(`/inbox/${existing.id}`);
+      return;
+    }
+
+    const { data: created } = await supabase
+      .from('conversations')
+      .insert({ listing_id: listingId, buyer_id: user.id, vendor_id: vendorId })
+      .select('id')
+      .single();
+
+    if (created?.id) {
+      router.push(`/inbox/${created.id}`);
+    } else {
+      router.push(`/listing/${listingId}`);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      aria-label="Message seller"
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 transition"
+    >
+      {loading
+        ? <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+        : <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      }
+    </button>
+  );
+}
+```
+
+Add `useRouter` to the imports from `next/navigation` at the top of explore/page.tsx if not already imported.
+
+Add `useState` usage — check if it's already imported and add `useState` if not.
+
+Place the `QuickMessageButton` render inside the existing stats row in ListingCard. Find the line that renders timeAgo and the saves badge, and add the button to the right of the timestamp:
+
+```tsx
+<div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
+  <span className="truncate">{listing.location ?? "—"}</span>
+  <div className="flex shrink-0 items-center gap-2">
+    {stats && stats.saves > 0 && (
+      <span ...>🔖 {stats.saves}</span>
+    )}
+    <span>{listing.created_at ? timeAgo(listing.created_at) : ""}</span>
+    {/* Quick message button */}
+    {!isSold && !isInactive && listing.vendor_id && vendor?.vendor_type !== 'food' && (
+      <QuickMessageButton
+        listingId={listing.id}
+        vendorId={listing.vendor_id as string}
+      />
+    )}
+  </div>
+</div>
+```
 
 ---
 
 ## VERIFICATION CHECKLIST
 
-After all tasks are complete, confirm each item:
+After all tasks are complete:
 
-- [ ] `app/me/_components/ListingsTab.tsx` — prop is `vendorId`, query uses `.eq('vendor_id', vendorId)`
-- [ ] `app/me/page.tsx` — passes `vendor?.id` to ListingsTab; listings count query uses `vendorRes.data.id`
-- [ ] `app/my-listings/page.tsx` — "Mark sold" button visible on active listings only, updates status inline with optimistic UI
-- [ ] `app/vendor/create/page.tsx` — collects `bank_name`, `bank_account_number`, `bank_account_name`; redirects to `/vendor` after creation
-- [ ] `app/vendor/register/page.tsx` — collects bank fields, includes them in food vendor insert
-- [ ] `app/vendor/page.tsx` — `isFoodVendor` check gates food dashboard vs normal vendor dashboard
-- [ ] `app/vendor/page.tsx` — normal vendor dashboard shows: bank warning if missing, storefront link + copy button, NormalVendorStats (listings/active/unread), quick links to my-listings/inbox/setup/storefront
-- [ ] `app/vendor/page.tsx` — pending state shows food-specific "get ahead" content only when `vendor.vendor_type === 'food'`; normal vendors see post-listing + add-bank-details links
-- [ ] `app/vendor/page.tsx` — food onboarding checklist includes `hasBankDetails` as fourth step; `showChecklist` checks all four
-- [ ] `app/vendor/page.tsx` — "Pause 15m / 30m / 60m" buttons appear below the go-live toggle for food vendors that are currently accepting orders
-- [ ] `supabase/migrations/20260324_vendor_pause.sql` — migration file created with `pause_until` and `pause_reason` columns
-- [ ] `app/me/_components/types.ts` — `Vendor` type includes `bank_name`, `bank_account_number`, `bank_account_name`
-- [ ] `app/me/page.tsx` — vendor select query includes bank fields
-- [ ] `app/me/_components/ContextBanner.tsx` — bank warning banner shows for non-food vendors missing `bank_account_number`, with correct priority ordering (not shown when verification banner is already active)
-- [ ] `app/me/_components/OverviewTab.tsx` — shows full `verification_status` text (verified/under review/rejected/not verified) and storefront link for non-food vendors
-- [ ] `app/me/_components/QuickActions.tsx` — non-food vendors get vendor-specific quick action grid (my-listings, messages, vendor settings, post listing, verification, saved)
-- [ ] `app/vendors/[id]/page.tsx` — suspended vendors show "unavailable" page; select query includes `suspended_at`
-- [ ] Food vendor grid excludes suspended vendors (`.is('suspended_at', null)` in query)
-- [ ] `app/api/vendor/setup/route.ts` — `.eq('vendor_type', 'food')` guard removed from `getVendor()`
+- [ ] `app/inbox/[conversationId]/page.tsx` — `canShowFinalizeDeal` has NO `messages.length >= 2` gate
+- [ ] `app/inbox/[conversationId]/page.tsx` — quick reply chips show "I'll take it — sort payment" and "Make an offer" as primary chips for non-food vendors, with "Is this still available?" and "Where can we meet?" as secondary chips
+- [ ] `app/inbox/[conversationId]/page.tsx` — `showFinalizePanelFromChip` state exists; tapping "I'll take it" chip opens the FinalizeDealButton panel immediately
+- [ ] `app/inbox/[conversationId]/page.tsx` — listing context strip (image, title, price) is visible below the role banner, collapsible with X button
+- [ ] `app/inbox/[conversationId]/page.tsx` — listing query includes `price, price_label`; `ConversationMeta.listing` type includes these fields
+- [ ] `components/chat/FinalizeDealButton.tsx` — accepts `openOnMount` prop, defaults to `false`; panel opens immediately when `openOnMount={true}`
+- [ ] `components/chat/FinalizeDealButton.tsx` — after successful order, shows "Order created! Track order →" banner instead of returning null
+- [ ] `components/listing/BuyNowButton.tsx` — new file exists; creates conversation + marketplace order in one flow; redirects to `/inbox/[conversationId]` on success; handles auth redirect; handles vendor_no_bank_details error gracefully
+- [ ] `app/listing/[id]/page.tsx` — imports BuyNowButton; mobile bottom bar shows BuyNowButton as primary CTA for non-food vendors with AskSellerButton as icon; desktop CTAs show BuyNowButton first for non-food active listings
+- [ ] `components/listing/AskSellerButton.tsx` — auth wall replaced with `window.location.href = /login?next=/listing/[id]` redirect; `authWall` state and inline JSX removed
+- [ ] `app/explore/page.tsx` — `QuickMessageButton` component exists above `ListingCard`; chat icon appears on active non-food listing cards; tapping it opens/creates a conversation and navigates to inbox; tapping does NOT navigate to listing detail
 - [ ] No TypeScript errors in any modified file
-- [ ] Food vendor full flow is untouched — orders, menu management, payment confirmation, push notifications all work as before
+- [ ] Food vendor listing flow (MealBuilder, food order) is completely untouched
+- [ ] Existing offer flow in AskSellerButton still works correctly

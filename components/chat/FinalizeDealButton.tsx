@@ -14,6 +14,7 @@ type Props = {
   vendorId: string;
   listingTitle?: string;
   listingPrice?: number | null;
+  openOnMount?: boolean;
   onOrderCreated: (orderId: string) => void;
 };
 
@@ -27,9 +28,10 @@ export default function FinalizeDealButton({
   vendorId,
   listingTitle,
   listingPrice,
+  openOnMount = false,
   onOrderCreated,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(openOnMount);
   const [priceDigits, setPriceDigits] = useState(listingPrice ? String(listingPrice) : '');
   const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'cash'>('transfer');
   const [note, setNote] = useState('');
@@ -37,7 +39,24 @@ export default function FinalizeDealButton({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  if (done) return null;
+  if (done) {
+    return (
+      <div className="mx-4 mb-2">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <p className="text-sm font-semibold text-emerald-800">Order created!</p>
+          </div>
+          <a
+            href="/my-orders"
+            className="shrink-0 rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 no-underline"
+          >
+            Track order →
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   async function handleCreate() {
     const price = parseInt(priceDigits, 10);

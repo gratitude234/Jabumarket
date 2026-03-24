@@ -34,7 +34,9 @@ export default function MobileTopBar() {
   const sp = useSearchParams();
 
   const showSearch =
-    pathname === "/" || pathname.startsWith("/explore") || pathname.startsWith("/vendors") || pathname.startsWith("/study");
+    // Home has its own search bar in the hero — don't duplicate it here
+    (pathname !== "/") &&
+    (pathname.startsWith("/explore") || pathname.startsWith("/vendors") || pathname.startsWith("/study"));
 
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);

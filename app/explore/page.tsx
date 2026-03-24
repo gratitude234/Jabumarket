@@ -8,6 +8,7 @@ import { timeAgo } from "@/lib/utils";
 import ListingImage from "@/components/ListingImage";
 import { Search, ArrowRight, ArrowLeft, UtensilsCrossed, CheckCircle2, Circle } from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
+import QuickMessageButton from "@/components/explore/QuickMessageButton";
 import RecentSearchesBar from "@/components/explore/RecentSearchesBar";
 import ExploreNavProgress from "@/components/explore/ExploreNavProgress";
 import PriceRangeSlider from "@/components/explore/PriceRangeSlider";
@@ -962,6 +963,12 @@ function ListingCard({
               </span>
             )}
             <span>{listing.created_at ? timeAgo(listing.created_at) : ""}</span>
+            {!isSold && !isInactive && (listing as any).vendor_id && vendor?.vendor_type !== 'food' && (
+              <QuickMessageButton
+                listingId={listing.id}
+                vendorId={(listing as any).vendor_id as string}
+              />
+            )}
           </div>
         </div>
       </div>

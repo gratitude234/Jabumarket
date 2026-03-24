@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import AskSellerButton from "@/components/listing/AskSellerButton";
+import BuyNowButton from "@/components/listing/BuyNowButton";
 import SaveButton from "@/components/listing/SaveButton";
 import { VendorRatingBadge } from "@/components/vendor/VendorReviews";
 import BackButton from "@/components/listing/BackButton";
@@ -423,6 +424,15 @@ export default async function ListingPage({
             {/* Desktop CTAs — hidden on mobile (bottom bar handles it) */}
             {listing.vendor_id ? (
               <div className="hidden lg:block space-y-2 pt-1">
+                {vendor?.vendor_type !== 'food' && isActive && !isSold && (
+                  <BuyNowButton
+                    listingId={listing.id}
+                    vendorId={listing.vendor_id}
+                    listingTitle={listing.title ?? undefined}
+                    listingPrice={listing.price}
+                    size="full"
+                  />
+                )}
                 <AskSellerButton
                   listingId={listing.id}
                   vendorId={listing.vendor_id}
@@ -581,17 +591,42 @@ export default async function ListingPage({
       {listing.vendor_id && !isSold ? (
         <div className="fixed bottom-16 left-0 right-0 z-40 px-4 lg:hidden">
           <div className="mx-auto flex max-w-lg items-center gap-2 rounded-2xl border bg-white/95 p-2.5 shadow-lg backdrop-blur-sm">
-            <div className="flex-1">
-              <AskSellerButton
-                listingId={listing.id}
-                vendorId={listing.vendor_id}
-                listingTitle={listing.title ?? undefined}
-                listingPrice={listing.price}
-                negotiable={listing.negotiable ?? false}
-                isSold={isSold}
-              />
-            </div>
-            <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
+            {vendor?.vendor_type !== 'food' ? (
+              <>
+                <div className="flex-1">
+                  <BuyNowButton
+                    listingId={listing.id}
+                    vendorId={listing.vendor_id}
+                    listingTitle={listing.title ?? undefined}
+                    listingPrice={listing.price}
+                  />
+                </div>
+                <AskSellerButton
+                  listingId={listing.id}
+                  vendorId={listing.vendor_id}
+                  listingTitle={listing.title ?? undefined}
+                  listingPrice={listing.price}
+                  negotiable={listing.negotiable ?? false}
+                  isSold={isSold}
+                  variant="icon"
+                />
+                <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
+              </>
+            ) : (
+              <>
+                <div className="flex-1">
+                  <AskSellerButton
+                    listingId={listing.id}
+                    vendorId={listing.vendor_id}
+                    listingTitle={listing.title ?? undefined}
+                    listingPrice={listing.price}
+                    negotiable={listing.negotiable ?? false}
+                    isSold={isSold}
+                  />
+                </div>
+                <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
+              </>
+            )}
           </div>
         </div>
       ) : null}

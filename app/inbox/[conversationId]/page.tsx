@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   Store,
   UtensilsCrossed,
+  X,
 } from "lucide-react";
 import type { OrderPayload } from "@/types/meal-builder";
 import OrderBubble from "@/components/chat/OrderBubble";
@@ -74,6 +75,76 @@ function shouldShowDateSeparator(messages: Message[], index: number) {
   return prev.toDateString() !== curr.toDateString();
 }
 
+// ─── Listing context strip ────────────────────────────────────────────────────
+
+function ListingContextStrip({
+  listing,
+}: {
+  listing: { id: string; title: string | null; image_url: string | null; status: string | null; price?: number | null; price_label?: string | null };
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="w-full border-t bg-zinc-50 px-4 py-1.5 text-left text-[11px] text-zinc-400 hover:bg-zinc-100 flex items-center justify-between"
+      >
+        <span className="truncate">{listing.title ?? 'Listing'}</span>
+        <span className="shrink-0 ml-2">&#9662; Show details</span>
+      </button>
+    );
+  }
+
+  const isSold = listing.status === 'sold';
+  const priceText = (listing as any).price != null
+    ? `₦${Number((listing as any).price).toLocaleString('en-NG')}`
+    : (listing as any).price_label?.trim() || null;
+
+  return (
+    <div className="border-t bg-zinc-50 px-4 py-2.5 flex items-center gap-3">
+      {listing.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={listing.image_url}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-xl object-cover border border-zinc-200"
+        />
+      ) : (
+        <div className="h-10 w-10 shrink-0 rounded-xl bg-zinc-200 border border-zinc-200" />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="truncate text-xs font-semibold text-zinc-900">{listing.title ?? 'Listing'}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          {priceText && (
+            <span className="text-xs font-bold text-zinc-900">{priceText}</span>
+          )}
+          {isSold && (
+            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SOLD</span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <a
+          href={`/listing/${listing.id}`}
+          className="text-[11px] text-zinc-500 hover:text-zinc-900 no-underline"
+        >
+          View →
+        </a>
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          className="text-zinc-400 hover:text-zinc-600"
+          aria-label="Hide listing details"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ConversationPage() {
@@ -100,6 +171,7 @@ export default function ConversationPage() {
   } | null>(null);
   const [showMealBuilder, setShowMealBuilder] = useState(false);
   const [hasMarketplaceOrder, setHasMarketplaceOrder] = useState(false);
+  const [showFinalizePanelFromChip, setShowFinalizePanelFromChip] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -123,13 +195,12 @@ export default function ConversationPage() {
     vendor?.vendor_type === "food" &&
     vendor?.accepts_orders !== false;
 
-  // Show Finalize Deal for non-food vendors with no order yet, after 2+ messages
+  // Show Finalize Deal for non-food vendors with no order yet
   const isNonFoodVendor = vendor?.vendor_type !== 'food';
   const canShowFinalizeDeal =
     !isVendorSide &&
     isNonFoodVendor &&
-    !hasMarketplaceOrder &&
-    messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
+    !hasMarketplaceOrder;
 
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     bottomRef.current?.scrollIntoView({ behavior });
@@ -501,6 +572,11 @@ export default function ConversationPage() {
             }
           </div>
         )}
+
+        {/* Listing context strip — collapsible */}
+        {listing && !loading && (
+          <ListingContextStrip listing={listing} />
+        )}
       </div>
 
       {/* Messages */}
@@ -614,10 +690,34 @@ export default function ConversationPage() {
       )}
 
       {/* Quick reply chips — only shown when conversation has no messages */}
-      {messages.length === 0 ? (
-        <div className="bg-white px-4 pt-3 pb-0">
+      {messages.length === 0 && !isVendorSide ? (
+        <div className="bg-white px-4 pt-3 pb-0 space-y-2">
+          {/* Primary action chips — non-food only */}
+          {isNonFoodVendor && !hasMarketplaceOrder && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFinalizePanelFromChip(true)}
+                disabled={sending}
+                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+              >
+                I&apos;ll take it — sort payment
+              </button>
+              {listing?.price && (
+                <button
+                  type="button"
+                  onClick={() => send(`I'd like to make an offer on "${listing?.title ?? 'this item'}"`)}
+                  disabled={sending}
+                  className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  Make an offer
+                </button>
+              )}
+            </div>
+          )}
+          {/* Passive chips */}
           <div className="flex flex-wrap gap-2">
-            {["Is this still available?", "Can you do lower?", "Where can we meet?"].map((chip) => (
+            {["Is this still available?", "Where can we meet?"].map((chip) => (
               <button
                 key={chip}
                 type="button"
@@ -639,6 +739,7 @@ export default function ConversationPage() {
           vendorId={meta.vendor_id}
           listingTitle={listing?.title ?? undefined}
           listingPrice={listing?.price ?? null}
+          openOnMount={showFinalizePanelFromChip}
           onOrderCreated={() => setHasMarketplaceOrder(true)}
         />
       )}

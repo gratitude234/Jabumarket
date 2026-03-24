@@ -19,7 +19,6 @@ import {
   ShoppingBasket,
   UtensilsCrossed,
   Wrench,
-  PlusSquare,
   BadgeCheck,
   MapPin,
   Image as ImageIcon,
@@ -206,20 +205,11 @@ export default async function HomePage() {
       {/* ── APP HEADER ──────────────────────────────────────────────── */}
       <section className="space-y-3">
         {/* Greeting row */}
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-              Good day 👋
-            </h1>
-            <p className="mt-0.5 text-sm text-zinc-500">What are you looking for?</p>
-          </div>
-          <Link
-            href="/post"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-700"
-          >
-            <PlusSquare className="h-3.5 w-3.5" />
-            Post
-          </Link>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+            Good day 👋
+          </h1>
+          <p className="mt-0.5 text-sm text-zinc-500">What are you looking for?</p>
         </div>
 
         {/* Search bar */}
