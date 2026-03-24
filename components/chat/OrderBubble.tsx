@@ -135,6 +135,7 @@ function BuyerPaymentPanel({
   paymentMethod,
   vendorBank,
   orderId,
+  initialReceiptUploaded,
   onBuyerConfirm,
 }: {
   total: number;
@@ -142,13 +143,14 @@ function BuyerPaymentPanel({
   paymentMethod?: string;
   vendorBank?: BankDetails | null;
   orderId?: string;
+  initialReceiptUploaded?: boolean;
   onBuyerConfirm?: () => Promise<void>;
 }) {
   const [loading,        setLoading]        = useState(false);
   const [copied,         setCopied]         = useState(false);
   const [done,           setDone]           = useState(false);
   const [uploading,      setUploading]      = useState(false);
-  const [receiptUploaded, setReceiptUploaded] = useState(false);
+  const [receiptUploaded, setReceiptUploaded] = useState(initialReceiptUploaded ?? false);
   const [uploadError,    setUploadError]    = useState<string | null>(null);
 
   // Already confirmed — show status only
@@ -198,7 +200,12 @@ function BuyerPaymentPanel({
 
   return (
     <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 space-y-2.5">
-      <p className="text-xs font-semibold text-amber-900">Pay for your order</p>
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-bold text-white">
+          1
+        </span>
+        <p className="text-xs font-semibold text-amber-900">Transfer to this account</p>
+      </div>
 
       {vendorBank ? (
         <>
@@ -220,15 +227,23 @@ function BuyerPaymentPanel({
           </div>
 
           <p className="text-[11px] text-amber-700">
-            Transfer {fmt(total)} to the account above, then upload your receipt and tap &quot;I&apos;ve paid&quot;.
+            Transfer {fmt(total)} to the account above. Upload your receipt &mdash; the vendor needs proof before confirming.
           </p>
 
           {/* Receipt upload */}
           {orderId && (
             <div>
-              <label className="block text-[11px] font-semibold text-amber-800 mb-1">
-                Upload receipt (optional but recommended)
-              </label>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={cn(
+                  'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                  receiptUploaded ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'
+                )}>
+                  {receiptUploaded ? '✓' : '2'}
+                </span>
+                <label className="text-[11px] font-semibold text-amber-800">
+                  Upload transfer receipt (required)
+                </label>
+              </div>
               <label className={cn(
                 'flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed py-2 text-xs font-medium transition-all',
                 receiptUploaded
@@ -274,13 +289,21 @@ function BuyerPaymentPanel({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={loading}
+            disabled={loading || !receiptUploaded}
             className={cn(
-              'w-full rounded-xl py-2 text-xs font-semibold text-white transition-all',
-              loading ? 'bg-zinc-400' : 'bg-zinc-900 hover:bg-zinc-700'
+              'w-full rounded-xl py-2 text-xs font-semibold transition-all',
+              loading
+                ? 'bg-zinc-400 text-white cursor-wait'
+                : !receiptUploaded
+                ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed border border-zinc-200'
+                : 'bg-zinc-900 text-white hover:bg-zinc-700'
             )}
           >
-            {loading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : "I've paid"}
+            {loading
+              ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+              : !receiptUploaded
+              ? 'Upload receipt to confirm'
+              : "I've paid"}
           </button>
         </>
       ) : (
@@ -450,6 +473,7 @@ export default function OrderBubble({
             paymentMethod={paymentMethod}
             vendorBank={vendorBank}
             orderId={orderId}
+            initialReceiptUploaded={!!receiptUrl}
             onBuyerConfirm={onBuyerConfirm}
           />
         )}
