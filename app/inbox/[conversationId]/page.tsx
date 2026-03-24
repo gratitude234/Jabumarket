@@ -9,11 +9,11 @@ import {
   CheckCheck,
   Loader2,
   MessageCircle,
+  MoreVertical,
   Send,
   ShoppingBag,
   Store,
   UtensilsCrossed,
-  X,
 } from "lucide-react";
 import type { OrderPayload } from "@/types/meal-builder";
 import OrderBubble from "@/components/chat/OrderBubble";
@@ -75,76 +75,6 @@ function shouldShowDateSeparator(messages: Message[], index: number) {
   return prev.toDateString() !== curr.toDateString();
 }
 
-// ─── Listing context strip ────────────────────────────────────────────────────
-
-function ListingContextStrip({
-  listing,
-}: {
-  listing: { id: string; title: string | null; image_url: string | null; status: string | null; price?: number | null; price_label?: string | null };
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setCollapsed(false)}
-        className="w-full border-t bg-zinc-50 px-4 py-1.5 text-left text-[11px] text-zinc-400 hover:bg-zinc-100 flex items-center justify-between"
-      >
-        <span className="truncate">{listing.title ?? 'Listing'}</span>
-        <span className="shrink-0 ml-2">&#9662; Show details</span>
-      </button>
-    );
-  }
-
-  const isSold = listing.status === 'sold';
-  const priceText = (listing as any).price != null
-    ? `₦${Number((listing as any).price).toLocaleString('en-NG')}`
-    : (listing as any).price_label?.trim() || null;
-
-  return (
-    <div className="border-t bg-zinc-50 px-4 py-2.5 flex items-center gap-3">
-      {listing.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={listing.image_url}
-          alt=""
-          className="h-10 w-10 shrink-0 rounded-xl object-cover border border-zinc-200"
-        />
-      ) : (
-        <div className="h-10 w-10 shrink-0 rounded-xl bg-zinc-200 border border-zinc-200" />
-      )}
-      <div className="flex-1 min-w-0">
-        <p className="truncate text-xs font-semibold text-zinc-900">{listing.title ?? 'Listing'}</p>
-        <div className="flex items-center gap-2 mt-0.5">
-          {priceText && (
-            <span className="text-xs font-bold text-zinc-900">{priceText}</span>
-          )}
-          {isSold && (
-            <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">SOLD</span>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <a
-          href={`/listing/${listing.id}`}
-          className="text-[11px] text-zinc-500 hover:text-zinc-900 no-underline"
-        >
-          View →
-        </a>
-        <button
-          type="button"
-          onClick={() => setCollapsed(true)}
-          className="text-zinc-400 hover:text-zinc-600"
-          aria-label="Hide listing details"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ConversationPage() {
@@ -171,7 +101,6 @@ export default function ConversationPage() {
   } | null>(null);
   const [showMealBuilder, setShowMealBuilder] = useState(false);
   const [hasMarketplaceOrder, setHasMarketplaceOrder] = useState(false);
-  const [showFinalizePanelFromChip, setShowFinalizePanelFromChip] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -195,12 +124,13 @@ export default function ConversationPage() {
     vendor?.vendor_type === "food" &&
     vendor?.accepts_orders !== false;
 
-  // Show Finalize Deal for non-food vendors with no order yet
+  // Show Finalize Deal for non-food vendors with no order yet, after 2+ messages
   const isNonFoodVendor = vendor?.vendor_type !== 'food';
   const canShowFinalizeDeal =
     !isVendorSide &&
     isNonFoodVendor &&
-    !hasMarketplaceOrder;
+    !hasMarketplaceOrder &&
+    messages.filter(m => !m.id.startsWith('opt-')).length >= 2;
 
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     bottomRef.current?.scrollIntoView({ behavior });
@@ -518,76 +448,82 @@ export default function ConversationPage() {
 
   // ── Main chat UI ──────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto flex max-w-xl flex-col" style={{ height: "calc(100dvh - 56px - 4rem)" }}>
+    <div className="mx-auto flex max-w-xl flex-col" style={{ height: "100dvh" }}>
 
-      {/* Top bar */}
-      <div className="flex flex-col border-b bg-white">
-        <div className="flex items-center gap-3 px-4 py-3">
+      {/* ── Header: single compact bar ── */}
+      <div className="flex shrink-0 items-center gap-3 border-b bg-white px-4 py-3">
+        <Link
+          href="/inbox"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-zinc-200 hover:bg-zinc-50"
+          aria-label="Back to inbox"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+
+        {/* Listing image + text — all in one row, tappable to view listing */}
+        {listing ? (
           <Link
-            href="/inbox"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border hover:bg-zinc-50"
-            aria-label="Back to inbox"
+            href={`/listing/${listing.id}`}
+            className="flex min-w-0 flex-1 items-center gap-3 no-underline"
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-
-          {listing ? (
-            <Link
-              href={`/listing/${listing.id}`}
-              className="flex min-w-0 flex-1 items-center gap-3 no-underline"
-            >
-              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100">
-                {listing.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={listing.image_url} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                    <ShoppingBag className="h-4 w-4" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-zinc-900">{listing.title ?? "Listing"}</p>
-                <p className="text-xs text-zinc-500">{otherPartyName}</p>
-              </div>
-            </Link>
-          ) : (
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-zinc-900">{otherPartyName}</p>
+            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100">
+              {listing.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={listing.image_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-zinc-300">
+                  <ShoppingBag className="h-4 w-4" />
+                </div>
+              )}
             </div>
-          )}
-        </div>
-
-        {/* Role context strip — the key fix: user always knows which hat they're wearing */}
-        {!loading && meta && (
-          <div className={[
-            "flex items-center gap-2 px-4 py-1.5 text-[11px] font-medium",
-            isVendorSide
-              ? "bg-emerald-50 text-emerald-700 border-t border-emerald-100"
-              : "bg-indigo-50 text-indigo-700 border-t border-indigo-100",
-          ].join(" ")}>
-            {isVendorSide
-              ? <><Store className="h-3 w-3 shrink-0" /> You&rsquo;re the <strong>seller</strong> in this chat &mdash; buyer is asking about your listing</>
-              : <><ShoppingBag className="h-3 w-3 shrink-0" /> You&rsquo;re the <strong>buyer</strong> in this chat &mdash; messaging the seller</>
-            }
+            <div className="min-w-0">
+              {/* Title + price on one line */}
+              <p className="truncate text-sm font-semibold text-zinc-900">
+                {listing.title ?? "Listing"}
+                {listing.price != null && (
+                  <span className="ml-1.5 font-normal text-zinc-500">
+                    · ₦{listing.price.toLocaleString("en-NG")}
+                  </span>
+                )}
+              </p>
+              {/* Vendor name + role pill */}
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500">
+                {!loading && meta && (
+                  <>
+                    <span
+                      className={[
+                        "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                        isVendorSide ? "bg-emerald-500" : "bg-blue-500",
+                      ].join(" ")}
+                    />
+                    <span className={isVendorSide ? "font-medium text-emerald-700" : "font-medium text-blue-700"}>
+                      {isVendorSide ? "You're selling" : "You're buying"}
+                    </span>
+                    <span className="text-zinc-300">·</span>
+                  </>
+                )}
+                <span className="truncate">{otherPartyName}</span>
+              </p>
+            </div>
+          </Link>
+        ) : (
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-semibold text-zinc-900">{otherPartyName}</p>
           </div>
         )}
 
-        {/* Listing context strip — collapsible */}
-        {listing && !loading && (
-          <ListingContextStrip listing={listing} />
-        )}
+        <MoreVertical className="h-4 w-4 shrink-0 text-zinc-400" />
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+      {/* ── Messages ── */}
+      <div className="flex-1 overflow-y-auto bg-zinc-50 px-4 py-4 space-y-1">
         {loading ? (
           <div className="flex items-center justify-center pt-12">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-300" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 pt-12 text-center">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-zinc-100">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white border border-zinc-100">
               <MessageCircle className="h-6 w-6 text-zinc-300" />
             </div>
             <div>
@@ -596,6 +532,20 @@ export default function ConversationPage() {
                 Ask about availability, price, or anything else.
               </p>
             </div>
+            {/* Quick chips shown in the empty state, not buried below fold */}
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
+              {["Is this still available?", "Can you do lower?", "Where can we meet?"].map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => send(chip)}
+                  disabled={sending}
+                  className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           messages.map((msg, i) => {
@@ -603,7 +553,6 @@ export default function ConversationPage() {
             const isOptimistic = msg.id.startsWith("opt-");
             const showDate = shouldShowDateSeparator(messages, i);
 
-            // Show the other party's label only on their first message in a sequence
             const prevMsg = i > 0 ? messages[i - 1] : null;
             const isFirstInSequence = !prevMsg || prevMsg.sender_id !== msg.sender_id;
             const showSenderLabel = !isMine && isFirstInSequence;
@@ -612,17 +561,16 @@ export default function ConversationPage() {
               <div key={msg.id}>
                 {showDate && (
                   <div className="flex items-center justify-center py-3">
-                    <span className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] text-zinc-500">
+                    <span className="rounded-full bg-zinc-200/60 px-3 py-1 text-[11px] text-zinc-500">
                       {formatDateSeparator(msg.created_at)}
                     </span>
                   </div>
                 )}
                 <div className={`flex flex-col ${isMine ? "items-end" : "items-start"} mb-1`}>
-                  {/* Other party label — only on first bubble in a sequence */}
                   {showSenderLabel && (
                     <span className={[
                       "mb-1 flex items-center gap-1 px-1 text-[10px] font-semibold",
-                      isVendorSide ? "text-indigo-500" : "text-emerald-600",
+                      isVendorSide ? "text-blue-500" : "text-emerald-600",
                     ].join(" ")}>
                       {isVendorSide
                         ? <><ShoppingBag className="h-2.5 w-2.5" /> Buyer</>
@@ -631,7 +579,6 @@ export default function ConversationPage() {
                     </span>
                   )}
 
-                  {/* Order bubble or text bubble */}
                   {msg.type === "order" && msg.order_payload ? (
                     <OrderBubble
                       payload={msg.order_payload}
@@ -655,7 +602,7 @@ export default function ConversationPage() {
                         "max-w-[78%] rounded-2xl px-4 py-2.5 text-sm",
                         isMine
                           ? "rounded-br-md bg-zinc-900 text-white"
-                          : "rounded-bl-md bg-white border text-zinc-900",
+                          : "rounded-bl-md bg-white border border-zinc-100 text-zinc-900",
                         isOptimistic ? "opacity-70" : "",
                       ].filter(Boolean).join(" ")}
                     >
@@ -689,49 +636,6 @@ export default function ConversationPage() {
         </div>
       )}
 
-      {/* Quick reply chips — only shown when conversation has no messages */}
-      {messages.length === 0 && !isVendorSide ? (
-        <div className="bg-white px-4 pt-3 pb-0 space-y-2">
-          {/* Primary action chips — non-food only */}
-          {isNonFoodVendor && !hasMarketplaceOrder && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setShowFinalizePanelFromChip(true)}
-                disabled={sending}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-900 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
-              >
-                I&apos;ll take it — sort payment
-              </button>
-              {listing?.price && (
-                <button
-                  type="button"
-                  onClick={() => send(`I'd like to make an offer on "${listing?.title ?? 'this item'}"`)}
-                  disabled={sending}
-                  className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                >
-                  Make an offer
-                </button>
-              )}
-            </div>
-          )}
-          {/* Passive chips */}
-          <div className="flex flex-wrap gap-2">
-            {["Is this still available?", "Where can we meet?"].map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                onClick={() => send(chip)}
-                disabled={sending}
-                className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       {canShowFinalizeDeal && meta && (
         <FinalizeDealButton
           conversationId={conversationId}
@@ -739,22 +643,20 @@ export default function ConversationPage() {
           vendorId={meta.vendor_id}
           listingTitle={listing?.title ?? undefined}
           listingPrice={listing?.price ?? null}
-          openOnMount={showFinalizePanelFromChip}
           onOrderCreated={() => setHasMarketplaceOrder(true)}
         />
       )}
 
-      {/* Input bar */}
-      <div className="border-t bg-white px-4 py-3">
+      {/* ── Input bar ── */}
+      <div className="shrink-0 border-t bg-white px-4 py-3">
         <div className="flex items-end gap-2">
-          {/* Build Meal button */}
           {canShowMealButton && (
             <button
               type="button"
               onClick={() => setShowMealBuilder(!showMealBuilder)}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-              aria-label="Build a meal"
-              title="Build a meal"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50"
+              aria-label="Build a meal order"
+              title="Build a meal order"
             >
               <UtensilsCrossed className="h-4 w-4" />
             </button>
@@ -766,7 +668,7 @@ export default function ConversationPage() {
             onKeyDown={onKeyDown}
             placeholder="Type a message…"
             rows={1}
-            className="flex-1 resize-none overflow-hidden rounded-2xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            className="flex-1 resize-none overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
             style={{ maxHeight: "120px" }}
             onInput={(e) => {
               const el = e.currentTarget;
@@ -784,9 +686,6 @@ export default function ConversationPage() {
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
-        <p className="mt-1.5 text-[11px] text-zinc-400 text-center">
-          Enter to send · Shift+Enter for new line
-        </p>
       </div>
     </div>
   );

@@ -142,6 +142,10 @@ export default function BottomNav() {
   const inboxUnread = useInboxUnread();
   const { isVendor, pendingCount } = useVendorMode();
 
+  // Conversation pages are full-screen chat — no bottom nav
+  const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
+  if (isConversationPage) return null;
+
   const studentItems = [
     { href: "/",        label: "Home",     icon: Home,            badge: null },
     { href: "/explore", label: "Explore",  icon: Search,          badge: null },

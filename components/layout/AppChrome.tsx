@@ -14,6 +14,7 @@ const APP_CONTAINER =
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin") || pathname?.startsWith("/study-admin");
+  const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname ?? "");
 
   const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null)
   const [showNotifPrompt, setShowNotifPrompt] = useState(false)
@@ -76,7 +77,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
         <TopNav />
       </Suspense>
 
-      <main className={[APP_CONTAINER, "py-6 md:py-8", "pb-20 md:pb-8"].join(" ")}>
+      <main className={isConversationPage ? "" : [APP_CONTAINER, "py-6 md:py-8", "pb-20 md:pb-8"].join(" ")}>
         {children}
       </main>
 
