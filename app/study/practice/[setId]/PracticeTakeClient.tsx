@@ -378,8 +378,31 @@ export default function PracticeTakeClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitted]);
 
+  // Guard against accidental back-navigation mid-quiz
+  useEffect(() => {
+    if (submitted || loading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Your progress is saved — are you sure you want to leave?";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [submitted, loading]);
+
   function submitNow() {
     if (submitted) return;
+    setSubmitted(true);
+  }
+
+  function handleSubmitClick() {
+    if (submitted) return;
+    const unanswered = stats.total - stats.answered;
+    if (unanswered > 0) {
+      const confirmed = window.confirm(
+        `${unanswered} question${unanswered !== 1 ? "s" : ""} unanswered — submit anyway?`
+      );
+      if (!confirmed) return;
+    }
     setSubmitted(true);
   }
 
@@ -959,7 +982,7 @@ if (err || !meta) {
                 ) : (
                   <button
                     type="button"
-                    onClick={submitNow}
+                    onClick={handleSubmitClick}
                     className={cn(
                       "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                       studyMode
@@ -981,45 +1004,26 @@ if (err || !meta) {
           {/* ── Explanation Panel — appears after student answers ────────── */}
           {isRevealed && current ? (
             <div className="space-y-2">
-              {/* Study mode: show stored explanation immediately */}
-              {studyMode && current.explanation ? (
-                <div className={cn(
-                  "rounded-2xl border px-3 py-3 space-y-1.5",
-                  chosenId === correctOptionId
-                    ? "border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-700/30 dark:bg-emerald-950/20"
-                    : "border-rose-200/60 bg-rose-50/50 dark:border-rose-700/30 dark:bg-rose-950/20"
-                )}>
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "grid h-7 w-7 shrink-0 place-items-center rounded-xl text-xs",
-                      chosenId === correctOptionId
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                        : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                    )}>
-                      <BookOpen className="h-3.5 w-3.5" />
-                    </span>
-                    <p className={cn(
-                      "text-xs font-extrabold",
-                      chosenId === correctOptionId
-                        ? "text-emerald-700 dark:text-emerald-300"
-                        : "text-rose-700 dark:text-rose-300"
-                    )}>Explanation</p>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{current.explanation}</p>
+              {(current.explanation || (current as any).ai_explanation) ? (
+                <div className="rounded-2xl border border-violet-200/70 bg-violet-50/50 px-3 py-3 dark:border-violet-700/30 dark:bg-violet-950/20">
+                  <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 mb-1">Explanation</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {current.explanation ?? (current as any).ai_explanation}
+                  </p>
                 </div>
-              ) : null}
-              {/* AI deep-dive button — always available after answering */}
-              <AiExplainInline
-                questionId={current.id}
-                questionPrompt={String(current.prompt ?? "")}
-                chosenOptionText={
-                  currentOptions.find((o) => o.id === chosenId)?.text ?? null
-                }
-                correctOptionText={
-                  currentOptions.find((o) => getIsCorrect(o))?.text ?? null
-                }
-                isCorrect={chosenId === correctOptionId}
-              />
+              ) : (
+                <AiExplainInline
+                  questionId={current.id}
+                  questionPrompt={String(current.prompt ?? "")}
+                  chosenOptionText={
+                    currentOptions.find((o) => o.id === chosenId)?.text ?? null
+                  }
+                  correctOptionText={
+                    currentOptions.find((o) => getIsCorrect(o))?.text ?? null
+                  }
+                  isCorrect={chosenId === correctOptionId}
+                />
+              )}
             </div>
           ) : null}
 
@@ -1037,7 +1041,7 @@ if (err || !meta) {
 
               <button
                 type="button"
-                onClick={submitNow}
+                onClick={handleSubmitClick}
                 className={cn(
                   "shrink-0 inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                   studyMode

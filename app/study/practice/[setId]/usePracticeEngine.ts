@@ -68,6 +68,7 @@ export function usePracticeEngine({
   // Timer
   const [timeLeftMs, setTimeLeftMs] = useState<number | null>(null);
   const deadlineRef = useRef<number | null>(null);
+  const startedAtMsRef = useRef<number>(Date.now());
 
   // Finalize
   const [finalizing, setFinalizing] = useState(false);
@@ -167,7 +168,7 @@ export function usePracticeEngine({
         const qReq = supabase
           .from("study_quiz_questions")
           .select(
-            "id,prompt,explanation,position," +
+            "id,prompt,explanation,ai_explanation,position," +
             "study_quiz_options(id,question_id,text,is_correct,position)"
           )
           .eq("set_id", setId)
@@ -230,6 +231,7 @@ export function usePracticeEngine({
           id: String(rest.id),
           prompt: String(rest.prompt ?? ""),
           explanation: rest.explanation ?? null,
+          ai_explanation: (rest as any).ai_explanation ?? null,
           position: typeof rest.position === "number" ? rest.position : null,
         }));
 
@@ -249,6 +251,7 @@ export function usePracticeEngine({
             effectiveAttemptId = String(attData.id);
             const st = new Date(String(attData.started_at)).getTime();
             startedAtMs = Number.isFinite(st) ? st : Date.now();
+            startedAtMsRef.current = startedAtMs;
 
             // Answers are the only remaining sequential fetch — they need
             // the confirmed attemptId before we can request them.
@@ -276,22 +279,53 @@ export function usePracticeEngine({
 
         // Create new attempt if none was provided via URL
         if (user && !initialAttemptRef.current) {
-          const startedIso = new Date().toISOString();
-          const created = await supabase
+          // Check for existing in_progress attempt first (deduplication guard)
+          const { data: existingAttempt } = await supabase
             .from("study_practice_attempts")
-            .insert({
-              user_id: user.id,
-              set_id: setId,
-              status: "in_progress",
-              started_at: startedIso,
-            } as any)
-            .select("id,started_at")
+            .select("id, started_at")
+            .eq("user_id", user.id)
+            .eq("set_id", setId)
+            .eq("status", "in_progress")
+            .order("created_at", { ascending: false })
             .maybeSingle();
 
-          if (!created.error && created.data?.id) {
-            effectiveAttemptId = String(created.data.id);
-            const st = new Date(String(created.data.started_at ?? startedIso)).getTime();
+          if (existingAttempt?.id) {
+            effectiveAttemptId = String(existingAttempt.id);
+            const st = new Date(String(existingAttempt.started_at)).getTime();
             startedAtMs = Number.isFinite(st) ? st : Date.now();
+            startedAtMsRef.current = startedAtMs;
+
+            // Restore saved answers from the existing attempt
+            const ansRes = await supabase
+              .from("study_attempt_answers")
+              .select("question_id,selected_option_id")
+              .eq("attempt_id", effectiveAttemptId);
+            const amap: Record<string, string> = {};
+            (ansRes.data ?? []).forEach((r: any) => {
+              if (r?.question_id && r?.selected_option_id)
+                amap[String(r.question_id)] = String(r.selected_option_id);
+            });
+            if (!cancelled) setAnswers(amap);
+          } else {
+            // No existing attempt — create new one
+            const startedIso = new Date().toISOString();
+            const created = await supabase
+              .from("study_practice_attempts")
+              .insert({
+                user_id: user.id,
+                set_id: setId,
+                status: "in_progress",
+                started_at: startedIso,
+              } as any)
+              .select("id,started_at")
+              .maybeSingle();
+
+            if (!created.error && created.data?.id) {
+              effectiveAttemptId = String(created.data.id);
+              const st = new Date(String(created.data.started_at ?? startedIso)).getTime();
+              startedAtMs = Number.isFinite(st) ? st : Date.now();
+              startedAtMsRef.current = startedAtMs;
+            }
           }
         }
 
@@ -436,7 +470,7 @@ export function usePracticeEngine({
    * Reuses the already-loaded questions/options — no network request.
    * Creates a fresh in-memory session without affecting the original attempt.
    */
-  function retryWeakQuestions() {
+  async function retryWeakQuestions() {
     const weakIds = new Set<string>(
       questions
         .filter((q) => {
@@ -450,6 +484,22 @@ export function usePracticeEngine({
 
     if (weakIds.size === 0) return; // nothing to retry
 
+    // Create a fresh attempt row so finalizeAttempt can persist SRS data
+    const userId = userIdRef.current;
+    let retryAttemptId: string | null = null;
+    if (userId) {
+      const startedIso = new Date().toISOString();
+      const { data: newAttempt } = await supabase
+        .from("study_practice_attempts")
+        .insert({ user_id: userId, set_id: setId, status: "in_progress", started_at: startedIso } as any)
+        .select("id")
+        .maybeSingle();
+      if (newAttempt?.id) {
+        retryAttemptId = String(newAttempt.id);
+        startedAtMsRef.current = Date.now();
+      }
+    }
+
     setRetryWeakIds(weakIds);
     setAnswers({});
     setFlagged({});
@@ -457,6 +507,9 @@ export function usePracticeEngine({
     setSubmitted(false);
     setReviewTab("all");
     finalizedRef.current = false;
+    setAttemptId(retryAttemptId);
+    initialAttemptRef.current = retryAttemptId;
+
     // Timer: restart from full duration for the weak-only subset
     if (meta?.time_limit_minutes) {
       const deadline = Date.now() + meta.time_limit_minutes * 60_000;
@@ -497,6 +550,9 @@ export function usePracticeEngine({
         const limitSec = meta.time_limit_minutes * 60;
         const left = typeof timeLeftMs === "number" ? Math.max(0, Math.floor(timeLeftMs / 1000)) : 0;
         timeSpent = Math.max(0, limitSec - left);
+      } else {
+        // Untimed session — compute elapsed from attempt start
+        timeSpent = Math.max(0, Math.round((Date.now() - startedAtMsRef.current) / 1000));
       }
 
       // Avoid breaking if optional columns don't exist.
@@ -515,7 +571,22 @@ export function usePracticeEngine({
         .eq("user_id", userId);
 
       // Update daily activity/streak (ignore if missing)
-      const activityDate = submittedIso.slice(0, 10);
+      // WAT = UTC+1. Use Nigerian local date, not UTC.
+      const watOffsetMs = 60 * 60 * 1000;
+      const watDate = new Date(new Date(submittedIso).getTime() + watOffsetMs);
+      const activityDate = watDate.toISOString().slice(0, 10);
+
+      // Fetch existing row to accumulate points and increment attempts
+      const { data: existingActivity } = await supabase
+        .from("study_daily_activity")
+        .select("points, attempts")
+        .eq("user_id", userId)
+        .eq("activity_date", activityDate)
+        .maybeSingle();
+
+      const prevPoints = (existingActivity as any)?.points ?? 0;
+      const prevAttempts = (existingActivity as any)?.attempts ?? 0;
+
       await supabase
         .from("study_daily_activity")
         .upsert(
@@ -523,7 +594,8 @@ export function usePracticeEngine({
             user_id: userId,
             activity_date: activityDate,
             did_practice: true,
-            points: Math.max(1, correct),
+            points: prevPoints + Math.max(1, correct),
+            attempts: prevAttempts + 1,
             updated_at: submittedIso,
           } as any,
           { onConflict: "user_id,activity_date" }
@@ -535,15 +607,16 @@ export function usePracticeEngine({
       const questionIds = activeQuestions.map((q) => q.id);
       const { data: existingRows } = await supabase
         .from("study_weak_questions")
-        .select("question_id, miss_count, correct_streak")
+        .select("question_id, miss_count, correct_streak, last_missed_at")
         .eq("user_id", userId)
         .in("question_id", questionIds);
 
-      const existingMap: Record<string, { miss_count: number; correct_streak: number }> = {};
+      const existingMap: Record<string, { miss_count: number; correct_streak: number; last_missed_at: string | null }> = {};
       for (const row of (existingRows ?? []) as any[]) {
         existingMap[row.question_id] = {
           miss_count: row.miss_count ?? 0,
           correct_streak: row.correct_streak ?? 0,
+          last_missed_at: row.last_missed_at ?? null,
         };
       }
 
@@ -579,7 +652,7 @@ export function usePracticeEngine({
             user_id: userId,
             question_id: q.id,
             miss_count: existing.miss_count,
-            last_missed_at: submittedIso, // keep existing — not a new miss
+            last_missed_at: existingMap[q.id]?.last_missed_at ?? submittedIso,
             next_due_at: computeNextDue(existing.miss_count, submittedIso),
             correct_streak: newStreak,
             graduated_at: graduated ? submittedIso : null,

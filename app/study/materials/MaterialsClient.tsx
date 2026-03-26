@@ -60,7 +60,6 @@ type MaterialRow = {
   id: string;
   title: string | null;
   description: string | null;
-  file_url: string | null;
   file_path: string | null;
   session: string | null;
   approved: boolean | null;
@@ -72,6 +71,7 @@ type MaterialRow = {
   material_type?: string | null;
   featured?: boolean | null;
   verified?: boolean | null;
+  ai_summary?: string | null;
 
   study_courses?: {
     id: string;
@@ -437,7 +437,7 @@ function PreviewModal({
 }
 
 function detectFileKind(m: MaterialRow): "pdf" | "image" | "other" {
-  const src = ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase();
+  const src = (m.file_path ?? "").toLowerCase();
   if (src.includes(".pdf")) return "pdf";
   if (src.match(/\.(png|jpg|jpeg|webp|gif)/)) return "image";
   return "other";
@@ -476,7 +476,7 @@ function MaterialCard({
       ? "PDF"
       : kind === "image"
       ? "IMAGE"
-      : ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase().match(/\.(ppt|pptx)/)
+      : (m.file_path ?? "").toLowerCase().match(/\.(ppt|pptx)/)
       ? "PPT"
       : "FILE";
 
@@ -491,8 +491,8 @@ function MaterialCard({
       <File className="h-5 w-5 text-foreground" />
     );
 
-  const href = m.file_url || "#";
-  const disabled = href === "#";
+  const href = `/api/study/materials/${m.id}/download`;
+  const disabled = false;
   const isVerified = !!m.verified;
   const isFeatured = !!m.featured;
 
@@ -520,6 +520,23 @@ function MaterialCard({
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
             {m.description ? m.description : dept || faculty ? `${dept}${dept && faculty ? " • " : ""}${faculty}` : " "}
           </p>
+
+          {(() => {
+            const raw = (m as any)?.ai_summary;
+            if (!raw) return null;
+            try {
+              const parsed = JSON.parse(raw);
+              const preview = parsed?.overview ?? parsed?.keyTopics?.[0] ?? null;
+              if (!preview) return null;
+              return (
+                <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground italic">
+                  ✦ {String(preview)}
+                </p>
+              );
+            } catch {
+              return null;
+            }
+          })()}
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
@@ -1235,7 +1252,7 @@ export default function MaterialsClient() {
   const activeSortLabel = SORTS.find((s) => s.key === sortParam)?.label ?? "Newest";
 
   function onPreviewMaterial(m: MaterialRow) {
-    const href = m.file_url || "";
+    const href = "";
     if (!href) {
       setToast("No file URL found");
       return;
@@ -1600,7 +1617,6 @@ export default function MaterialsClient() {
               saving={savingId === m.id}
               onToggleSave={() => onToggleMaterialSave(m.id)}
               onDownload={() => {
-                if (!m.file_url) return;
                 bumpDownloads(m.id);
                 setToast("Download started");
               }}

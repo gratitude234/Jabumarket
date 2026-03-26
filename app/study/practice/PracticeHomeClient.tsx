@@ -886,20 +886,26 @@ function SuggestedTodayWidget() {
           .limit(1);
         if (!attempts?.length || cancelled) return;
 
-        // Find courses with most weak questions due
+        // Find courses with most weak questions due (join to get course_code)
         const { data: weakRows } = await supabase
           .from("study_weak_questions")
-          .select("course_code")
+          .select(`
+            question_id,
+            study_quiz_questions!inner(
+              set_id,
+              study_quiz_sets!inner(id, course_code)
+            )
+          `)
           .eq("user_id", user.id)
           .is("graduated_at", null)
           .limit(50);
         if (!weakRows?.length || cancelled) return;
 
-        // Find the course code with the most weak questions
+        // Count by course_code from the nested join
         const counts: Record<string, number> = {};
         for (const r of weakRows as any[]) {
-          const c = r?.course_code;
-          if (c) counts[c] = (counts[c] ?? 0) + 1;
+          const code = r?.study_quiz_questions?.study_quiz_sets?.course_code;
+          if (code) counts[code] = (counts[code] ?? 0) + 1;
         }
         const topCourse = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
         if (!topCourse || cancelled) return;
@@ -1359,7 +1365,8 @@ function PracticeHomeInner() {
       }
 
       if (semesterParam) {
-        const s = semesterParam.trim().toLowerCase();
+        const semMap: Record<string, string> = { "1st": "first", "2nd": "second", "summer": "summer" };
+        const s = semMap[semesterParam.trim()] ?? semesterParam.trim().toLowerCase();
         if (s) query = query.eq("semester", s);
       }
 

@@ -93,9 +93,7 @@ export async function POST(req: Request) {
 
     const patch: any = { updated_at: nowIso };
 
-    if (exists) {
-      patch.verified = true;
-    } else {
+    if (!exists) {
       const prior = (row as any).description as string | null;
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
       const note = `[BROKEN_UPLOAD ${stamp}] Client reported completion but file not found in storage.`;

@@ -14,31 +14,27 @@ export async function POST(
   const { id: materialId } = await params;
   const admin = createSupabaseAdminClient();
 
-  const { data: existing } = await admin
-    .from('study_material_ratings')
-    .select('id')
-    .eq('material_id', materialId)
-    .eq('user_id', user.id)
+  // Block self-rating
+  const { data: matCheck } = await admin
+    .from('study_materials')
+    .select('uploader_id')
+    .eq('id', materialId)
     .maybeSingle();
 
-  if (existing) {
-    await admin.from('study_material_ratings').delete()
-      .eq('material_id', materialId).eq('user_id', user.id);
-    // Decrement: read-modify-write is acceptable here (non-critical counter)
-    const { data: mat } = await admin
-      .from('study_materials').select('up_votes').eq('id', materialId).maybeSingle();
-    await admin.from('study_materials')
-      .update({ up_votes: Math.max(0, ((mat as any)?.up_votes ?? 1) - 1) })
-      .eq('id', materialId);
-    return NextResponse.json({ ok: true, voted: false });
-  } else {
-    await admin.from('study_material_ratings')
-      .insert({ material_id: materialId, user_id: user.id, vote: 1 });
-    const { data: mat } = await admin
-      .from('study_materials').select('up_votes').eq('id', materialId).maybeSingle();
-    await admin.from('study_materials')
-      .update({ up_votes: ((mat as any)?.up_votes ?? 0) + 1 })
-      .eq('id', materialId);
-    return NextResponse.json({ ok: true, voted: true });
+  if ((matCheck as any)?.uploader_id && (matCheck as any).uploader_id === user.id) {
+    return NextResponse.json({ ok: false, error: 'You cannot vote on your own material' }, { status: 403 });
   }
+
+  // Atomic toggle via RPC
+  const { data: rpcResult, error: rpcErr } = await admin.rpc('toggle_material_vote', {
+    p_material_id: materialId,
+    p_user_id: user.id,
+  });
+
+  if (rpcErr) {
+    return NextResponse.json({ ok: false, error: rpcErr.message }, { status: 500 });
+  }
+
+  const voted = (rpcResult as any)?.voted ?? false;
+  return NextResponse.json({ ok: true, voted });
 }

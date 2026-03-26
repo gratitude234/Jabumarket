@@ -687,6 +687,8 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [toast, setToast] = useState<string | null>(null);
   const [hasUpvoted, setHasUpvoted] = useState(false);
   const [upvoteCount, setUpvoteCount] = useState(m.up_votes ?? 0);
+  const [relatedMaterials, setRelatedMaterials] = useState<any[]>([]);
+  const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(msg: string) {
@@ -713,6 +715,25 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     return () => { cancelled = true; };
   }, [m.id]);
 
+  // Fetch related materials (same course code, max 4)
+  useEffect(() => {
+    let cancelled = false;
+    const code = m.study_courses?.course_code;
+    if (!code) return;
+    (async () => {
+      const { data: related } = await supabase
+        .from("study_materials")
+        .select("id,title,material_type,downloads,up_votes,file_path,created_at,study_courses:course_id(course_code)")
+        .eq("approved", true)
+        .eq("course_code", code)
+        .neq("id", m.id)
+        .order("downloads", { ascending: false })
+        .limit(4);
+      if (!cancelled && related?.length) setRelatedMaterials(related as any[]);
+    })();
+    return () => { cancelled = true; };
+  }, [m.id, m.study_courses?.course_code]);
+
   async function handleToggleSave() {
     setSaving(true);
     const wasSaved = saved;
@@ -736,6 +757,8 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       setDownloads((d) => Math.max(0, d - 1));
     }
     showToast("Download started");
+    // Show rating prompt after short delay (user returns to page after download)
+    setTimeout(() => setShowRatingPrompt(true), 2000);
   }
 
   function handlePreview() {
@@ -949,6 +972,26 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             {upvoteCount > 0 && ` · ${upvoteCount}`}
           </button>
         </div>
+
+        {showRatingPrompt && !hasUpvoted && (
+          <div className="mt-3 flex items-center gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-3">
+            <p className="text-sm font-semibold text-foreground flex-1">Was this material helpful?</p>
+            <button
+              type="button"
+              onClick={() => { handleUpvote(); setShowRatingPrompt(false); }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-secondary/50"
+            >
+              <ThumbsUp className="h-3.5 w-3.5" /> Yes
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRatingPrompt(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Skip
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Inline preview strip ── */}
@@ -998,6 +1041,32 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
         initialUp={m.up_votes ?? 0}
         initialDown={m.down_votes ?? 0}
       />
+
+      {/* Related materials */}
+      {relatedMaterials.length > 0 && (
+        <div className="mt-6">
+          <p className="text-sm font-semibold text-foreground mb-3">
+            More for {course?.course_code ?? "this course"}
+          </p>
+          <div className="space-y-2">
+            {relatedMaterials.map((r) => (
+              <Link
+                key={r.id}
+                href={`/study/materials/${r.id}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 hover:bg-secondary/50 no-underline"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{r.title ?? "Untitled"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {r.material_type?.replace("_", " ")} · {r.downloads ?? 0} downloads
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* About this material */}
       <div className="rounded-2xl border border-border bg-card p-4">

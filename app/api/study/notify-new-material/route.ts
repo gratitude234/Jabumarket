@@ -5,6 +5,13 @@ const MAX_NOTIFICATIONS = 200;
 
 export async function POST(req: Request) {
   try {
+    // This route is called server-to-server only — require CRON_SECRET as bearer
+    const authHeader = req.headers.get("authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!token || token !== process.env.CRON_SECRET) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const material_id = typeof body?.material_id === "string" ? body.material_id.trim() : "";
 

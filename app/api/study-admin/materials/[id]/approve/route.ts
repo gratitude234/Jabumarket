@@ -16,7 +16,7 @@ function idFromUrl(req: Request) {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { scope } = await requireStudyModeratorFromRequest(req);
+    const { scope, userId: moderatorId } = await requireStudyModeratorFromRequest(req);
     const resolvedParams = await params;
 
     // Prefer dynamic route param, but fall back to body.id for resilience
@@ -54,7 +54,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // Standardized patch: only touch columns we rely on everywhere.
     const nowIso = new Date().toISOString();
-    const patch = { approved: true, updated_at: nowIso };
+    const patch = {
+      approved: true,
+      updated_at: nowIso,
+      approved_by: moderatorId,
+      approved_at: nowIso,
+    };
 
     const { data, error } = await admin
       .from("study_materials")
@@ -72,28 +77,46 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await notifyMaterialApproved(id, String(row.title), String(row.uploader_id));
     }
 
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+      ? process.env.NEXT_PUBLIC_SITE_URL
+      : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
+
     // Fire department notifications — fire-and-forget, never blocks approval
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
-      fetch(`${baseUrl}/api/study/notify-new-material`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ material_id: id }),
-      }).catch(() => {});
-    } catch {}
+    fetch(`${baseUrl}/api/study/notify-new-material`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({ material_id: id }),
+    }).catch(() => {});
 
     // Fire AI summary generation — fire-and-forget, never blocks approval
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
-      fetch(`${baseUrl}/api/ai/summarize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ material_id: id }),
-      }).catch(() => {});
+      const { data: matForSummary } = await admin
+        .from("study_materials")
+        .select("title, description, material_type, course_code")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (matForSummary?.title) {
+        fetch(`${baseUrl}/api/ai/summarize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            materialId: id,
+            title: String(matForSummary.title),
+            description: (matForSummary as any).description ?? null,
+            courseCode: (matForSummary as any).course_code ?? null,
+            materialType: (matForSummary as any).material_type ?? "other",
+          }),
+        }).catch(() => {});
+      }
     } catch {}
 
     return NextResponse.json({ ok: true });

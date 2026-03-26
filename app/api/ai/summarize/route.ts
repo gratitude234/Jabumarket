@@ -23,10 +23,18 @@ type MaterialSummary = {
 
 export async function POST(req: NextRequest) {
   // ── Auth ───────────────────────────────────────────────────────────────────
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  // Allow internal server-to-server calls using service role key as bearer
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  const isInternalCall = bearerToken === process.env.SUPABASE_SERVICE_ROLE_KEY && bearerToken.length > 0;
+
+  if (!isInternalCall) {
+    // Original session-based auth for client calls
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+    }
   }
 
   // ── Parse body ─────────────────────────────────────────────────────────────

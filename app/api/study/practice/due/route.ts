@@ -77,7 +77,8 @@ export async function GET() {
     const { data: setRows, error: setError } = await supabase
       .from("study_quiz_sets")
       .select("id, title, course_code")
-      .in("id", setIds);
+      .in("id", setIds)
+      .eq("published", true);
 
     if (setError) throw setError;
 
@@ -110,13 +111,20 @@ export async function GET() {
       setGroups[sid].push(qId);
     }
 
+    // Filter out questions belonging to unpublished sets
+    const publishedSetIds = new Set(Object.keys(setMeta));
+    const filteredSetGroups: Record<string, string[]> = {};
+    for (const [sid, ids] of Object.entries(setGroups)) {
+      if (publishedSetIds.has(sid)) filteredSetGroups[sid] = ids;
+    }
+
     // Sort sets by how many due questions they have (most first).
-    const sortedSetIds = Object.keys(setGroups).sort(
-      (a, b) => setGroups[b].length - setGroups[a].length
+    const sortedSetIds = Object.keys(filteredSetGroups).sort(
+      (a, b) => filteredSetGroups[b].length - filteredSetGroups[a].length
     );
 
     const sets = sortedSetIds.map((sid) => {
-      const ids = setGroups[sid].sort(
+      const ids = filteredSetGroups[sid].sort(
         (a, b) => (missCountMap[b] ?? 0) - (missCountMap[a] ?? 0)
       );
       const mc: Record<string, number> = {};
@@ -136,8 +144,9 @@ export async function GET() {
       };
     });
 
+    const filteredTotal = Object.values(filteredSetGroups).reduce((n, ids) => n + ids.length, 0);
     return NextResponse.json({
-      total: questionIds.length,
+      total: filteredTotal,
       sets,
     });
   } catch (err: any) {

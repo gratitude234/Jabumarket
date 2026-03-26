@@ -79,5 +79,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const url = (signed as any)?.signedUrl as string | undefined;
   if (!url) return jsonError("Failed to sign download", 500, "SIGN_DOWNLOAD_FAILED");
 
+  // Fire-and-forget atomic increment — never blocks the redirect
+  void (async () => { try { await admin.rpc("increment_material_downloads", { p_id: materialId }); } catch {} })();
+
   return NextResponse.redirect(url, { status: 302 });
 }

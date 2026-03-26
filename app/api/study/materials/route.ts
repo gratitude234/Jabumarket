@@ -100,44 +100,47 @@ export async function GET(req: Request) {
 
     const supabase = await createSupabaseServerClient();
 
-    // If mineOnly is requested, scope results to the user's department/level/semester when available.
-    const scope = mineOnly ? await getUserScope(supabase) : null;
+    if (mineOnly) {
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id;
+      if (!uid) {
+        return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      }
+      // Override the base query: filter by uploader_id, remove the approved:true default
+      const mineQuery = supabase
+        .from("study_materials")
+        .select(
+          `id,title,description,file_path,session,approved,created_at,downloads,up_votes,
+           course_id,material_type,featured,verified,ai_summary,
+           study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)`,
+          { count: "exact" }
+        )
+        .eq("uploader_id", uid)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      const mineRes = await mineQuery;
+      if (mineRes.error) {
+        return NextResponse.json({ ok: false, error: mineRes.error.message }, { status: 400 });
+      }
+      return NextResponse.json({
+        ok: true,
+        items: (mineRes.data as any[]) ?? [],
+        total: mineRes.count ?? 0,
+        page,
+        page_size: pageSize,
+      });
+    }
 
     let query = supabase
       .from("study_materials")
       .select(
-        `
-          id,title,description,file_url,file_path,session,approved,created_at,downloads,up_votes,course_id,
-          material_type,featured,verified,
-          study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)
-        `,
+        `id,title,description,file_path,session,approved,created_at,downloads,up_votes,
+         course_id,material_type,featured,verified,ai_summary,
+         study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)`,
         { count: "exact" }
       )
       .eq("approved", true);
-
-    if (scope) {
-      // IMPORTANT: filter on study_materials' own columns, NOT on the embedded
-      // study_courses join. Filtering on joined columns in PostgREST only scopes
-      // what's returned inside that embed — it does NOT exclude the parent row.
-      const lv = Number((scope as any)?.level);
-      if (Number.isFinite(lv)) query = query.eq("level", String(lv));
-
-      const deptId = (scope as any)?.department_id ?? null;
-      if (deptId) {
-        query = query.eq("department_id", deptId);
-      } else {
-        const deptName = String((scope as any)?.department ?? "").trim();
-        if (deptName) query = query.ilike("department", `%${deptName}%`);
-      }
-
-      const facId = (scope as any)?.faculty_id ?? null;
-      if (facId && !deptId) {
-        query = query.eq("faculty_id", facId);
-      }
-
-      const sem = mapSemesterParamToDb(String((scope as any)?.semester ?? ""));
-      if (sem) query = query.eq("semester", sem);
-    }
 
     if (q) {
       // PostgREST `.or()` logic strings are whitespace-sensitive.

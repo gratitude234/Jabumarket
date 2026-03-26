@@ -117,6 +117,7 @@ export type QuizQuestion = {
   id: string;
   prompt: string;
   explanation: string | null;
+  ai_explanation?: string | null;
   position: number | null;
 };
 
