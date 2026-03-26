@@ -29,6 +29,8 @@ type Item = {
   file_url: string | null;
   file_path: string | null;
   description: string | null; // used as rejection note fallback
+  downloads: number | null;
+  up_votes: number | null;
   study_courses?: CourseMini | null;
 };
 
@@ -173,6 +175,20 @@ export default function MyUploadsPage() {
         </Card>
       ) : (
         <div className="grid gap-3">
+          {items.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Uploaded',   value: items.length },
+                { label: 'Downloads',  value: items.reduce((s, m) => s + (m.downloads ?? 0), 0) },
+                { label: 'Upvotes',    value: items.reduce((s, m) => s + (m.up_votes  ?? 0), 0) },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-2xl border bg-card p-3 text-center shadow-sm">
+                  <p className="text-xl font-extrabold text-foreground">{value}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
           {items.map((it) => {
             const c = it.study_courses;
             const courseLine = c

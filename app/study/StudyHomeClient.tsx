@@ -19,6 +19,7 @@ import {
   Clock,
   Filter,
   GraduationCap,
+  Trophy,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -79,6 +80,33 @@ function StudyHomeInner({
     session: string | null;
   }>({ show: false, suggested: null, current: null, session: null });
   const [switchingSemester, setSwitchingSemester] = useState(false);
+
+  // P-5: Exam countdown
+  const [examCountdown, setExamCountdown] = useState<{
+    daysLeft: number; semester: string;
+  } | null>(null);
+
+  useEffect(() => {
+    async function checkExamSeason() {
+      try {
+        const today = new Date(Date.now() + 3_600_000).toISOString().slice(0, 10);
+        const { data } = await supabase
+          .from('study_academic_calendar')
+          .select('session, semester, ends_on')
+          .gte('ends_on', today)
+          .order('ends_on', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (!data?.ends_on) return;
+        const daysLeft = Math.ceil(
+          (new Date(data.ends_on).getTime() - (Date.now() + 3_600_000)) / 86_400_000
+        );
+        if (daysLeft <= 21) setExamCountdown({ daysLeft, semester: data.semester });
+      } catch { /* non-critical */ }
+    }
+    checkExamSeason();
+  }, []);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const quickLevel = prefs?.level ?? 100;
@@ -240,6 +268,44 @@ function StudyHomeInner({
         }
       />
 
+      {/* P-5: Exam countdown banner */}
+      {examCountdown && (
+        <Link
+          href="/study/practice"
+          className={cn(
+            'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 no-underline',
+            examCountdown.daysLeft <= 7
+              ? 'border-red-200 bg-red-50 dark:border-red-800/40 dark:bg-red-950/30'
+              : 'border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-950/30'
+          )}
+        >
+          <div className="min-w-0">
+            <p className={cn(
+              'text-sm font-extrabold',
+              examCountdown.daysLeft <= 7
+                ? 'text-red-900 dark:text-red-200'
+                : 'text-amber-900 dark:text-amber-200'
+            )}>
+              {examCountdown.daysLeft <= 1
+                ? 'Exams start tomorrow!'
+                : `Finals in ${examCountdown.daysLeft} days`}
+            </p>
+            <p className={cn(
+              'text-xs',
+              examCountdown.daysLeft <= 7
+                ? 'text-red-700 dark:text-red-300'
+                : 'text-amber-700 dark:text-amber-300'
+            )}>
+              Practice now to be ready — tap to start.
+            </p>
+          </div>
+          <ArrowRight className={cn(
+            'h-4 w-4 shrink-0',
+            examCountdown.daysLeft <= 7 ? 'text-red-700' : 'text-amber-700'
+          )} />
+        </Link>
+      )}
+
       <ContributorStatusHub
         loading={rep.loading}
         status={rep.status}
@@ -248,6 +314,16 @@ function StudyHomeInner({
       />
 
       <StreakSection />
+
+      {/* M-9: Leaderboard link */}
+      <div className="-mt-2 flex justify-end">
+        <Link
+          href="/study/leaderboard"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+        >
+          <Trophy className="h-3.5 w-3.5" /> Leaderboard
+        </Link>
+      </div>
 
       {userId && <DueTodayWidget userId={userId} />}
 
@@ -488,6 +564,23 @@ function StudyHomeInner({
           )}
         </Section>
       )}
+
+      {/* M-11: GPA Calculator link */}
+      <Link
+        href="/study/gpa"
+        className={cn(
+          'flex items-center justify-between gap-3 rounded-3xl border bg-card p-4 shadow-sm no-underline',
+          'hover:bg-secondary/20'
+        )}
+      >
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold text-foreground">GPA Calculator</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Track your grades and plan for your target GPA.
+          </p>
+        </div>
+        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </Link>
     </div>
   );
 }

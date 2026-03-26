@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "../_components/StudyTabs";
 import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
+import { StudyPrefsProvider, useStudyPrefs } from "../_components/StudyPrefsContext";
 import { RequestCourseModal } from "../_components/RequestCourseModal";
 import {
   ArrowLeft,
@@ -955,6 +956,15 @@ function SuggestedTodayWidget() {
 }
 
 export default function PracticeHomeClient() {
+  return (
+    <StudyPrefsProvider>
+      <PracticeHomeInner />
+    </StudyPrefsProvider>
+  );
+}
+
+function PracticeHomeInner() {
+  const { hasPrefs } = useStudyPrefs();
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -1559,6 +1569,17 @@ export default function PracticeHomeClient() {
     // FIX: prevent any horizontal overflow across the whole page
     <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-28 md:pb-6">
       <StudyTabs />
+
+      {/* M-7: Onboarding nudge */}
+      {!hasPrefs && (
+        <Link
+          href="/study/onboarding"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 no-underline dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300"
+        >
+          <span><strong>Tip:</strong> Set your department to personalise your practice sets.</span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
 
       {/* Suggested for today widget */}
       <SuggestedTodayWidget />

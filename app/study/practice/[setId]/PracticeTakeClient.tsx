@@ -266,6 +266,7 @@ export default function PracticeTakeClient() {
     answers,
     submitted,
     setSubmitted,
+    attemptId,
     timeLeftMs,
     stats,
     finalizing,
@@ -324,6 +325,22 @@ export default function PracticeTakeClient() {
       }
     })();
   }, [submitted, finalizing]);
+
+  // M-3: Mark as understood
+  const [understood, setUnderstood] = useState<Record<string, boolean>>({});
+
+  async function handleMarkUnderstood(questionId: string) {
+    setUnderstood(prev => ({ ...prev, [questionId]: true }));
+    try {
+      if (attemptId) {
+        await supabase
+          .from('study_attempt_answers')
+          .update({ understood: true })
+          .eq('attempt_id', attemptId)
+          .eq('question_id', questionId);
+      }
+    } catch { /* non-critical */ }
+  }
 
   const total = stats.total;
   const isLast = questions.length > 0 && idx >= questions.length - 1;
@@ -482,7 +499,9 @@ if (err || !meta) {
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
-                  timeLeftMs <= 60_000
+                  timeLeftMs <= 30_000
+                    ? "border-rose-300/40 bg-rose-100/40 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
+                    : timeLeftMs <= 120_000
                     ? "border-amber-300/40 bg-amber-100/40 text-foreground dark:bg-amber-950/30"
                     : "border-border bg-background text-foreground"
                 )}
@@ -683,6 +702,19 @@ if (err || !meta) {
                           due {formatDue(r.nextDueAt)}
                         </span>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => handleMarkUnderstood(r.questionId)}
+                        className={cn(
+                          'shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
+                          understood[r.questionId]
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/30'
+                            : 'border-border/60 bg-background text-muted-foreground hover:bg-secondary/50'
+                        )}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {understood[r.questionId] ? 'Understood' : 'Got it'}
+                      </button>
                     </div>
                   ))}
                 {weakSummary.filter((r) => !r.wasCorrect).length > 5 && (
@@ -771,16 +803,19 @@ if (err || !meta) {
           </div>
 
           {/* Tutor prompt for low scores */}
-          {stats.total > 0 && stats.correct / stats.total < 0.5 && (
-            <div className="text-sm text-muted-foreground text-center mt-2">
-              Struggling?{" "}
-              <Link
-                href={`/study/tutors${meta?.course_code ? `?course=${encodeURIComponent(meta.course_code)}` : ""}`}
-                className="underline underline-offset-2 font-semibold text-foreground hover:opacity-80"
-              >
-                Connect with a tutor{meta?.course_code ? ` for ${meta.course_code}` : ""} →
-              </Link>
-            </div>
+          {submitted && stats.total > 0 && (stats.correct / stats.total) < 0.5 && (
+            <Link
+              href={`/study/tutors${meta?.course_code ? `?course=${encodeURIComponent(meta.course_code)}` : ''}`}
+              className="flex items-center justify-between gap-3 rounded-2xl border bg-background px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 no-underline"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Need help?</p>
+                <p className="text-xs text-muted-foreground">
+                  Browse tutors for {meta?.course_code ?? 'this course'}.
+                </p>
+              </div>
+              <GraduationCap className="h-5 w-5 shrink-0 text-muted-foreground" />
+            </Link>
           )}
 
           {/* GPA calculator prompt */}

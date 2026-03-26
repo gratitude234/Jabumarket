@@ -40,7 +40,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: appRow, error: appErr } = await adminDb
     .from("study_rep_applications")
-    .select("id, status")
+    .select("id, status, user_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -57,9 +57,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     decision_reason,
   };
   if (admin_note) updatePayload.admin_note = admin_note;
+  // C-5: Audit trail
+  updatePayload.reviewed_at = new Date().toISOString();
+  updatePayload.reviewed_by = auth.userId;
+  updatePayload.decided_at  = new Date().toISOString();
 
   const { error: updErr } = await adminDb.from("study_rep_applications").update(updatePayload).eq("id", id);
   if (updErr) return jsonError(updErr.message || "Failed to reject application", 500, "UPDATE_FAILED");
+
+  // C-6: Notify applicant
+  try {
+    await adminDb.from('notifications').insert({
+      user_id: appRow.user_id,
+      type:    'rep_rejected',
+      title:   'Application not approved',
+      body:    decision_reason
+        ? `Reason: ${decision_reason}`
+        : 'Your rep application was not approved. Contact the study admin for details.',
+      href:    '/study/apply-rep',
+    });
+  } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true, rejected: true });
 }

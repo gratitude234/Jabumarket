@@ -41,6 +41,14 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Question not found." }, { status: 404 });
   }
 
+  // C-4: Block self-vote
+  if (question.author_id && question.author_id === user.id) {
+    return NextResponse.json(
+      { ok: false, error: 'You cannot upvote your own question.' },
+      { status: 403 }
+    );
+  }
+
   const currentCount = question.upvotes_count ?? 0;
 
   // ── Check current vote state ───────────────────────────────────────────────

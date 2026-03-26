@@ -26,6 +26,7 @@ import {
   SortAsc,
   SortDesc,
   ThumbsUp,
+  ShieldCheck,
 } from "lucide-react";
 
 import { getAuthedUserId, toggleSaved } from "@/lib/studySaved";
@@ -1257,6 +1258,23 @@ export default function MaterialsClient() {
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={repStatus ?? undefined} />
 
+      {/* M-7: Onboarding nudge — shown when user has no department prefs set */}
+      {prefsLoaded && !scopeDept && (
+        <Link
+          href="/study/onboarding"
+          className={cn(
+            'flex items-center justify-between gap-3 rounded-2xl border border-border',
+            'bg-secondary/40 px-4 py-2.5 text-sm text-muted-foreground hover:bg-secondary/60 no-underline'
+          )}
+        >
+          <span>
+            <strong className="text-foreground">Tip:</strong>{' '}
+            Set your department to see only your courses.
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
@@ -1539,11 +1557,13 @@ export default function MaterialsClient() {
                   ? "Help us grow — request it and we’ll notify you when content is available."
                   : (levelParam || deptParam)
                   ? "Try adjusting your filters, or upload the first one."
+                  : (prefsLoaded && !!scopeDept)
+                  ? "Nothing here yet. Request a course and we’ll notify you when materials are uploaded."
                   : "Be the first to upload study materials for your department."
               }
               action={
                 <div className="flex flex-wrap gap-2">
-                  {courseParam ? (
+                  {(courseParam || (prefsLoaded && !!scopeDept)) ? (
                     <button
                       type="button"
                       onClick={() => setRequestModalOpen(true)}
@@ -1553,7 +1573,7 @@ export default function MaterialsClient() {
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       )}
                     >
-                      Request this course
+                      {courseParam ? "Request this course" : "Request a course →"}
                     </button>
                   ) : null}
                   <Link

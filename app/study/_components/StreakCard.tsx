@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Calendar, Flame, CheckCircle2, TrendingUp, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, Flame, CheckCircle2, TrendingUp, Zap } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 // Matches the PracticeAttemptRow shape from @/lib/studyPractice
@@ -176,10 +177,9 @@ export default function StreakCard({
       ? "text-amber-500"
       : "text-muted-foreground";
 
-  const now = new Date();
+  const now          = new Date(Date.now() + 3_600_000);
   const todayStr     = now.toISOString().slice(0, 10);
-  const yesterday    = new Date(now.getTime() - 86_400_000);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  const yesterdayStr = new Date(Date.now() + 3_600_000 - 86_400_000).toISOString().slice(0, 10);
 
   const activeDates = new Set<string>();
   const prompt = getRecoveryPrompt(
@@ -296,6 +296,14 @@ export default function StreakCard({
           </div>
         );
       })()}
+
+      {/* M-9: Leaderboard link */}
+      <Link
+        href="/study/leaderboard"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground no-underline"
+      >
+        See leaderboard <ArrowRight className="h-3.5 w-3.5" />
+      </Link>
     </div>
   );
 }

@@ -99,6 +99,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return jsonError("Cannot approve: course rep must have level(s)", 400, "LEVELS_REQUIRED");
   }
 
+  // M-10: Guard against overwriting existing rep for a different department
+  const { data: existingRep } = await adminDb
+    .from('study_reps')
+    .select('user_id, department_id, role')
+    .eq('user_id', appRow.user_id)
+    .maybeSingle();
+
+  if (existingRep && existingRep.department_id !== department_id) {
+    return jsonError(
+      `This user is already a ${existingRep.role} for a different department. ` +
+      `Revoke their current role first before approving this application.`,
+      409,
+      'REP_ALREADY_EXISTS'
+    );
+  }
+
   // 1) Upsert into study_reps
   const repPayload: Record<string, any> = {
     user_id: appRow.user_id,
@@ -118,9 +134,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   };
   if (admin_note) updatePayload.admin_note = admin_note;
   if (decision_reason) updatePayload.decision_reason = decision_reason;
+  // C-5: Audit trail
+  updatePayload.reviewed_at = new Date().toISOString();
+  updatePayload.reviewed_by = auth.userId;
+  updatePayload.decided_at  = new Date().toISOString();
 
   const { error: updErr } = await adminDb.from("study_rep_applications").update(updatePayload).eq("id", id);
   if (updErr) return jsonError(updErr.message || "Failed to update application", 500, "UPDATE_FAILED");
+
+  // C-6: Notify applicant
+  try {
+    const roleLabel = role === 'dept_librarian' ? 'Dept Librarian' : 'Course Rep';
+    await adminDb.from('notifications').insert({
+      user_id: appRow.user_id,
+      type:    'rep_approved',
+      title:   `You're now a ${roleLabel}!`,
+      body:    'Your application was approved. You can now upload and manage materials for your department.',
+      href:    '/study/materials/upload',
+    });
+  } catch { /* non-critical */ }
 
   return NextResponse.json({
     ok: true,

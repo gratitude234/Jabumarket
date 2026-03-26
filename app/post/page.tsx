@@ -24,20 +24,32 @@ import {
   MapPin,
 } from "lucide-react";
 
-const CATEGORIES = [
+const PRODUCT_CATEGORIES = [
   "Phones",
   "Laptops",
   "Electronics",
   "Fashion",
   "Provisions",
   "Books & Stationery",
-  "Food",
   "Beauty",
-  "Services",
-  "Repairs",
-  "Tutoring",
   "Others",
 ] as const;
+
+const SERVICE_CATEGORIES = [
+  "Tutoring",
+  "Repairs",
+  "Food",
+  "Delivery",
+  "Laundry",
+  "Design & Print",
+  "Hair & Beauty",
+  "Photography",
+  "Others",
+] as const;
+
+const ALL_CATEGORIES = [...PRODUCT_CATEGORIES, ...SERVICE_CATEGORIES] as const;
+
+type Category = typeof ALL_CATEGORIES[number];
 
 type ListingType = "product" | "service";
 
@@ -203,7 +215,7 @@ export default function PostPage() {
   const [setupError, setSetupError] = useState<string | null>(null);
 
   const [listingType, setListingType] = useState<ListingType>("product");
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Phones");
+  const [category, setCategory] = useState<Category | "">("");
   const [condition, setCondition] = useState<ListingCondition | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -211,6 +223,7 @@ export default function PostPage() {
   const [priceLabel, setPriceLabel] = useState<string>("");
   const [location, setLocation] = useState("");
   const [negotiable, setNegotiable] = useState(false);
+  const [priceMode, setPriceMode] = useState<'fixed' | 'label'>('fixed');
 
   // AI price suggestion
   const [priceSuggesting, setPriceSuggesting] = useState(false);
@@ -242,10 +255,11 @@ export default function PostPage() {
   const [showDraftModal, setShowDraftModal] = useState(false);
   const draftRef = useRef<{
     listingType?: ListingType;
-    category?: (typeof CATEGORIES)[number];
+    category?: string;
     condition?: ListingCondition | null;
     title?: string;
     description?: string;
+    priceMode?: 'fixed' | 'label';
     priceDigits?: string;
     priceLabel?: string;
     location?: string;
@@ -262,27 +276,44 @@ export default function PostPage() {
     };
   }, [previewUrls]);
 
-  const previewUrl = previewUrls[0] ?? null;
+  useEffect(() => {
+    async function checkVendor() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return; // not logged in — let publish() handle redirect
 
-  const priceDisabled = priceLabel.trim().length > 0;
-  const priceLabelDisabled = priceDigits.trim().length > 0;
+      const { data: vendor } = await supabase
+        .from('vendors')
+        .select('id, vendor_type')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!vendor) {
+        setVendorSetupOpen(true);
+      } else if (vendor.vendor_type === 'food') {
+        router.replace('/vendor/menu');
+      }
+    }
+    checkVendor();
+  }, []);
+
+  const previewUrl = previewUrls[0] ?? null;
 
   const titleCount = title.trim().length;
   const descCount = description.trim().length;
 
   const canPublish = useMemo(() => {
     if (title.trim().length < MIN_TITLE) return false;
+    if (!category) return false;
     if (listingType === "product" && imageFiles.length === 0) return false;
 
     if (listingType === "service" && description.trim().length < MIN_DESC_SERVICE) {
       return false;
     }
 
-    if (priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) return false;
-    if (priceDigits.trim() && priceLabel.trim()) return false;
+    if (priceMode === 'fixed' && priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) return false;
 
     return true;
-  }, [title, imageFiles, priceDigits, priceLabel, listingType, description]);
+  }, [title, category, imageFiles, priceDigits, priceMode, listingType, description]);
 
   function openFilePicker() {
     fileInputRef.current?.click();
@@ -452,6 +483,8 @@ export default function PostPage() {
       next.title = `Title should be at least ${MIN_TITLE} characters.`;
     }
 
+    if (!category) next.category = 'Please select a category.';
+
     if (
       listingType === "service" &&
       description.trim().length > 0 &&
@@ -460,13 +493,8 @@ export default function PostPage() {
       next.description = `For services, add a bit more detail (min ${MIN_DESC_SERVICE} chars).`;
     }
 
-    if (priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) {
+    if (priceMode === 'fixed' && priceDigits.trim() && !/^\d+$/.test(priceDigits.trim())) {
       next.price = "Price must be digits only.";
-    }
-
-    if (priceDigits.trim() && priceLabel.trim()) {
-      next.price = "Use either Price OR Price label, not both.";
-      next.priceLabel = "Use either Price OR Price label, not both.";
     }
 
     for (const f of imageFiles) {
@@ -548,24 +576,16 @@ export default function PostPage() {
         return;
       }
 
-      const { data: vendor, error: vErr } = await supabase
+      const { data: vendor } = await supabase
         .from("vendors")
-        .select("id, verified, vendor_type")
+        .select("id")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (vErr || !vendor?.id) {
-        // Show inline setup modal instead of cold-redirecting to /me
+      if (!vendor?.id) {
+        // Setup modal should have caught this — bail safely
         setPublishing(false);
         setVendorSetupOpen(true);
-        return;
-      }
-
-      // Food vendors are fully siloed to /food — block marketplace listing creation
-      if ((vendor as any).vendor_type === "food") {
-        setPublishing(false);
-        setBanner(null);
-        router.replace("/vendor/menu");
         return;
       }
 
@@ -694,10 +714,11 @@ export default function PostPage() {
     setPublished(null);
 
     setListingType("product");
-    setCategory("Phones");
+    setCategory("");
     setCondition(null);
     setTitle("");
     setDescription("");
+    setPriceMode('fixed');
     setPriceDigits("");
     setPriceLabel("");
     setLocation("");
@@ -714,6 +735,7 @@ export default function PostPage() {
       condition,
       title,
       description,
+      priceMode,
       priceDigits,
       priceLabel,
       location,
@@ -726,6 +748,7 @@ export default function PostPage() {
     condition,
     title,
     description,
+    priceMode,
     priceDigits,
     priceLabel,
     location,
@@ -740,11 +763,12 @@ export default function PostPage() {
       const parsed = JSON.parse(raw) as {
         title?: string;
         description?: string;
+        priceMode?: 'fixed' | 'label';
         priceDigits?: string;
         priceLabel?: string;
         location?: string;
         listingType?: ListingType;
-        category?: (typeof CATEGORIES)[number];
+        category?: string;
         condition?: ListingCondition | null;
         negotiable?: boolean;
       };
@@ -787,11 +811,13 @@ export default function PostPage() {
       return;
     }
 
-    setListingType(d.listingType === "service" ? "service" : "product");
+    const restoredType = d.listingType === "service" ? "service" : "product";
+    setListingType(restoredType);
+    const activeList = restoredType === 'service' ? SERVICE_CATEGORIES : PRODUCT_CATEGORIES;
     setCategory(
-      (CATEGORIES as readonly string[]).includes(d.category ?? "")
-        ? (d.category as (typeof CATEGORIES)[number])
-        : "Phones"
+      (activeList as readonly string[]).includes(d.category ?? "")
+        ? (d.category as Category)
+        : ""
     );
     const validConditions: ListingCondition[] = ["new", "fairly_used", "used", "for_parts"];
     setCondition(
@@ -799,6 +825,7 @@ export default function PostPage() {
     );
     setTitle(d.title ?? "");
     setDescription(d.description ?? "");
+    setPriceMode(d.priceMode === 'label' ? 'label' : 'fixed');
     setPriceDigits(d.priceDigits ?? "");
     setPriceLabel(d.priceLabel ?? "");
     setLocation(d.location ?? "");
@@ -1020,18 +1047,31 @@ export default function PostPage() {
             Back
           </button>
 
-          <div className="min-w-0 text-right">
-            <p className="truncate text-sm font-semibold text-zinc-900">
-              Post a listing
-            </p>
+          <div className="min-w-0 flex-1 text-right">
+            <p className="truncate text-sm font-semibold text-zinc-900">Post a listing</p>
             <p className="text-xs text-zinc-500">
               {publishing
                 ? "Publishing…"
                 : uploading
                   ? `Uploading photo${imageFiles.length > 1 ? "s" : ""}…`
-                  : "Step-by-step"}
+                  : "Fill in the details below"}
             </p>
           </div>
+
+          {/* Desktop publish shortcut — hidden on mobile where the fixed bar handles this */}
+          <button
+            type="button"
+            onClick={publish}
+            disabled={!canPublish || publishing || uploading}
+            className="hidden sm:inline-flex items-center gap-2 rounded-2xl bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {publishing || uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {publishing ? "Publishing…" : uploading ? "Uploading…" : "Publish"}
+          </button>
         </div>
 
         {(uploading || publishing) && progress > 0 ? (
@@ -1062,7 +1102,7 @@ export default function PostPage() {
 
       {/* ── 1) Listing info ─────────────────────────────────── */}
       <section ref={titleRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-sm font-semibold text-zinc-900">1) Listing info</h2>
+        <h2 className="text-sm font-semibold text-zinc-900">Listing info</h2>
         <p className="mt-0.5 text-xs text-zinc-600">What are you selling?</p>
 
         <div className="mt-4">
@@ -1070,7 +1110,7 @@ export default function PostPage() {
           <div className="mt-2 grid grid-cols-2 rounded-2xl border bg-white p-1">
             <button
               type="button"
-              onClick={() => setListingType("product")}
+              onClick={() => { setListingType("product"); setCategory(""); }}
               className={cn(
                 "rounded-xl px-3 py-2 text-sm font-semibold",
                 listingType === "product"
@@ -1082,7 +1122,7 @@ export default function PostPage() {
             </button>
             <button
               type="button"
-              onClick={() => setListingType("service")}
+              onClick={() => { setListingType("service"); setCategory(""); }}
               className={cn(
                 "rounded-xl px-3 py-2 text-sm font-semibold",
                 listingType === "service"
@@ -1099,15 +1139,21 @@ export default function PostPage() {
         <div className="mt-4">
           <p className="text-xs font-medium text-zinc-700">Category</p>
           <div className="relative mt-2">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as typeof category)}
-              className="w-full appearance-none rounded-2xl border bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-black/10"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            {(() => {
+              const activeCategories = listingType === 'service' ? SERVICE_CATEGORIES : PRODUCT_CATEGORIES;
+              return (
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as Category)}
+                  className="w-full appearance-none rounded-2xl border bg-white px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-black/10"
+                >
+                  <option value="" disabled>Select a category…</option>
+                  {activeCategories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              );
+            })()}
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           </div>
           <p className="mt-1 text-xs text-zinc-500">
@@ -1148,7 +1194,7 @@ export default function PostPage() {
       {/* ── 2) Condition (products only) ────────────────────── */}
       {listingType === "product" ? (
         <section ref={conditionRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-          <h2 className="text-sm font-semibold text-zinc-900">2) Condition</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">Condition</h2>
           <p className="mt-0.5 text-xs text-zinc-600">Helps buyers decide.</p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {CONDITIONS.map((c) => (
@@ -1175,12 +1221,15 @@ export default function PostPage() {
 
       {/* ── 3) Description ──────────────────────────────────── */}
       <section ref={descRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-sm font-semibold text-zinc-900">3) Description</h2>
+        <h2 className="text-sm font-semibold text-zinc-900">Description</h2>
         <div className="mt-3">
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Condition, what’s included, any faults, delivery options, etc."
+            placeholder={listingType === "service"
+              ? "What you offer, turnaround time, your rate, and how to book."
+              : "Condition, what’s included, any faults, delivery options, etc."
+            }
             className={cn(
               "mt-1 min-h-[120px] w-full rounded-2xl border px-3 py-3 text-sm",
               errors.description && "border-red-300"
@@ -1213,10 +1262,12 @@ export default function PostPage() {
       <section ref={photoRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">4) Add photos</h2>
+            <h2 className="text-sm font-semibold text-zinc-900">Add photos</h2>
             <p className="mt-0.5 text-xs text-zinc-600">
               Up to {MAX_IMAGES} photos — first photo is the cover. Clear photos get
-              more messages.{listingType === "service" ? " Optional for services." : ""}
+              more messages.{listingType === "product" ? (
+                <span className="font-semibold text-zinc-900"> Required for products.</span>
+              ) : " Optional for services."}
             </p>
           </div>
           {imageFiles.length > 0 ? (
@@ -1250,8 +1301,7 @@ export default function PostPage() {
                   <button
                     type="button"
                     onClick={() => moveImage(i, 0)}
-                    className="absolute bottom-1.5 left-1.5 hidden rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur group-hover:block"
-                    title="Make cover"
+                    className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur"
                   >
                     Set cover
                   </button>
@@ -1340,7 +1390,7 @@ export default function PostPage() {
       <section ref={priceRef} className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">5) Price & location</h2>
+            <h2 className="text-sm font-semibold text-zinc-900">Price & location</h2>
             <p className="mt-0.5 text-xs text-zinc-600">Use a numeric price or a label.</p>
           </div>
 
@@ -1410,17 +1460,40 @@ export default function PostPage() {
           </div>
         ) : null}
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div>
+        {/* Price mode toggle */}
+        <div className="mt-4 grid grid-cols-2 rounded-2xl border bg-white p-1">
+          <button
+            type="button"
+            onClick={() => { setPriceMode('fixed'); setPriceLabel(''); }}
+            className={cn(
+              "rounded-xl px-3 py-2 text-sm font-semibold",
+              priceMode === 'fixed' ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+            )}
+          >
+            Fixed price
+          </button>
+          <button
+            type="button"
+            onClick={() => { setPriceMode('label'); setPriceDigits(''); }}
+            className={cn(
+              "rounded-xl px-3 py-2 text-sm font-semibold",
+              priceMode === 'label' ? "bg-black text-white" : "text-zinc-800 hover:bg-zinc-50"
+            )}
+          >
+            Custom label
+          </button>
+        </div>
+
+        {priceMode === 'fixed' ? (
+          <div className="mt-3">
             <label className="text-xs font-medium text-zinc-700">Price (₦)</label>
             <input
               value={formatDigitsAsNairaInput(priceDigits)}
               onChange={(e) => setPriceDigits(onlyDigits(e.target.value))}
               inputMode="numeric"
               placeholder="e.g. 25,000"
-              disabled={priceDisabled}
               className={cn(
-                "mt-1 w-full rounded-2xl border px-3 py-3 text-sm disabled:bg-zinc-50 disabled:text-zinc-400",
+                "mt-1 w-full rounded-2xl border px-3 py-3 text-sm",
                 errors.price && "border-red-300"
               )}
             />
@@ -1436,39 +1509,42 @@ export default function PostPage() {
               </p>
             ) : null}
           </div>
-
-          <div>
+        ) : (
+          <div className="mt-3">
             <label className="text-xs font-medium text-zinc-700">Price label</label>
             <input
               value={priceLabel}
-              onChange={(e) => setPriceLabel(e.target.value)}
-              placeholder="e.g. Negotiable / Call for price"
-              disabled={priceLabelDisabled}
+              onChange={(e) => {
+                setPriceLabel(e.target.value);
+                // Sync: "Negotiable" label auto-enables the negotiable flag
+                if (e.target.value.toLowerCase() === 'negotiable') setNegotiable(true);
+              }}
+              placeholder="e.g. Contact for price"
               className={cn(
-                "mt-1 w-full rounded-2xl border px-3 py-3 text-sm disabled:bg-zinc-50 disabled:text-zinc-400",
+                "mt-1 w-full rounded-2xl border px-3 py-3 text-sm",
                 errors.priceLabel && "border-red-300"
               )}
             />
             {errors.priceLabel ? (
               <p className="mt-1 text-xs text-red-600">{errors.priceLabel}</p>
             ) : null}
-
-            {!priceLabelDisabled ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {["Negotiable", "Call for price", "Free"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setPriceLabel(t)}
-                    className="rounded-full border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {["Negotiable", "Call for price", "Free"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    setPriceLabel(t);
+                    if (t === 'Negotiable') setNegotiable(true);
+                  }}
+                  className="rounded-full border bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-3">
           <label className="text-xs font-medium text-zinc-700">Location</label>
@@ -1482,8 +1558,7 @@ export default function PostPage() {
             />
           </div>
 
-          <div className="mt-2 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-            <style>{`div::-webkit-scrollbar{display:none}`}</style>
+          <div className="mt-2 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {LOCATION_PRESETS.map((p) => (
               <button
                 key={p}
@@ -1697,19 +1772,32 @@ export default function PostPage() {
               Photo
             </button>
 
-            <button
-              type="button"
-              onClick={publish}
-              disabled={!canPublish || publishing || uploading}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-3 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {publishing || uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                type="button"
+                onClick={publish}
+                disabled={!canPublish || publishing || uploading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black px-3 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {publishing || uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Post
+              </button>
+              {!canPublish && !publishing && (
+                <p className="text-[10px] text-zinc-500 text-center">
+                  {listingType === 'product' && imageFiles.length === 0
+                    ? 'Add a photo first'
+                    : !title.trim() || title.trim().length < MIN_TITLE
+                      ? 'Title too short'
+                      : !category
+                        ? 'Pick a category'
+                        : null}
+                </p>
               )}
-              Post
-            </button>
+            </div>
           </div>
 
           {draftFound ? (
@@ -1728,26 +1816,6 @@ export default function PostPage() {
         </div>
       </div>
 
-      <section className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
-        <details className="group">
-          <summary className="cursor-pointer list-none">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-zinc-900">Posting tips</p>
-              <span className="rounded-full border bg-white p-2 text-zinc-700">
-                <ArrowLeft className="h-4 w-4 rotate-[-90deg] transition-transform group-open:rotate-[90deg]" />
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-zinc-600">Tap to expand</p>
-          </summary>
-
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-zinc-600">
-            <li>Use clear photos with good lighting.</li>
-            <li>Write honest details to build trust.</li>
-            <li>Meet in public places on/around campus.</li>
-            <li>For services, agree on price and timeline upfront.</li>
-          </ul>
-        </details>
-      </section>
     </div>
   );
 }

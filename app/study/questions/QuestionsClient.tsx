@@ -14,6 +14,7 @@ import {
   ArrowRight,
   Bookmark,
   BookmarkCheck,
+  CheckCircle2,
   ChevronDown,
   Filter,
   Loader2,
@@ -167,11 +168,21 @@ function QuestionCard({
 
           {snippet ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{snippet}</p> : null}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1">
-              <MessagesSquare className="h-3.5 w-3.5" /> {answers}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            {solved ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                <CheckCircle2 className="h-3 w-3" /> Solved
+              </span>
+            ) : answers > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                <MessagesSquare className="h-3 w-3" /> {answers}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                <MessageSquarePlus className="h-3 w-3" /> Answer
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-muted-foreground">
               <ThumbsUp className="h-3.5 w-3.5" /> {upvotes}
             </span>
           </div>
@@ -220,7 +231,17 @@ function QuestionsInner() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const { prefs } = useStudyPrefs();
+  const { prefs, hasPrefs } = useStudyPrefs();
+
+  // H-6: Auto-apply dept from preferences
+  const [dept, setDept] = useState('');
+  useEffect(() => {
+    if (!hasPrefs || !prefs?.department) return;
+    if (!sp.get('dept') && !dept) {
+      setDept(prefs.department);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPrefs, prefs]);
 
   // URL params
   const qParam = sp.get("q") ?? "";
@@ -551,6 +572,17 @@ function QuestionsInner() {
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs />
 
+      {/* M-7: Onboarding nudge */}
+      {!hasPrefs && (
+        <Link
+          href="/study/onboarding"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 no-underline dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300"
+        >
+          <span><strong>Tip:</strong> Set your department to see questions from your courses.</span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
         <Link
@@ -577,6 +609,22 @@ function QuestionsInner() {
           Ask
         </Link>
       </div>
+
+      {/* H-6b: Dept context label */}
+      {dept && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            Showing: <strong className="text-foreground">{dept}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => { setDept(''); }}
+            className="underline underline-offset-2"
+          >
+            Show all
+          </button>
+        </div>
+      )}
 
       {/* Dept-level auto-filter chip */}
       {autoFilteredLevel && levelParam === autoFilteredLevel && (

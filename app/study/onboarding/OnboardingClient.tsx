@@ -68,8 +68,7 @@ type FacultyRow = { id: string; name: string; sort_order?: number | null };
 type DeptRow = {
   id: string;
   faculty_id: string;
-  display_name?: string;
-  official_name?: string;
+  name: string;
   sort_order?: number | null;
 };
 
@@ -344,8 +343,7 @@ export default function OnboardingClient() {
   const deptItems = useMemo(() => {
     return (departments ?? []).map((d) => ({
       id: d.id,
-      label: (d.display_name || d.official_name || "Department").trim(),
-      meta: d.official_name && d.display_name && d.official_name !== d.display_name ? `Official: ${d.official_name}` : undefined,
+      label: (d.name || "Department").trim(),
     }));
   }, [departments]);
 
@@ -497,11 +495,11 @@ export default function OnboardingClient() {
     (async () => {
       const res = await supabase
         .from("study_departments")
-        .select("id,faculty_id,display_name,official_name,sort_order")
+        .select("id,faculty_id,name,sort_order")
         .eq("faculty_id", facultyId)
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
-        .order("display_name", { ascending: true });
+        .order("name", { ascending: true });
 
       if (!mounted) return;
 
@@ -618,7 +616,7 @@ export default function OnboardingClient() {
       const selectedDeptRow = manualMode ? null : departments.find((d) => d.id === departmentId) ?? null;
       const selectedDepartment = manualMode
         ? normalize(department)
-        : normalize(String(selectedDeptRow?.display_name || selectedDeptRow?.official_name || ""));
+        : normalize(String(selectedDeptRow?.name || ""));
 
       // Build payload for study_preferences (the single canonical table)
       const prefsPayload: any = {
@@ -721,7 +719,7 @@ export default function OnboardingClient() {
   const reviewFaculty = manualMode ? normalize(faculty) : faculties.find((f) => f.id === facultyId)?.name ?? "";
   const reviewDept = manualMode
     ? normalize(department)
-    : normalize(String(departments.find((d) => d.id === departmentId)?.display_name || departments.find((d) => d.id === departmentId)?.official_name || ""));
+    : normalize(String(departments.find((d) => d.id === departmentId)?.name || ""));
 
   return (
     <div className="space-y-4 pb-28 md:pb-6">

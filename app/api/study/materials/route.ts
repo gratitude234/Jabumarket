@@ -152,24 +152,25 @@ export async function GET(req: Request) {
 
       const like = `*${qSafe.replace(/\s+/g, "*")}*`;
 
+      // Search on study_materials' own denormalised columns — NOT on embedded join columns.
       query = query.or(
-        `title.ilike.${like},description.ilike.${like},study_courses.course_code.ilike.${like},study_courses.course_title.ilike.${like},study_courses.department.ilike.${like},study_courses.faculty.ilike.${like}`
+        `title.ilike.${like},course_code.ilike.${like},department.ilike.${like},faculty.ilike.${like}`
       );
     }
 
     if (level) {
       const lv = Number(level);
-      if (Number.isFinite(lv)) query = query.eq("study_courses.level", lv);
+      if (Number.isFinite(lv)) query = query.eq("level", String(lv));
     }
 
     if (semester) {
       const sem = mapSemesterParamToDb(semester);
-      if (sem) query = query.eq("study_courses.semester", sem);
+      if (sem) query = query.eq("semester", sem);
     }
 
-    if (faculty) query = query.eq("study_courses.faculty", faculty);
-    if (dept) query = query.eq("study_courses.department", dept);
-    if (course) query = query.eq("study_courses.course_code", course.trim().toUpperCase());
+    if (faculty) query = query.eq("faculty", faculty);
+    if (dept) query = query.eq("department", dept);
+    if (course) query = query.eq("course_code", course.trim().toUpperCase());
     if (session) query = query.ilike("session", `%${session}%`);
     if (type && type !== "all") query = query.eq("material_type", type);
     if (verifiedOnly) query = query.eq("verified", true);

@@ -56,6 +56,26 @@ export async function POST(req: Request) {
     const file_size = typeof body.file_size === "number" ? body.file_size : null;
     const file_hash = typeof body.file_hash === "string" ? body.file_hash.trim() : null;
 
+    // M-1: Server-side MIME type allowlist
+    const ALLOWED_MIME_TYPES = new Set([
+      'application/pdf',
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ]);
+
+    if (mime_type && !ALLOWED_MIME_TYPES.has(mime_type)) {
+      return jsonError(
+        'File type not allowed. Accepted: PDF, images, Office documents.',
+        400,
+        'MIME_NOT_ALLOWED'
+      );
+    }
+
     // Server-side file size guard: reject anything over 50 MB
     const MAX_FILE_SIZE = 52_428_800; // 50 MB
     if (file_size !== null && file_size > MAX_FILE_SIZE) {
@@ -88,7 +108,7 @@ export async function POST(req: Request) {
     // 1) Verify course exists
     const { data: courseRow, error: courseErr } = await admin
       .from("study_courses")
-      .select("id, faculty_id, department_id, level, semester, course_code")
+      .select("id, faculty_id, department_id, level, semester, course_code, faculty, department")
       .eq("id", course_id)
       .maybeSingle();
 
@@ -135,6 +155,16 @@ export async function POST(req: Request) {
         uploader_email: uploader_email,
         past_question_year: past_question_year || null,
         description: description || null,
+        // denormalised course fields for direct filtering (C-1/C-2)
+        course_code:   (courseRow as any)?.course_code   ?? null,
+        department:    (courseRow as any)?.department    ?? null,
+        faculty:       (courseRow as any)?.faculty       ?? null,
+        level:         (courseRow as any)?.level != null
+                         ? String((courseRow as any).level)
+                         : null,
+        semester:      (courseRow as any)?.semester      ?? null,
+        faculty_id:    (courseRow as any)?.faculty_id    ?? null,
+        department_id: (courseRow as any)?.department_id ?? null,
         // placeholders; updated below
         file_path: null,
         file_url: null,

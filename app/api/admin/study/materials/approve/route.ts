@@ -21,6 +21,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
+    // C-7: Trigger AI summary + dept notification on approval
+    if (approved) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+          ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+        void fetch(`${baseUrl}/api/ai/summarize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ material_id: id }),
+        });
+        void fetch(`${baseUrl}/api/study/notify-new-material`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ material_id: id }),
+        });
+      } catch { /* non-critical */ }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     const status = Number(e?.status) || 500;

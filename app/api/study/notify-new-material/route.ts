@@ -77,6 +77,22 @@ export async function POST(req: Request) {
       // Notification failure must never block material approval
     }
 
+    // H-5: Push notification fan-out
+    try {
+      const { sendUserPush } = await import('@/lib/webPush');
+      const pushPayload = {
+        title: `New material: ${title}`,
+        body:  course_code
+          ? `${course_code} — tap to download`
+          : 'New study material for your department',
+        href:  '/study/materials',
+        tag:   `new-material-${material_id}`,
+      };
+      await Promise.allSettled(
+        (users ?? []).map((u: any) => sendUserPush(u.user_id, pushPayload))
+      );
+    } catch { /* push failures must never crash the notification route */ }
+
     return NextResponse.json({ ok: true, notified: totalInserted });
   } catch (e: any) {
     // Notification failures are non-fatal — always return ok

@@ -685,6 +685,8 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [hasUpvoted, setHasUpvoted] = useState(false);
+  const [upvoteCount, setUpvoteCount] = useState(m.up_votes ?? 0);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(msg: string) {
@@ -746,6 +748,17 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     }
     // pdf / image: open fullscreen modal — no download count (inline strip is free)
     setPreviewOpen(true);
+  }
+
+  async function handleUpvote() {
+    const res = await fetch(`/api/study/materials/${m.id}/vote`, {
+      method: 'POST',
+    });
+    const json = await res.json();
+    if (json.ok) {
+      setHasUpvoted(json.voted);
+      setUpvoteCount(prev => json.voted ? prev + 1 : Math.max(0, prev - 1));
+    }
   }
 
   async function handleShare() {
@@ -920,6 +933,21 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             <Share2 className="h-4 w-4" />
             Share
           </button>
+
+          <button
+            type="button"
+            onClick={handleUpvote}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition',
+              hasUpvoted
+                ? 'border-border bg-secondary text-foreground'
+                : 'border-border/60 bg-background text-muted-foreground hover:bg-secondary/50'
+            )}
+          >
+            <ThumbsUp className="h-4 w-4" />
+            {hasUpvoted ? 'Helpful' : 'Mark as helpful'}
+            {upvoteCount > 0 && ` · ${upvoteCount}`}
+          </button>
         </div>
       </div>
 
@@ -929,10 +957,27 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       )}
 
       {/* ── Pre-generated AI Summary ── */}
-      {m.ai_summary && (
-        <div className="rounded-2xl border bg-amber-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-2">AI Summary</p>
-          <p className="text-sm text-zinc-700">{m.ai_summary}</p>
+      {m.ai_summary ? (
+        <div className="rounded-3xl border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-semibold text-foreground">AI Summary</p>
+            <span className="ml-auto rounded-full border bg-background px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              Verify before your exam
+            </span>
+          </div>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+            {m.ai_summary}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-dashed bg-card p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              AI summary not yet available for this material.
+            </p>
+          </div>
         </div>
       )}
 

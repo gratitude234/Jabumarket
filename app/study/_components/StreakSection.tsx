@@ -32,7 +32,7 @@ export function StreakSection() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || cancelled) return;
-        const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const since = new Date(Date.now() + 3_600_000 - 28 * 86_400_000).toISOString().slice(0, 10);
         const { data } = await supabase
           .from("study_daily_activity")
           .select("activity_date,did_practice")

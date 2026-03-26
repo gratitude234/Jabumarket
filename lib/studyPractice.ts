@@ -4,6 +4,11 @@
 import { supabase } from "@/lib/supabase";
 import { getAuthedUserId } from "@/lib/studySaved";
 
+/** Returns today's date string (YYYY-MM-DD) in WAT (UTC+1) */
+function watToday(): string {
+  return new Date(Date.now() + 3_600_000).toISOString().slice(0, 10);
+}
+
 export type PracticeAttemptRow = {
   id: string;
   user_id: string;
@@ -59,8 +64,7 @@ export async function upsertDailyPracticeActivity(points: number) {
   const userId = await getAuthedUserId();
   if (!userId) return;
 
-  const today = new Date();
-  const activityDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
+  const activityDate = watToday(); // YYYY-MM-DD in WAT (UTC+1)
 
   // Try to upsert; ignore errors if table isn't created yet.
   await supabase
@@ -129,20 +133,22 @@ export async function getPracticeStreak(): Promise<{ streak: number; didPractice
     if (r?.activity_date) map.set(String(r.activity_date), Boolean(r.did_practice));
   }
 
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
+  const todayKey     = watToday();
+  const yesterdayKey = new Date(Date.now() + 3_600_000 - 86_400_000).toISOString().slice(0, 10);
   const didToday = map.get(todayKey) === true;
 
   let streak = 0;
   // streak counts consecutive days up to today (or yesterday if not practiced today)
-  let cursor = new Date(today);
-  if (!didToday) cursor = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  let cursorMs = didToday
+    ? Date.now() + 3_600_000
+    : Date.now() + 3_600_000 - 86_400_000;
+  void yesterdayKey; // used above for clarity
 
   for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
-    const k = cursor.toISOString().slice(0, 10);
+    const k = new Date(cursorMs).toISOString().slice(0, 10);
     if (map.get(k) === true) {
       streak += 1;
-      cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+      cursorMs -= 86_400_000;
     } else {
       break;
     }
