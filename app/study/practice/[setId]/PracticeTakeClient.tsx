@@ -146,8 +146,8 @@ function AiExplainInline({
           <Sparkles className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Ask AI to explain</p>
-          <p className="text-[11px] text-violet-500/80 dark:text-violet-400/70">Deeper explanation powered by Gemini</p>
+          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Ask AI to go deeper</p>
+          <p className="text-[11px] text-violet-500/80 dark:text-violet-400/70">Expanded explanation powered by Gemini</p>
         </div>
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
       </button>
@@ -1004,26 +1004,25 @@ if (err || !meta) {
           {/* ── Explanation Panel — appears after student answers ────────── */}
           {isRevealed && current ? (
             <div className="space-y-2">
-              {(current.explanation || (current as any).ai_explanation) ? (
+              {current.explanation ? (
                 <div className="rounded-2xl border border-violet-200/70 bg-violet-50/50 px-3 py-3 dark:border-violet-700/30 dark:bg-violet-950/20">
                   <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 mb-1">Explanation</p>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                    {current.explanation ?? (current as any).ai_explanation}
+                    {current.explanation}
                   </p>
                 </div>
-              ) : (
-                <AiExplainInline
-                  questionId={current.id}
-                  questionPrompt={String(current.prompt ?? "")}
-                  chosenOptionText={
-                    currentOptions.find((o) => o.id === chosenId)?.text ?? null
-                  }
-                  correctOptionText={
-                    currentOptions.find((o) => getIsCorrect(o))?.text ?? null
-                  }
-                  isCorrect={chosenId === correctOptionId}
-                />
-              )}
+              ) : null}
+              <AiExplainInline
+                questionId={current.id}
+                questionPrompt={String(current.prompt ?? "")}
+                chosenOptionText={
+                  currentOptions.find((o) => o.id === chosenId)?.text ?? null
+                }
+                correctOptionText={
+                  currentOptions.find((o) => getIsCorrect(o))?.text ?? null
+                }
+                isCorrect={chosenId === correctOptionId}
+              />
             </div>
           ) : null}
 
