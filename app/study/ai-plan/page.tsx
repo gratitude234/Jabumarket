@@ -1,15 +1,13 @@
 // app/study/ai-plan/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft,
   Sparkles,
-  Plus,
-  Trash2,
+  X,
   Loader2,
   ChevronDown,
   ChevronUp,
@@ -21,13 +19,16 @@ import {
 import { cn } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
-type StudyDay = { day: string; focus: string; tasks: string[]; hours: number };
+type StudyDay  = { day: string; focus: string; tasks: string[]; hours: number };
 type StudyWeek = { week: number; theme: string; weeklyGoal: string; days: StudyDay[] };
 type StudyPlan = { summary: string; totalWeeks: number; weeks: StudyWeek[]; generalTips: string[] };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const WEEK_OPTIONS  = [1, 2, 3, 4, 6, 8, 12];
+const HOURS_OPTIONS = [1, 2, 3, 4, 5, 6, 8];
 
 const DAY_COLORS: Record<string, string> = {
   Monday:    "bg-violet-50 border-violet-200/60 dark:bg-violet-950/20 dark:border-violet-700/30",
@@ -39,7 +40,243 @@ const DAY_COLORS: Record<string, string> = {
   Sunday:    "bg-rose-50 border-rose-200/60 dark:bg-rose-950/20 dark:border-rose-700/30",
 };
 
-// ── Week Card ─────────────────────────────────────────────────────────────────
+// ── Urgency helpers ────────────────────────────────────────────────────────────
+
+type Urgency = "red" | "amber" | "green";
+
+function getUrgency(weeks: number): Urgency {
+  if (weeks <= 2) return "red";
+  if (weeks <= 5) return "amber";
+  return "green";
+}
+
+const URGENCY_NOTE: Record<Urgency, string> = {
+  red:   "⚠ Crunch mode — plan will be intensive",
+  amber: "⏰ Moderate pace — still focused",
+  green: "✓ Comfortable pace — thorough coverage",
+};
+
+const URGENCY_WEEK_CHIP: Record<Urgency, string> = {
+  red:   "border-red-400 bg-red-50 text-red-800 dark:border-red-700/60 dark:bg-red-950/30 dark:text-red-300",
+  amber: "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-300",
+  green: "border-emerald-400 bg-emerald-50 text-emerald-800 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300",
+};
+
+const URGENCY_NOTE_TEXT: Record<Urgency, string> = {
+  red:   "text-red-600 dark:text-red-400",
+  amber: "text-amber-600 dark:text-amber-400",
+  green: "text-emerald-600 dark:text-emerald-400",
+};
+
+// ── Section Card wrapper ───────────────────────────────────────────────────────
+
+function SectionCard({
+  icon,
+  iconBg,
+  title,
+  sub,
+  children,
+}: {
+  icon: string;
+  iconBg: string;
+  title: React.ReactNode;
+  sub: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm"
+          style={{ background: iconBg }}
+        >
+          {icon}
+        </span>
+        <div>
+          <p className="text-[13px] font-semibold text-foreground">{title}</p>
+          <p className="text-[12px] text-muted-foreground mt-px">{sub}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Course pill tag input ──────────────────────────────────────────────────────
+
+function CourseTagInput({
+  courses,
+  onChange,
+}: {
+  courses: string[];
+  onChange: (courses: string[]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState("");
+
+  function commit() {
+    const val = draft.trim().toUpperCase();
+    if (val && !courses.includes(val)) {
+      onChange([...courses, val]);
+    }
+    setDraft("");
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commit();
+    } else if (e.key === "Backspace" && !draft && courses.length > 0) {
+      onChange(courses.slice(0, -1));
+    }
+  }
+
+  return (
+    <div>
+      {/* Tag area */}
+      <div
+        className={cn(
+          "flex min-h-[44px] flex-wrap gap-1.5 rounded-xl border border-border bg-secondary/40 px-2.5 py-2 cursor-text transition-colors",
+          "focus-within:border-violet-400 focus-within:bg-background focus-within:ring-2 focus-within:ring-violet-500/20"
+        )}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {courses.map((code, i) => (
+          <span
+            key={code}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold",
+              i === courses.length - 1
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                : "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200"
+            )}
+          >
+            {code}
+            <button
+              type="button"
+              aria-label={`Remove ${code}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(courses.filter((c) => c !== code));
+              }}
+              className="opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.toUpperCase())}
+          onKeyDown={handleKeyDown}
+          onBlur={commit}
+          placeholder={courses.length === 0 ? "e.g. MTH 201, PHY 301…" : "Add more…"}
+          className="min-w-[100px] flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 outline-none py-0.5"
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        ↵ Enter to add · Backspace to remove last ·{" "}
+        <span className="font-medium text-foreground">
+          {courses.length} course{courses.length !== 1 ? "s" : ""} added
+        </span>
+      </p>
+    </div>
+  );
+}
+
+// ── GPA bar ────────────────────────────────────────────────────────────────────
+
+function GpaSection({
+  currentCgpa,
+  targetCgpa,
+  onCurrentChange,
+  onTargetChange,
+}: {
+  currentCgpa: string;
+  targetCgpa: string;
+  onCurrentChange: (v: string) => void;
+  onTargetChange: (v: string) => void;
+}) {
+  const cur  = parseFloat(currentCgpa) || 0;
+  const tgt  = parseFloat(targetCgpa)  || 0;
+  const pct  = Math.min(100, Math.max(0, (cur / 5) * 100));
+  const diff = (tgt - cur).toFixed(2);
+  const hasBoth = currentCgpa && targetCgpa;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+        {/* Current */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Current CGPA
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            value={currentCgpa}
+            onChange={(e) => onCurrentChange(e.target.value)}
+            placeholder="e.g. 3.20"
+            className="w-full rounded-xl border border-border bg-secondary/40 px-3 py-2 text-[15px] font-semibold text-foreground outline-none transition focus:border-violet-400 focus:bg-background focus:ring-2 focus:ring-violet-500/20"
+          />
+        </div>
+        {/* Arrow */}
+        <span className="pb-2.5 text-lg text-muted-foreground/50">→</span>
+        {/* Target */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Target CGPA
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            value={targetCgpa}
+            onChange={(e) => onTargetChange(e.target.value)}
+            placeholder="e.g. 4.00"
+            className="w-full rounded-xl border border-border bg-secondary/40 px-3 py-2 text-[15px] font-semibold text-foreground outline-none transition focus:border-violet-400 focus:bg-background focus:ring-2 focus:ring-violet-500/20"
+          />
+        </div>
+      </div>
+
+      {/* Progress bar — only show when at least currentCgpa is filled */}
+      {currentCgpa ? (
+        <div className="rounded-xl bg-secondary/50 px-3 py-2.5">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex justify-between text-[11px]">
+            <span className="text-muted-foreground">{cur.toFixed(2)}</span>
+            {hasBoth && (
+              <span
+                className={cn(
+                  "font-semibold",
+                  parseFloat(diff) > 0
+                    ? "text-violet-600 dark:text-violet-400"
+                    : parseFloat(diff) < 0
+                    ? "text-rose-500"
+                    : "text-muted-foreground"
+                )}
+              >
+                Target: {tgt.toFixed(2)}{" "}
+                ({parseFloat(diff) > 0 ? "+" : ""}{diff})
+              </span>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── Week Card (plan output) ────────────────────────────────────────────────────
 
 function WeekCard({
   week,
@@ -70,21 +307,28 @@ function WeekCard({
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{week.weeklyGoal}</p>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        {open
+          ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+          : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        }
       </button>
 
-      {open ? (
+      {open && (
         <div className="border-t border-border px-4 pb-4 pt-3 space-y-2">
           <p className="text-xs font-semibold text-muted-foreground mb-3">
             Goal: <span className="text-foreground">{week.weeklyGoal}</span>
           </p>
           {week.days.map((d, dayIdx) => {
-            const key = `week-${weekIdx}-day-${dayIdx}`;
+            const key  = `week-${weekIdx}-day-${dayIdx}`;
             const done = !!progress[key];
             return (
               <div
                 key={d.day}
-                className={cn("rounded-xl border p-3", DAY_COLORS[d.day] ?? "bg-background border-border", done && "opacity-60")}
+                className={cn(
+                  "rounded-xl border p-3",
+                  DAY_COLORS[d.day] ?? "bg-background border-border",
+                  done && "opacity-60"
+                )}
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
@@ -95,14 +339,18 @@ function WeekCard({
                       aria-label={`Mark ${d.day} complete`}
                       className="h-3.5 w-3.5 cursor-pointer accent-emerald-600"
                     />
-                    <p className={cn("text-xs font-extrabold text-foreground", done && "line-through")}>{d.day}</p>
+                    <p className={cn("text-xs font-extrabold text-foreground", done && "line-through")}>
+                      {d.day}
+                    </p>
                     {done && <span className="text-emerald-600 text-xs font-semibold">✓</span>}
                   </div>
                   <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/70 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
                     <Clock className="h-3 w-3" /> {d.hours}h
                   </span>
                 </div>
-                <p className={cn("text-xs font-semibold text-foreground mb-1.5", done && "line-through")}>{d.focus}</p>
+                <p className={cn("text-xs font-semibold text-foreground mb-1.5", done && "line-through")}>
+                  {d.focus}
+                </p>
                 <ul className="space-y-1">
                   {d.tasks.map((t, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -115,41 +363,44 @@ function WeekCard({
             );
           })}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function AiStudyPlanPage() {
-  const router = useRouter();
+  // ── Form state
+  const [courses,       setCourses]       = useState<string[]>([]);
+  const [currentCgpa,   setCurrentCgpa]   = useState("");
+  const [targetCgpa,    setTargetCgpa]    = useState("");
+  const [weeksUntilExam, setWeeksUntilExam] = useState(4);
+  const [dailyHours,    setDailyHours]    = useState(4);
+  const [weakCourses,   setWeakCourses]   = useState<string[]>([]);
 
-  // Form state
-  const [courses, setCourses] = useState<string[]>(["", ""]);
-  const [currentCgpa, setCurrentCgpa] = useState("");
-  const [targetCgpa, setTargetCgpa] = useState("");
-  const [weeksUntilExam, setWeeksUntilExam] = useState("4");
-  const [dailyHours, setDailyHours] = useState("4");
-  const [weakCourses, setWeakCourses] = useState("");
-
-  // Prefill state
-  const [prefilling, setPrefilling] = useState(true);
+  // ── Prefill state
+  const [prefilling,    setPrefilling]    = useState(true);
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
 
-  // Generation state
+  // ── Generation state
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<StudyPlan | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+  const [plan,    setPlan]    = useState<StudyPlan | null>(null);
 
-  // Persistence state
-  const [userId, setUserId] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
+  // ── Persistence
+  const [userId,   setUserId]   = useState<string | null>(null);
+  const [savedAt,  setSavedAt]  = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, boolean>>({});
 
-  // Pre-fill courses from study_preferences + study_courses
+  // ── Derived
+  const urgency = getUrgency(weeksUntilExam);
+
+  // ── Pre-fill from Supabase preferences ────────────────────────────────────
+
   useEffect(() => {
     let cancelled = false;
+
     async function prefill() {
       setPrefilling(true);
       try {
@@ -158,28 +409,31 @@ export default function AiStudyPlanPage() {
 
         setUserId(user.id);
 
-        // Load saved plan from localStorage if < 7 days old
+        // Restore saved plan from localStorage (< 7 days old)
         const savedRaw = localStorage.getItem(`jabu_study_plan:${user.id}`);
         if (savedRaw) {
           try {
-            const saved = JSON.parse(savedRaw) as { plan: StudyPlan; generatedAt: string; courses: string[] };
+            const saved = JSON.parse(savedRaw) as {
+              plan: StudyPlan;
+              generatedAt: string;
+              courses: string[];
+            };
             const age = Date.now() - new Date(saved.generatedAt).getTime();
             if (age < 7 * 24 * 60 * 60 * 1000 && saved.plan) {
               setPlan(saved.plan);
               setSavedAt(saved.generatedAt);
               if (saved.courses?.length) setCourses(saved.courses);
-              // Load progress
               const progRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
               if (progRaw) setProgress(JSON.parse(progRaw));
               if (!cancelled) setPrefilling(false);
               return;
             }
           } catch {
-            // corrupted, ignore
+            // corrupted — ignore
           }
         }
 
-        // Fetch user's study preferences
+        // Fetch study preferences
         const { data: prefs } = await supabase
           .from("study_preferences")
           .select("level, department, department_id, faculty")
@@ -188,7 +442,7 @@ export default function AiStudyPlanPage() {
 
         if (!prefs || cancelled) return;
 
-        // Fetch courses matching their level and department
+        // Fetch courses matching their profile
         let q = supabase
           .from("study_courses")
           .select("course_code, course_title")
@@ -196,19 +450,16 @@ export default function AiStudyPlanPage() {
           .order("course_code", { ascending: true })
           .limit(10);
 
-        if (prefs.level) q = q.eq("level", prefs.level);
-        if (prefs.department_id) {
-          q = q.eq("department_id", prefs.department_id);
-        } else if (prefs.department) {
-          q = q.ilike("department", `%${prefs.department}%`);
-        }
+        if (prefs.level)         q = q.eq("level", prefs.level);
+        if (prefs.department_id) q = q.eq("department_id", prefs.department_id);
+        else if (prefs.department) q = q.ilike("department", `%${prefs.department}%`);
 
         const { data: courseRows } = await q;
         if (cancelled) return;
 
         if (courseRows && courseRows.length > 0) {
           const codes = courseRows.map((c: any) => c.course_code as string);
-          setCourses(codes.length > 0 ? codes : ["", ""]);
+          setCourses(codes);
           setPrefillSource(
             prefs.department
               ? `${prefs.level ? `${prefs.level}L · ` : ""}${prefs.department}`
@@ -223,22 +474,15 @@ export default function AiStudyPlanPage() {
         if (!cancelled) setPrefilling(false);
       }
     }
+
     prefill();
     return () => { cancelled = true; };
   }, []);
 
-  function addCourse() {
-    setCourses((prev) => [...prev, ""]);
-  }
-  function removeCourse(i: number) {
-    setCourses((prev) => prev.filter((_, idx) => idx !== i));
-  }
-  function updateCourse(i: number, val: string) {
-    setCourses((prev) => prev.map((c, idx) => (idx === i ? val : c)));
-  }
+  // ── Generation ──────────────────────────────────────────────────────────────
 
   async function generate() {
-    const validCourses = courses.map((c) => c.trim()).filter(Boolean);
+    const validCourses = courses.filter(Boolean);
     if (!validCourses.length) {
       setError("Add at least one course.");
       return;
@@ -252,14 +496,11 @@ export default function AiStudyPlanPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           courses: validCourses,
-          currentCgpa: currentCgpa ? parseFloat(currentCgpa) : null,
-          targetCgpa: targetCgpa ? parseFloat(targetCgpa) : null,
-          weeksUntilExam: parseInt(weeksUntilExam) || 4,
-          dailyHours: parseInt(dailyHours) || 4,
-          weakCourses: weakCourses
-            .split(",")
-            .map((c) => c.trim())
-            .filter(Boolean),
+          currentCgpa:   currentCgpa ? parseFloat(currentCgpa) : null,
+          targetCgpa:    targetCgpa  ? parseFloat(targetCgpa)  : null,
+          weeksUntilExam,
+          dailyHours,
+          weakCourses,
         }),
       });
       const json = await res.json();
@@ -269,10 +510,13 @@ export default function AiStudyPlanPage() {
         setPlan(json.plan);
         setSavedAt(null);
         if (userId) {
-          const generatedAt = new Date().toISOString();
           localStorage.setItem(
             `jabu_study_plan:${userId}`,
-            JSON.stringify({ plan: json.plan, generatedAt, courses: validCourses })
+            JSON.stringify({
+              plan: json.plan,
+              generatedAt: new Date().toISOString(),
+              courses: validCourses,
+            })
           );
         }
       }
@@ -320,197 +564,284 @@ export default function AiStudyPlanPage() {
       lines.push("");
     });
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
     a.download = "study-plan.txt";
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  // ── Toggle weak course ─────────────────────────────────────────────────────
+
+  function toggleWeakCourse(code: string) {
+    setWeakCourses((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  }
+
+  // When courses change, prune any weak selections that no longer exist
+  useEffect(() => {
+    setWeakCourses((prev) => prev.filter((c) => courses.includes(c)));
+  }, [courses]);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
+    <div className="space-y-3 pb-28 md:pb-6">
       <StudyTabs />
 
-      {/* Header */}
+      {/* ── Header */}
       <div className="flex items-center gap-3">
         <Link
           href="/study"
-          className="grid h-10 w-10 place-items-center rounded-2xl border bg-card hover:bg-secondary/50"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-card hover:bg-secondary/50 transition"
           aria-label="Back"
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-lg font-extrabold text-foreground">AI Study Plan</p>
+            <p className="text-[17px] font-extrabold text-foreground">AI Study Plan</p>
             <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-extrabold text-violet-600 dark:border-violet-700/40 dark:bg-violet-950/30 dark:text-violet-400">
               <Sparkles className="h-3 w-3" /> Gemini
             </span>
           </div>
-          <p className="text-sm text-muted-foreground">Personalised week-by-week study schedule</p>
+          <p className="text-[13px] text-muted-foreground">Personalised week-by-week study schedule</p>
         </div>
       </div>
 
-      {/* Form */}
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-5">
-        {/* Prefill status */}
-        {prefilling ? (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Loading your courses…</p>
-          </div>
-        ) : prefillSource ? (
-          <div className="flex items-center gap-2 rounded-xl border border-violet-200/60 bg-violet-50/50 px-3 py-2 dark:border-violet-700/30 dark:bg-violet-950/20">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-            <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">
-              Pre-filled from your profile · <span className="font-normal">{prefillSource}</span>
+      {/* ── Prefill banner */}
+      {prefilling ? (
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-3 py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">Loading your courses…</p>
+        </div>
+      ) : prefillSource ? (
+        <div className="flex items-center gap-2 rounded-xl border border-violet-200/60 bg-violet-50/60 px-3 py-2 dark:border-violet-700/30 dark:bg-violet-950/20">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <p className="text-[12px] font-semibold text-violet-700 dark:text-violet-300">
+            Pre-filled from your profile ·{" "}
+            <span className="font-normal">{prefillSource}</span>
+          </p>
+        </div>
+      ) : null}
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECTION 1 — COURSES
+      ══════════════════════════════════════════════════════════════ */}
+      <SectionCard
+        icon="📚"
+        iconBg="#EDE9FE"
+        title="Your courses"
+        sub="Type a code and press Enter to add"
+      >
+        <CourseTagInput courses={courses} onChange={setCourses} />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECTION 2 — GOAL
+      ══════════════════════════════════════════════════════════════ */}
+      <SectionCard
+        icon="🎯"
+        iconBg="#D1FAE5"
+        title="Your goal"
+        sub="Optional — helps Gemini prioritise harder content"
+      >
+        <GpaSection
+          currentCgpa={currentCgpa}
+          targetCgpa={targetCgpa}
+          onCurrentChange={setCurrentCgpa}
+          onTargetChange={setTargetCgpa}
+        />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECTION 3 — CAPACITY
+      ══════════════════════════════════════════════════════════════ */}
+      <SectionCard
+        icon="⏱"
+        iconBg="#FEF3C7"
+        title="Study capacity"
+        sub="Sets the pace and intensity of your plan"
+      >
+        <div className="grid grid-cols-2 gap-4">
+          {/* Weeks until exam */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Weeks until exam
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEK_OPTIONS.map((w) => {
+                const isActive = weeksUntilExam === w;
+                const urg      = getUrgency(w);
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setWeeksUntilExam(w)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition",
+                      isActive
+                        ? URGENCY_WEEK_CHIP[urg]
+                        : "border-border bg-secondary/50 text-muted-foreground hover:border-border/80 hover:bg-secondary"
+                    )}
+                  >
+                    {w}w
+                  </button>
+                );
+              })}
+            </div>
+            {/* Urgency note */}
+            <p className={cn("mt-0.5 text-[11px] font-semibold", URGENCY_NOTE_TEXT[urgency])}>
+              {URGENCY_NOTE[urgency]}
             </p>
           </div>
-        ) : null}
 
-        {/* Courses */}
-        <div>
-          <label className="text-xs font-extrabold text-muted-foreground uppercase tracking-wide">
-            Your Courses
-          </label>
-          <div className="mt-2 space-y-2">
-            {courses.map((c, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={c}
-                  onChange={(e) => updateCourse(i, e.target.value)}
-                  placeholder={`e.g. MTH 201, PHY 301`}
-                  className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-                />
-                {courses.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => removeCourse(i)}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border text-muted-foreground hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition"
-                    aria-label="Remove course"
+          {/* Daily hours */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Daily study hours
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {HOURS_OPTIONS.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setDailyHours(h)}
+                  className={cn(
+                    "rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition",
+                    dailyHours === h
+                      ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-700/60 dark:bg-violet-950/30 dark:text-violet-200"
+                      : "border-border bg-secondary/50 text-muted-foreground hover:border-border/80 hover:bg-secondary"
+                  )}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECTION 4 — WEAK COURSES
+      ══════════════════════════════════════════════════════════════ */}
+      <SectionCard
+        icon="⚡"
+        iconBg="#FEE2E2"
+        title={
+          <>
+            Weak courses{" "}
+            <span className="ml-1 text-[11px] font-normal text-muted-foreground">optional</span>
+          </>
+        }
+        sub="These get extra days in your plan — tick any you're struggling with"
+      >
+        {courses.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground py-1">
+            Add courses above to select weak ones.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {courses.map((code) => {
+              const isWeak = weakCourses.includes(code);
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => toggleWeakCourse(code)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition",
+                    isWeak
+                      ? "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                      : "border-border bg-secondary/50 text-muted-foreground hover:border-amber-300 hover:bg-amber-50/50 dark:hover:border-amber-700/40 dark:hover:bg-amber-950/10"
+                  )}
+                >
+                  {/* Checkbox dot */}
+                  <span
+                    className={cn(
+                      "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[8px] font-extrabold transition",
+                      isWeak
+                        ? "border-amber-400 bg-amber-400 text-white"
+                        : "border-border bg-background"
+                    )}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
-            ))}
+                    {isWeak ? "✓" : ""}
+                  </span>
+                  {code}
+                </button>
+              );
+            })}
           </div>
-          <button
-            type="button"
-            onClick={addCourse}
-            className="mt-2 inline-flex items-center gap-1.5 text-xs font-extrabold text-violet-600 hover:text-violet-700 dark:text-violet-400"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add course
-          </button>
+        )}
+      </SectionCard>
+
+      {/* ── Error */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/30 dark:text-rose-400">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {error}
         </div>
+      )}
 
-        {/* GPA + Timeline */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-extrabold text-muted-foreground">Current CGPA</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              max="5"
-              value={currentCgpa}
-              onChange={(e) => setCurrentCgpa(e.target.value)}
-              placeholder="e.g. 3.45"
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-extrabold text-muted-foreground">Target CGPA</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              max="5"
-              value={targetCgpa}
-              onChange={(e) => setTargetCgpa(e.target.value)}
-              placeholder="e.g. 4.00"
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-extrabold text-muted-foreground">Weeks Until Exam</label>
-            <select
-              value={weeksUntilExam}
-              onChange={(e) => setWeeksUntilExam(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-            >
-              {[1, 2, 3, 4, 5, 6, 8, 10, 12].map((w) => (
-                <option key={w} value={w}>{w} week{w > 1 ? "s" : ""}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-extrabold text-muted-foreground">Daily Study Hours</label>
-            <select
-              value={dailyHours}
-              onChange={(e) => setDailyHours(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-            >
-              {[1, 2, 3, 4, 5, 6, 8].map((h) => (
-                <option key={h} value={h}>{h}h/day</option>
-              ))}
-            </select>
-          </div>
+      {/* ── Generate button */}
+      <button
+        type="button"
+        onClick={generate}
+        disabled={loading}
+        className={cn(
+          "w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-extrabold transition",
+          "bg-violet-600 text-white hover:bg-violet-700",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2",
+          loading && "opacity-70 cursor-not-allowed"
+        )}
+      >
+        {loading ? (
+          <><Loader2 className="h-4 w-4 animate-spin" /> Generating your plan…</>
+        ) : (
+          <><Sparkles className="h-4 w-4" /> Generate Study Plan</>
+        )}
+      </button>
+
+      {/* Preview row — what the output contains */}
+      {!plan && !loading && (
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+          {[
+            { dot: "#7C3AED", label: "Week-by-week schedule" },
+            { dot: "#10B981", label: "Daily tasks" },
+            { dot: "#F59E0B", label: "Study tips" },
+            { dot: "#EF4444", label: "Progress tracking" },
+          ].map(({ dot, label }) => (
+            <span key={label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+              {label}
+            </span>
+          ))}
         </div>
+      )}
 
-        {/* Weak courses */}
-        <div>
-          <label className="text-xs font-extrabold text-muted-foreground">
-            Weak Courses <span className="font-normal">(optional — comma separated)</span>
-          </label>
-          <input
-            type="text"
-            value={weakCourses}
-            onChange={(e) => setWeakCourses(e.target.value)}
-            placeholder="e.g. MTH 201, CHM 101"
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition"
-          />
-          <p className="mt-1 text-[11px] text-muted-foreground">These courses get extra days in your plan.</p>
-        </div>
-
-        {error ? (
-          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-800/50 dark:bg-rose-950/30 dark:text-rose-400">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            {error}
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={generate}
-          disabled={loading}
-          className={cn(
-            "w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-extrabold transition",
-            "bg-violet-600 text-white hover:bg-violet-700",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2",
-            loading && "opacity-70 cursor-not-allowed"
-          )}
-        >
-          {loading ? (
-            <><Loader2 className="h-4 w-4 animate-spin" /> Generating your plan…</>
-          ) : (
-            <><Sparkles className="h-4 w-4" /> Generate Study Plan</>
-          )}
-        </button>
-      </div>
-
-      {/* Plan output */}
-      {plan ? (
+      {/* ══════════════════════════════════════════════════════════════
+          PLAN OUTPUT
+      ══════════════════════════════════════════════════════════════ */}
+      {plan && (
         <div className="space-y-3">
-          {/* Persistence banner — shown when plan loaded from localStorage */}
-          {savedAt ? (
+
+          {/* Saved plan banner */}
+          {savedAt && (
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-2.5">
               <p className="text-xs text-muted-foreground">
                 Generated{" "}
-                {Math.floor((Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24))} day
-                {Math.floor((Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)) !== 1 ? "s" : ""} ago
+                {Math.floor(
+                  (Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)
+                )}{" "}
+                day
+                {Math.floor(
+                  (Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)
+                ) !== 1
+                  ? "s"
+                  : ""}{" "}
+                ago
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -529,20 +860,22 @@ export default function AiStudyPlanPage() {
                 </button>
               </div>
             </div>
-          ) : null}
+          )}
 
           {/* Summary card */}
-          <div className={cn("rounded-2xl border p-4", "border-violet-200/70 bg-violet-50/50 dark:border-violet-700/30 dark:bg-violet-950/20")}>
+          <div className="rounded-2xl border border-violet-200/70 bg-violet-50/50 p-4 dark:border-violet-700/30 dark:bg-violet-950/20">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
               <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">Your Plan</p>
-              <span className="ml-auto text-xs font-semibold text-violet-400/80">{plan.totalWeeks} weeks · Gemini</span>
+              <span className="ml-auto text-xs font-semibold text-violet-400/80">
+                {plan.totalWeeks} weeks · Gemini
+              </span>
             </div>
             <p className="text-sm leading-relaxed text-foreground">{plan.summary}</p>
           </div>
 
           {/* General tips */}
-          {plan.generalTips?.length > 0 ? (
+          {plan.generalTips?.length > 0 && (
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Target className="h-4 w-4 text-muted-foreground" />
@@ -557,29 +890,34 @@ export default function AiStudyPlanPage() {
                 ))}
               </ul>
             </div>
-          ) : null}
+          )}
 
-          {/* Week-by-week */}
+          {/* Week-by-week header */}
           <div className="flex items-center gap-2 px-1">
             <BookOpen className="h-4 w-4 text-muted-foreground" />
             <p className="text-sm font-extrabold text-foreground">Week-by-Week Schedule</p>
           </div>
+
+          {/* Week cards */}
           {plan.weeks.map((w, weekIdx) => (
-            <WeekCard key={w.week} week={w} weekIdx={weekIdx} progress={progress} onToggle={handleToggleDay} />
+            <WeekCard
+              key={w.week}
+              week={w}
+              weekIdx={weekIdx}
+              progress={progress}
+              onToggle={handleToggleDay}
+            />
           ))}
 
           <p className="text-center text-[11px] text-muted-foreground px-4">
             AI can make mistakes. Adjust this plan based on your actual syllabus and exam schedule.
           </p>
 
-          {/* Export as text */}
+          {/* Export */}
           <button
             type="button"
             onClick={exportAsText}
-            className={cn(
-              "w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-border py-2.5 text-sm font-extrabold text-foreground",
-              "hover:bg-secondary/50 transition"
-            )}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-border py-2.5 text-sm font-extrabold text-foreground hover:bg-secondary/50 transition"
           >
             Export as text
           </button>
@@ -600,7 +938,7 @@ export default function AiStudyPlanPage() {
             </button>
           )}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
