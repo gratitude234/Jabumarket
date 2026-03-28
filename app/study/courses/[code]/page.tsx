@@ -51,7 +51,6 @@ type Material = {
   title: string | null;
   description: string | null;
   file_url: string | null;
-  file_type: string | null;
   level: string | null;
   semester: string | null;
   session: string | null;
@@ -203,12 +202,11 @@ function MaterialRow({
 }) {
   const title = normalize(String(m.title ?? "Untitled material")) || "Untitled material";
   const href = m.file_url || "#";
-  const badge =
-    m.file_type?.toLowerCase().includes("pdf") || (m.file_url ?? "").toLowerCase().includes(".pdf")
-      ? "PDF"
-      : m.file_type
-      ? String(m.file_type).toUpperCase()
-      : "FILE";
+  const badge = (m.file_url ?? "").toLowerCase().includes(".pdf")
+    ? "PDF"
+    : m.material_type
+    ? labelType(m.material_type)
+    : "FILE";
 
   const meta = [m.level ? `${m.level}L` : "", m.semester ? `${m.semester} sem` : "", m.session ? String(m.session) : ""].filter(
     Boolean
@@ -410,7 +408,7 @@ export default function CourseHubPage() {
       const [mRes, pRes, qRes, tRes] = await Promise.all([
         supabase
           .from("study_materials")
-          .select("id,title,description,file_url,file_type,level,session,semester,created_at,downloads,material_type")
+          .select("id,title,description,file_url,level,session,semester,created_at,downloads,material_type")
           .eq("approved", true)
           .eq("course_id", courseRow.id)
           .order("downloads", { ascending: false, nullsFirst: false })
