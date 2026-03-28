@@ -170,9 +170,10 @@ export default function BottomNav() {
   const { isVendor, pendingCount } = useVendorMode();
   const isRider = useRiderMode();
 
-  // Conversation pages are full-screen chat — no bottom nav
-  const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
-  if (isConversationPage) return null;
+  // Full-screen flows that manage their own navigation — hide global bottom nav
+  const isConversationPage  = /^\/inbox\/[^/]+$/.test(pathname);
+  const isAttemptReviewPage = /^\/study\/history\/[^/]+$/.test(pathname);
+  if (isConversationPage || isAttemptReviewPage) return null;
 
   const meItem    = { href: "/me",               label: "Me",    icon: User,  badge: null };
   const riderItem = { href: "/rider/dashboard",  label: "Rider", icon: Truck, badge: null };

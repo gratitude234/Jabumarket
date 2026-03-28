@@ -24,6 +24,11 @@ import {
   XCircle,
 } from "lucide-react";
 
+// ─── Brand accent ─────────────────────────────────────────────────────────────
+const ACCENT = "#5B35D5";
+const ACCENT_BG = "#EEEDFE";
+const ACCENT_TEXT = "#3C3489";
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function normalize(v: string) {
@@ -35,11 +40,8 @@ function fmtDate(iso?: string | null) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "—";
   return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    year: "numeric", month: "short", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
@@ -59,146 +61,9 @@ function pctToColor(pct: number): string {
   return "#A32D2D";
 }
 
-type GradeTier = { label: string; className: string };
-
-function scoreGrade(correct: number, total: number): { pct: number; grade: GradeTier } {
+function scoreGrade(correct: number, total: number) {
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
-  let grade: GradeTier;
-  if (pct >= 70)      grade = { label: "A", className: "border-emerald-300/50 bg-emerald-100/40 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300" };
-  else if (pct >= 60) grade = { label: "B", className: "border-blue-300/50 bg-blue-100/40 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300" };
-  else if (pct >= 50) grade = { label: "C", className: "border-amber-300/50 bg-amber-100/40 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300" };
-  else if (pct >= 45) grade = { label: "D", className: "border-orange-300/50 bg-orange-100/40 text-orange-800 dark:bg-orange-950/30 dark:text-orange-300" };
-  else                grade = { label: "F", className: "border-rose-300/50 bg-rose-100/40 text-rose-800 dark:bg-rose-950/30 dark:text-rose-300" };
-  return { pct, grade };
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function ReviewChip({
-  active,
-  children,
-  onClick,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-extrabold transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        active
-          ? "border-border bg-secondary text-foreground"
-          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function QuestionPalette({
-  open,
-  questions,
-  answers,
-  optionsByQ,
-  flagged,
-  selectedQ,
-  tab,
-  onSelectQ,
-  onSetTab,
-  onClose,
-}: {
-  open: boolean;
-  questions: QuestionRow[];
-  answers: Record<string, string>;
-  optionsByQ: Record<string, OptionRow[]>;
-  flagged: Record<string, boolean>;
-  selectedQ: string | null;
-  tab: ReviewTab;
-  onSelectQ: (id: string) => void;
-  onSetTab: (t: ReviewTab) => void;
-  onClose: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[70]">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl p-3 sm:inset-0 sm:flex sm:items-center sm:justify-center sm:p-6">
-        <div className="w-full rounded-3xl border border-border bg-card p-4 shadow-xl sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-base font-extrabold tracking-tight text-foreground">Questions</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Green = correct · Red = wrong · Grey = unanswered · 🚩 = flagged
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl p-2 text-xl leading-none hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Close"
-            >
-              ×
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-10">
-            {questions.map((q, i) => {
-              const chosenId = answers[q.id];
-              const opts = optionsByQ[q.id] ?? [];
-              const chosen = chosenId ? opts.find((o) => o.id === chosenId) ?? null : null;
-              const ok = Boolean(chosen && chosen.is_correct);
-              const isActive = selectedQ === q.id;
-              const isFlagged = !!flagged[q.id];
-
-              const tone = !chosenId
-                ? "border-border bg-background text-foreground hover:bg-secondary/50"
-                : ok
-                ? "border-emerald-300/40 bg-emerald-100/30 text-foreground dark:bg-emerald-950/20"
-                : "border-rose-300/40 bg-rose-100/30 text-foreground dark:bg-rose-950/20";
-
-              return (
-                <button
-                  key={q.id}
-                  type="button"
-                  onClick={() => onSelectQ(q.id)}
-                  aria-current={isActive ? "step" : undefined}
-                  aria-label={`Question ${i + 1}`}
-                  className={cn(
-                    "relative rounded-2xl border py-2 text-sm font-extrabold transition",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                    tone,
-                    isActive ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : ""
-                  )}
-                >
-                  {i + 1}
-                  {isFlagged ? <span className="absolute -right-1 -top-1 text-xs">🚩</span> : null}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <ReviewChip active={tab === "wrong"} onClick={() => onSetTab("wrong")}>Wrong</ReviewChip>
-            <ReviewChip active={tab === "flagged"} onClick={() => onSetTab("flagged")}>Flagged</ReviewChip>
-            <ReviewChip active={tab === "unanswered"} onClick={() => onSetTab("unanswered")}>Unanswered</ReviewChip>
-            <ReviewChip active={tab === "all"} onClick={() => onSetTab("all")}>All</ReviewChip>
-            <button
-              type="button"
-              onClick={onClose}
-              className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return { pct };
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -240,44 +105,129 @@ type OptionRow = {
 };
 
 type ReviewTab = "wrong" | "flagged" | "unanswered" | "all";
-type MobileTab = "question" | "list";
 
-// ─── Score Ring (large, for review header) ────────────────────────────────────
+// ─── Score Ring ───────────────────────────────────────────────────────────────
+// No grade label — just percentage. Less demoralizing, more informative.
 
-function ScoreRingLg({
-  pct,
-  grade,
-}: {
-  pct: number;
-  grade: GradeTier;
-}) {
-  const size = 76;
-  const r = 30;
-  const cx = 38;
+function ScoreRing({ pct }: { pct: number }) {
+  const size = 56;
+  const r = 22;
+  const cx = 28;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - Math.max(0, Math.min(100, pct)) / 100);
   const color = pctToColor(pct);
 
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke="currentColor" strokeWidth={5} opacity={0.12} />
-        <circle
-          cx={cx} cy={cx} r={r} fill="none"
-          stroke={color} strokeWidth={5}
-          strokeDasharray={circ} strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${cx} ${cx})`}
-        />
-        <text x={cx} y={cx - 6} textAnchor="middle" dominantBaseline="central"
-          fontSize={15} fontWeight={600} fill="currentColor">
-          {pct}%
-        </text>
-        <text x={cx} y={cx + 12} textAnchor="middle" dominantBaseline="central"
-          fontSize={11} fill="currentColor" opacity={0.6}>
-          Grade {grade.label}
-        </text>
-      </svg>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cx} r={r} fill="none" stroke="currentColor" strokeWidth={4} opacity={0.1} />
+      <circle
+        cx={cx} cy={cx} r={r} fill="none"
+        stroke={color} strokeWidth={4}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cx})`}
+      />
+      <text x={cx} y={cx} textAnchor="middle" dominantBaseline="central"
+        fontSize={11} fontWeight={500} fill="currentColor">
+        {pct}%
+      </text>
+    </svg>
+  );
+}
+
+// ─── Question Palette (modal) ─────────────────────────────────────────────────
+
+function QuestionPalette({
+  open, questions, answers, optionsByQ, flagged,
+  selectedQ, tab, onSelectQ, onSetTab, onClose,
+}: {
+  open: boolean;
+  questions: QuestionRow[];
+  answers: Record<string, string>;
+  optionsByQ: Record<string, OptionRow[]>;
+  flagged: Record<string, boolean>;
+  selectedQ: string | null;
+  tab: ReviewTab;
+  onSelectQ: (id: string) => void;
+  onSetTab: (t: ReviewTab) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl p-3 sm:inset-0 sm:flex sm:items-center sm:justify-center sm:p-6">
+        <div className="w-full rounded-3xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-base font-medium text-foreground">Questions</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Green = correct · Red = wrong · Grey = skipped
+              </p>
+            </div>
+            <button
+              type="button" onClick={onClose}
+              className="rounded-2xl p-2 text-xl leading-none hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-10">
+            {questions.map((q, i) => {
+              const chosenId = answers[q.id];
+              const opts = optionsByQ[q.id] ?? [];
+              const chosen = chosenId ? opts.find((o) => o.id === chosenId) ?? null : null;
+              const ok = Boolean(chosen && chosen.is_correct);
+              const isActive = selectedQ === q.id;
+              const isFlagged = !!flagged[q.id];
+              const tone = !chosenId
+                ? "border-border bg-background text-foreground hover:bg-secondary/50"
+                : ok
+                ? "border-emerald-300/40 bg-emerald-100/30 text-foreground dark:bg-emerald-950/20"
+                : "border-rose-300/40 bg-rose-100/30 text-foreground dark:bg-rose-950/20";
+
+              return (
+                <button
+                  key={q.id} type="button"
+                  onClick={() => onSelectQ(q.id)}
+                  aria-current={isActive ? "step" : undefined}
+                  className={cn(
+                    "relative rounded-2xl border py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    tone,
+                    isActive ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : ""
+                  )}
+                >
+                  {i + 1}
+                  {isFlagged && <span className="absolute -right-1 -top-1 text-xs">🚩</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(["wrong", "flagged", "unanswered", "all"] as ReviewTab[]).map((t) => (
+              <button
+                key={t} type="button" onClick={() => onSetTab(t)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  tab === t
+                    ? "border-border bg-secondary text-foreground"
+                    : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                )}
+              >
+                {t === "wrong" ? "Wrong" : t === "flagged" ? "Flagged" : t === "unanswered" ? "Skipped" : "All"}
+              </button>
+            ))}
+            <button
+              type="button" onClick={onClose}
+              className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -289,7 +239,6 @@ export default function AttemptReviewClient() {
   const params = useParams<{ attemptId: string }>();
   const attemptId = String(params?.attemptId ?? "");
 
-  // Data
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<AttemptRow | null>(null);
@@ -297,31 +246,23 @@ export default function AttemptReviewClient() {
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [optionsByQ, setOptionsByQ] = useState<Record<string, OptionRow[]>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [prevPct, setPrevPct] = useState<number | null>(null); // score from prior attempt on same set
+  const [prevPct, setPrevPct] = useState<number | null>(null);
 
-  // UI state
-  const [mobileTab, setMobileTab] = useState<MobileTab>("question");
-  const [tab, setTab] = useState<ReviewTab>("wrong");
+  const [tab, setTab] = useState<ReviewTab>("all");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedQ, setSelectedQ] = useState<string | null>(null);
 
-  // Flags — stored in localStorage, keyed by attemptId
   const flagsKey = useMemo(() => `jabu:reviewFlags:${attemptId}`, [attemptId]);
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
-
-  // Explanation toggles
   const [expOpen, setExpOpen] = useState<Record<string, boolean>>({});
-
-  // "Mark as understood" — optimistically updated, persisted to DB
   const [understood, setUnderstood] = useState<Record<string, boolean>>({});
   const [understoodSaving, setUnderstoodSaving] = useState<Record<string, boolean>>({});
 
-  // Retry wrong handoff key
   const retryKey = useMemo(() => `jabu:retryWrong:${attemptId}`, [attemptId]);
 
-  const APP_BOTTOM_NAV_H = 72;
 
-  // ── Data loading ─────────────────────────────────────────────────────────────
+
+  // ── Data loading ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
@@ -340,7 +281,6 @@ export default function AttemptReviewClient() {
           return;
         }
 
-        // Attempt (must belong to user)
         const { data: att, error: attErr } = await supabase
           .from("study_practice_attempts")
           .select("id,user_id,set_id,status,started_at,submitted_at,score,total_questions,time_spent_seconds")
@@ -353,7 +293,6 @@ export default function AttemptReviewClient() {
 
         const setId = String((att as any).set_id);
 
-        // Load set meta, questions, previous attempt score concurrently
         const [setRes, qRes, prevRes] = await Promise.all([
           supabase
             .from("study_quiz_sets")
@@ -365,7 +304,6 @@ export default function AttemptReviewClient() {
             .select("id,prompt,explanation,position")
             .eq("set_id", setId)
             .order("position", { ascending: true }),
-          // Previous submitted attempt on the same set (for score comparison)
           supabase
             .from("study_practice_attempts")
             .select("score,total_questions")
@@ -384,7 +322,6 @@ export default function AttemptReviewClient() {
         const qs = (qRes.data as any[] | null) ?? [];
         const qIds = qs.map((q) => String(q.id));
 
-        // Load options + answers concurrently
         const [optRes, aRes] = await Promise.all([
           qIds.length
             ? supabase
@@ -393,7 +330,6 @@ export default function AttemptReviewClient() {
                 .in("question_id", qIds)
                 .order("position", { ascending: true })
             : Promise.resolve({ data: [], error: null }),
-          // Answers — only stable columns (no understood yet)
           supabase
             .from("study_attempt_answers")
             .select("question_id,selected_option_id")
@@ -403,21 +339,17 @@ export default function AttemptReviewClient() {
         if (optRes.error) throw optRes.error;
         if (aRes.error) throw aRes.error;
 
-        // Build options map
         const grouped: Record<string, OptionRow[]> = {};
         for (const o of (optRes.data ?? []) as any[]) {
           const qid = String(o.question_id);
           if (!grouped[qid]) grouped[qid] = [];
           grouped[qid].push({
-            id: String(o.id),
-            question_id: qid,
-            text: String(o.text ?? ""),
-            is_correct: Boolean(o.is_correct),
+            id: String(o.id), question_id: qid,
+            text: String(o.text ?? ""), is_correct: Boolean(o.is_correct),
             position: typeof o.position === "number" ? o.position : null,
           });
         }
 
-        // Build answers map
         const aMap: Record<string, string> = {};
         for (const r of (aRes.data ?? []) as any[]) {
           if (r?.question_id && r?.selected_option_id) {
@@ -425,8 +357,6 @@ export default function AttemptReviewClient() {
           }
         }
 
-        // Load understood state separately — graceful: fails silently if
-        // migration_understood.sql hasn't been run yet.
         const understoodMap: Record<string, boolean> = {};
         try {
           const { data: uData } = await supabase
@@ -437,11 +367,8 @@ export default function AttemptReviewClient() {
           for (const r of (uData ?? []) as any[]) {
             if (r?.question_id) understoodMap[String(r.question_id)] = true;
           }
-        } catch {
-          // Column doesn't exist yet — run migration_understood.sql in Supabase
-        }
+        } catch { /* column not yet migrated */ }
 
-        // Restore local flags
         let localFlags: Record<string, boolean> = {};
         try {
           const raw = window.localStorage.getItem(flagsKey);
@@ -458,7 +385,6 @@ export default function AttemptReviewClient() {
           if (chosen && !chosen.is_correct) expSeed[qid] = true;
         }
 
-        // Previous attempt score
         let prevPctValue: number | null = null;
         if (prevRes.data?.score != null && prevRes.data?.total_questions && prevRes.data.total_questions > 0) {
           prevPctValue = Math.round((prevRes.data.score / prevRes.data.total_questions) * 100);
@@ -483,12 +409,16 @@ export default function AttemptReviewClient() {
           setUnderstood(understoodMap);
           setPrevPct(prevPctValue);
 
-          // Default selected: first wrong → first unanswered → first question
+          // Default: first wrong → first unanswered → first
           const firstWrong = normalizedQs.find((qq) => {
             const chosen = (grouped[qq.id] ?? []).find((x) => x.id === aMap[qq.id]);
             return !!chosen && !chosen.is_correct;
           })?.id ?? null;
           const firstUnanswered = normalizedQs.find((qq) => !aMap[qq.id])?.id ?? null;
+
+          // Default tab to "wrong" if any wrong answers exist, else "all"
+          if (firstWrong) setTab("wrong");
+
           setSelectedQ(firstWrong ?? firstUnanswered ?? normalizedQs[0]?.id ?? null);
         }
       } catch (e: any) {
@@ -501,33 +431,30 @@ export default function AttemptReviewClient() {
     return () => { cancelled = true; };
   }, [attemptId, router, flagsKey]);
 
-  // Persist flags to localStorage
   useEffect(() => {
     try { window.localStorage.setItem(flagsKey, JSON.stringify(flagged)); }
     catch { /* ignore */ }
   }, [flagged, flagsKey]);
 
-  // ── Derived data ─────────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────
 
   const derived = useMemo(() => {
-    let answered = 0, correct = 0, wrong = 0, unanswered = 0;
+    let correct = 0, wrong = 0, unanswered = 0;
     const wrongIds: string[] = [], unansweredIds: string[] = [];
 
     for (const q of questions) {
       const chosenId = answers[q.id];
       const opts = optionsByQ[q.id] ?? [];
       if (!chosenId) { unanswered++; unansweredIds.push(q.id); continue; }
-      answered++;
       const chosen = opts.find((o) => o.id === chosenId);
       if (chosen?.is_correct) correct++;
       else { wrong++; wrongIds.push(q.id); }
     }
 
     const flaggedIds = questions.filter((q) => !!flagged[q.id]).map((q) => q.id);
-    const understoodIds = questions.filter((q) => !!understood[q.id]).map((q) => q.id);
 
-    return { total: questions.length, answered, correct, wrong, unanswered, wrongIds, unansweredIds, flaggedIds, understoodIds };
-  }, [questions, answers, optionsByQ, flagged, understood]);
+    return { total: questions.length, correct, wrong, unanswered, wrongIds, unansweredIds, flaggedIds };
+  }, [questions, answers, optionsByQ, flagged]);
 
   const filteredList = useMemo(() => {
     if (tab === "wrong") return derived.wrongIds;
@@ -554,7 +481,7 @@ export default function AttemptReviewClient() {
   const isWrong = Boolean(chosenId && chosenOpt && !chosenOpt.is_correct);
   const isUnanswered = Boolean(selected && !chosenId);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
   function prev() {
     const i = selectedIndexInAll;
@@ -571,7 +498,6 @@ export default function AttemptReviewClient() {
   function goToQ(qid: string) {
     setSelectedQ(qid);
     setPaletteOpen(false);
-    setMobileTab("question");
   }
 
   function toggleFlag(qid: string) {
@@ -583,9 +509,8 @@ export default function AttemptReviewClient() {
   }
 
   async function toggleUnderstood(qid: string) {
-    const next = !understood[qid];
-    // Optimistic update
-    setUnderstood((p) => ({ ...p, [qid]: next }));
+    const nextVal = !understood[qid];
+    setUnderstood((p) => ({ ...p, [qid]: nextVal }));
     setUnderstoodSaving((p) => ({ ...p, [qid]: true }));
 
     try {
@@ -595,18 +520,15 @@ export default function AttemptReviewClient() {
 
       const { error } = await supabase
         .from("study_attempt_answers")
-        .update({ understood: next } as any)
+        .update({ understood: nextVal } as any)
         .eq("attempt_id", attemptId)
         .eq("question_id", qid)
         .eq("user_id", uid);
 
-      // Silently ignore column-not-found errors (migration not yet run)
       if (error && !error.message?.includes("understood")) throw error;
     } catch (e: any) {
-      // Don't rollback if it's just the column missing — state stays optimistic
-      // until migration is applied. For real auth/network errors, rollback.
       if (!e?.message?.includes("understood")) {
-        setUnderstood((p) => ({ ...p, [qid]: !next }));
+        setUnderstood((p) => ({ ...p, [qid]: !nextVal }));
       }
     } finally {
       setUnderstoodSaving((p) => ({ ...p, [qid]: false }));
@@ -618,11 +540,7 @@ export default function AttemptReviewClient() {
     try {
       window.localStorage.setItem(
         retryKey,
-        JSON.stringify({
-          attemptId, setId: setMeta.id,
-          questionIds: derived.wrongIds,
-          createdAt: Date.now(),
-        })
+        JSON.stringify({ attemptId, setId: setMeta.id, questionIds: derived.wrongIds, createdAt: Date.now() })
       );
     } catch { /* ignore */ }
     router.push(
@@ -630,13 +548,13 @@ export default function AttemptReviewClient() {
     );
   }
 
-  // ── Loading / error states ────────────────────────────────────────────────────
+  // ── Loading / error ───────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="space-y-4 pb-28 md:pb-6">
+      <div className="space-y-4 pb-10">
         <Card className="rounded-3xl">
-          <div className="flex items-center gap-2 text-sm font-extrabold text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading review…
           </div>
@@ -647,24 +565,18 @@ export default function AttemptReviewClient() {
 
   if (err || !attempt || !setMeta) {
     return (
-      <div className="space-y-4 pb-28 md:pb-6">
+      <div className="space-y-4 pb-10">
         <button
-          type="button"
-          onClick={() => router.back()}
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          type="button" onClick={() => router.back()}
+          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back
+          <ArrowLeft className="h-4 w-4" /> Back
         </button>
         <EmptyState
-          title="Couldn't open review"
-          description={err ?? "Missing data"}
+          title="Couldn't open review" description={err ?? "Missing data"}
           icon={<AlertTriangle className="h-5 w-5" />}
           action={
-            <Link
-              href="/study/history"
-              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-            >
+            <Link href="/study/history" className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground no-underline hover:bg-secondary/50">
               Back to history <ArrowRight className="h-4 w-4" />
             </Link>
           }
@@ -673,215 +585,172 @@ export default function AttemptReviewClient() {
     );
   }
 
-  const { pct, grade } = scoreGrade(derived.correct, derived.total);
+  const { pct } = scoreGrade(derived.correct, derived.total);
   const headerCode = normalize(String(setMeta.course_code ?? "")).toUpperCase();
   const scoreDiff = attempt.score != null && attempt.total_questions && attempt.total_questions > 0 && prevPct != null
-    ? pct - prevPct
-    : null;
+    ? pct - prevPct : null;
+
+  // Progress bar: position in all questions
+  const progressPct = derived.total > 0 ? Math.round(((selectedIndexInAll + 1) / derived.total) * 100) : 0;
 
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
+    <div className="space-y-4 pb-28">
 
-      {/* Top bar */}
+      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
         <button
-          type="button"
-          onClick={() => router.back()}
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Go back"
+          type="button" onClick={() => router.back()}
+          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back
+          <ArrowLeft className="h-4 w-4" /> Back
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Continue attempt = resume in-progress */}
           <Link
             href={`/study/practice/${encodeURIComponent(setMeta.id)}?attempt=${encodeURIComponent(attempt.id)}`}
-            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
+            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground no-underline hover:bg-secondary/50"
           >
             <RefreshCcw className="h-4 w-4" />
-            Open attempt
+            Continue attempt
           </Link>
-          <Link
-            href={`/study/practice/${encodeURIComponent(setMeta.id)}`}
-            className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-          >
-            Retry set
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+
+          {/* Retry wrong — persistent CTA, only visible when wrongs exist */}
+          {derived.wrongIds.length > 0 && (
+            <button
+              type="button" onClick={retryWrong}
+              className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              style={{ background: ACCENT }}
+            >
+              Retry wrong ({derived.wrongIds.length})
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ── Score summary card ───────────────────────────────────────────────── */}
+      {/* Thin progress line */}
+      <div className="h-0.5 w-full overflow-hidden rounded-full bg-border/30">
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{ width: `${progressPct}%`, background: ACCENT }}
+        />
+      </div>
+
+      {/* ── Score summary card ─────────────────────────────────────────────── */}
       <Card className="rounded-3xl">
-        {/* Title + badges */}
-        <div className="flex items-start gap-4">
-          <ScoreRingLg pct={pct} grade={grade} />
+        <div className="flex items-start gap-3">
+          <ScoreRing pct={pct} />
 
           <div className="min-w-0 flex-1">
-            <p className="text-base font-extrabold tracking-tight text-foreground">
+            <p className="text-sm font-medium leading-snug text-foreground">
               {normalize(String(setMeta.title ?? "Practice"))}
             </p>
 
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {headerCode ? (
+              {headerCode && (
                 <Link
                   href={`/study/courses/${encodeURIComponent(headerCode)}`}
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-extrabold text-foreground no-underline hover:bg-secondary/50"
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground no-underline hover:bg-secondary/50"
                 >
                   {headerCode}
                 </Link>
-              ) : null}
-              {setMeta.level ? (
-                <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+              )}
+              {setMeta.level && (
+                <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
                   {String(setMeta.level)}L
                 </span>
-              ) : null}
+              )}
               <span
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs font-extrabold",
+                className="rounded-full border px-2.5 py-1 text-xs font-medium"
+                style={
                   attempt.status === "submitted"
-                    ? "border-emerald-300/40 bg-emerald-100/30 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300"
-                    : "border-amber-300/40 bg-amber-100/30 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300"
-                )}
+                    ? { background: "#EAF3DE", color: "#3B6D11", borderColor: "#97C459" }
+                    : { background: ACCENT_BG, color: ACCENT_TEXT, borderColor: "#AFA9EC" }
+                }
               >
                 {attempt.status === "submitted" ? "Submitted" : "In progress"}
               </span>
             </div>
 
             {/* vs previous attempt */}
-            {scoreDiff != null && scoreDiff !== 0 ? (
+            {scoreDiff != null && scoreDiff !== 0 && (
               <div
                 className={cn(
-                  "mt-2 inline-flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 text-xs font-extrabold",
+                  "mt-2 inline-flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 text-xs font-medium",
                   scoreDiff > 0
                     ? "border border-emerald-300/40 bg-emerald-100/30 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300"
                     : "border border-rose-300/40 bg-rose-100/30 text-rose-800 dark:bg-rose-950/20 dark:text-rose-300"
                 )}
               >
-                {scoreDiff > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                {scoreDiff > 0 ? "+" : ""}{scoreDiff}% vs your last attempt on this set
+                {scoreDiff > 0
+                  ? <TrendingUp className="h-3.5 w-3.5" />
+                  : <TrendingDown className="h-3.5 w-3.5" />}
+                {scoreDiff > 0 ? "+" : ""}{scoreDiff}% vs last attempt
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 
-        {/* Quick stats row */}
+        {/* Stats row — neutral framing: skipped is grey, correct is green */}
         <div className="mt-4 grid grid-cols-4 gap-2">
           {[
-            { label: "Wrong", value: derived.wrong, danger: true },
-            { label: "Skipped", value: derived.unanswered, warn: true },
-            { label: "Time", value: fmtDuration(attempt.time_spent_seconds) },
-            { label: "Flagged", value: derived.flaggedIds.length },
-          ].map(({ label, value, danger, warn }) => (
-            <div key={label} className="rounded-2xl border border-border bg-background p-2 text-center">
-              <p className={cn(
-                "text-base font-extrabold tabular-nums",
-                danger && derived.wrong > 0 ? "text-rose-700 dark:text-rose-400" : "",
-                warn && derived.unanswered > 0 ? "text-amber-700 dark:text-amber-400" : "",
-                !danger && !warn ? "text-foreground" : "",
-              )}>
+            { label: "Wrong", value: derived.wrong, color: derived.wrong > 0 ? "#A32D2D" : undefined },
+            { label: "Skipped", value: derived.unanswered, color: undefined },
+            { label: "Correct", value: derived.correct, color: derived.correct > 0 ? "#3B6D11" : undefined },
+            { label: "Time", value: fmtDuration(attempt.time_spent_seconds), color: undefined },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="rounded-2xl bg-secondary/50 p-2 text-center">
+              <p className="text-base font-medium tabular-nums text-foreground" style={color ? { color } : undefined}>
                 {value}
               </p>
-              <p className="mt-0.5 text-[10px] font-semibold text-muted-foreground">{label}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">{label}</p>
             </div>
           ))}
         </div>
 
-        {/* Submitted on + tab filters + actions */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {attempt.submitted_at ? (
-            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-              {fmtDate(attempt.submitted_at)}
-            </span>
-          ) : null}
-
-          <ReviewChip active={tab === "wrong"} onClick={() => setTab("wrong")}>
-            Wrong ({derived.wrong})
-          </ReviewChip>
-          <ReviewChip active={tab === "flagged"} onClick={() => setTab("flagged")}>
-            Flagged ({derived.flaggedIds.length})
-          </ReviewChip>
-          <ReviewChip active={tab === "unanswered"} onClick={() => setTab("unanswered")}>
-            Skipped ({derived.unanswered})
-          </ReviewChip>
-          <ReviewChip active={tab === "all"} onClick={() => setTab("all")}>
-            All ({derived.total})
-          </ReviewChip>
-
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            className="ml-auto inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <LayoutGrid className="h-4 w-4" />
-            Questions
-          </button>
+        {/* Single filter chip row — replaces the two-tab system */}
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              { key: "all" as ReviewTab, label: "All", count: derived.total },
+              { key: "wrong" as ReviewTab, label: "Wrong", count: derived.wrong },
+              { key: "unanswered" as ReviewTab, label: "Skipped", count: derived.unanswered },
+              { key: "flagged" as ReviewTab, label: "Flagged", count: derived.flaggedIds.length },
+            ] as const
+          ).map(({ key, label, count }) => (
+            <button
+              key={key} type="button"
+              onClick={() => setTab(key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                tab === key
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border/60 bg-background text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+              <span className="opacity-60">{count}</span>
+            </button>
+          ))}
 
           <button
-            type="button"
-            onClick={retryWrong}
-            disabled={derived.wrongIds.length === 0}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-extrabold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              derived.wrongIds.length === 0
-                ? "border border-border/60 bg-background text-muted-foreground opacity-60"
-                : "bg-secondary text-foreground hover:opacity-90"
-            )}
+            type="button" onClick={() => setPaletteOpen(true)}
+            className="ml-auto inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Retry wrong
-            <ArrowRight className="h-4 w-4" />
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Grid view
           </button>
         </div>
       </Card>
 
-      {/* ── Mobile tab switcher (hidden on lg+) ─────────────────────────────── */}
-      <div className="lg:hidden">
-        <div className="flex gap-1 rounded-2xl border border-border bg-background p-1">
-          <button
-            type="button"
-            onClick={() => setMobileTab("question")}
-            className={cn(
-              "flex-1 rounded-xl py-2.5 text-sm font-extrabold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              mobileTab === "question"
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Question
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileTab("list")}
-            className={cn(
-              "flex-1 rounded-xl py-2.5 text-sm font-extrabold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              mobileTab === "list"
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab === "wrong" ? `Mistakes (${derived.wrong})` : `Questions (${filteredList.length})`}
-          </button>
-        </div>
-      </div>
+      {/* ── Main two-column layout ─────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-[300px,1fr]">
 
-      {/* ── Main two-column layout ───────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[320px,1fr]">
-
-        {/* LEFT — Question list */}
-        <Card
-          className={cn(
-            "rounded-3xl",
-            // Mobile: show only when on "list" tab
-            mobileTab === "list" ? "block" : "hidden lg:block"
-          )}
-        >
-          <p className="text-sm font-extrabold text-foreground">Questions</p>
-          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            Tap a question to review it. Wrong answers auto-open the explanation.
+        {/* LEFT — Question list (desktop sidebar, hidden on mobile) */}
+        <Card className="hidden rounded-3xl lg:block">
+          <p className="text-sm font-medium text-foreground">Questions</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Tap a question to review it.
           </p>
 
           {filteredList.length === 0 ? (
@@ -899,38 +768,34 @@ export default function AttemptReviewClient() {
                 const qIndex = questions.findIndex((q) => q.id === qid);
                 const q = questions[qIndex];
                 const isActive = selectedQ === qid;
-                const chosenId = answers[qid];
+                const chosenIdForQ = answers[qid];
                 const opts = optionsByQ[qid] ?? [];
-                const chosen = chosenId ? opts.find((o) => o.id === chosenId) : null;
+                const chosen = chosenIdForQ ? opts.find((o) => o.id === chosenIdForQ) : null;
                 const ok = Boolean(chosen && chosen.is_correct);
                 const isUnderstood = !!understood[qid];
 
                 return (
                   <button
-                    key={qid}
-                    type="button"
-                    onClick={() => { setSelectedQ(qid); setMobileTab("question"); }}
+                    key={qid} type="button"
+                    onClick={() => setSelectedQ(qid)}
                     className={cn(
-                      "flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                      "flex w-full items-start justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       isActive ? "border-border bg-secondary" : "border-border/70 bg-card hover:bg-secondary/40"
                     )}
                   >
                     <div className="min-w-0">
-                      <p className="text-xs font-extrabold text-muted-foreground">Question {qIndex + 1}</p>
-                      <p className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
+                      <p className="text-xs text-muted-foreground">Question {qIndex + 1}</p>
+                      <p className="mt-1 line-clamp-2 text-sm font-medium text-foreground">
                         {normalize(q?.prompt ?? "")}
                       </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-extrabold">
-                        {flagged[qid] ? (
-                          <span className="rounded-full border border-border bg-background px-2 py-0.5">🚩</span>
-                        ) : null}
-                        {isUnderstood ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                        {flagged[qid] && <span className="rounded-full border border-border bg-background px-2 py-0.5">🚩</span>}
+                        {isUnderstood && (
                           <span className="rounded-full border border-emerald-300/40 bg-emerald-100/30 px-2 py-0.5 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
-                            ✓ Understood
+                            Got it
                           </span>
-                        ) : null}
-                        {!chosenId ? (
+                        )}
+                        {!chosenIdForQ ? (
                           <span className="rounded-full border border-border bg-background px-2 py-0.5 text-muted-foreground">Skipped</span>
                         ) : ok ? (
                           <span className="rounded-full border border-emerald-300/40 bg-emerald-100/30 px-2 py-0.5 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">Correct</span>
@@ -939,14 +804,13 @@ export default function AttemptReviewClient() {
                         )}
                       </div>
                     </div>
-
                     <div className="mt-0.5 shrink-0">
-                      {!chosenId ? (
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-border bg-background text-sm text-muted-foreground">—</span>
+                      {!chosenIdForQ ? (
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl border border-border bg-background text-sm text-muted-foreground">—</span>
                       ) : ok ? (
-                        <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                       ) : (
-                        <XCircle className="h-6 w-6 text-rose-600" />
+                        <XCircle className="h-5 w-5 text-rose-600" />
                       )}
                     </div>
                   </button>
@@ -957,51 +821,45 @@ export default function AttemptReviewClient() {
 
           <Link
             href="/study/history"
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-2.5 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground no-underline hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <BookOpen className="h-4 w-4" />
-            View all attempts
+            All attempts
           </Link>
         </Card>
 
         {/* RIGHT — Question detail */}
-        <Card
-          className={cn(
-            "rounded-3xl",
-            mobileTab === "question" ? "block" : "hidden lg:block"
-          )}
-        >
+        <Card className="rounded-3xl">
           {!selected ? (
             <p className="text-sm text-muted-foreground">Select a question to review.</p>
           ) : (
             <>
-              {/* Question header */}
+              {/* Question header row */}
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-extrabold text-muted-foreground">
-                    Question {selectedIndexInAll + 1} of {derived.total}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-base font-semibold text-foreground leading-relaxed">
-                    {normalize(selected.prompt)}
-                  </p>
-                </div>
-
+                <p className="text-xs text-muted-foreground">
+                  Question <span className="font-medium text-foreground">{selectedIndexInAll + 1}</span> of {derived.total}
+                </p>
                 <button
                   type="button"
                   onClick={() => toggleFlag(selected.id)}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    "inline-flex items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     flagged[selected.id]
                       ? "border-border bg-secondary text-foreground"
-                      : "border-border bg-background text-foreground hover:bg-secondary/50"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
                   )}
-                  aria-label={flagged[selected.id] ? "Unflag question" : "Flag question"}
                 >
-                  {flagged[selected.id] ? <FlagOff className="h-4 w-4" /> : <Flag className="h-4 w-4" />}
-                  {flagged[selected.id] ? "Flagged" : "Flag"}
+                  {flagged[selected.id]
+                    ? <><FlagOff className="h-3.5 w-3.5" /> Flagged</>
+                    : <><Flag className="h-3.5 w-3.5" /> Flag</>
+                  }
                 </button>
               </div>
+
+              {/* Prompt */}
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {normalize(selected.prompt)}
+              </p>
 
               {/* Options */}
               <div className="mt-4 grid gap-2">
@@ -1024,25 +882,25 @@ export default function AttemptReviewClient() {
                     >
                       <div className="mt-0.5 shrink-0">
                         {isCorrect ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                          <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" style={{ width: 18, height: 18 }} />
                         ) : showWrongChosen ? (
-                          <XCircle className="h-5 w-5 text-rose-600" />
+                          <XCircle className="h-4.5 w-4.5 text-rose-600" style={{ width: 18, height: 18 }} />
                         ) : (
-                          <div className="h-5 w-5 rounded-full border border-border" />
+                          <div className="h-4.5 w-4.5 rounded-full border border-border" style={{ width: 18, height: 18 }} />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="whitespace-pre-wrap text-sm font-semibold text-foreground">
+                        <p className="whitespace-pre-wrap text-sm text-foreground">
                           {String.fromCharCode(65 + i)}. {normalize(o.text)}
                         </p>
-                        {isChosen ? (
-                          <p className={cn("mt-1 text-xs font-extrabold", isCorrect ? "text-emerald-600" : "text-rose-600")}>
-                            Your choice
+                        {isChosen && (
+                          <p className={cn("mt-0.5 text-xs font-medium", isCorrect ? "text-emerald-700" : "text-rose-700")}>
+                            {isCorrect ? "Correct answer" : "Your choice"}
                           </p>
-                        ) : null}
-                        {isCorrect ? (
-                          <p className="mt-1 text-xs font-extrabold text-emerald-600">Correct answer</p>
-                        ) : null}
+                        )}
+                        {!isChosen && isCorrect && (
+                          <p className="mt-0.5 text-xs font-medium text-emerald-700">Correct answer</p>
+                        )}
                       </div>
                     </div>
                   );
@@ -1056,174 +914,112 @@ export default function AttemptReviewClient() {
                   onClick={() => toggleExplanation(selected.id)}
                   className="flex w-full items-center justify-between gap-3 text-left focus-visible:outline-none"
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-extrabold text-foreground">Explanation</p>
-                    <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                      {isWrong
-                        ? "Auto-opened because your answer was wrong."
-                        : "Tap to expand."}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">Explanation</p>
+                    {isWrong && (
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px]"
+                        style={{ background: ACCENT_BG, color: ACCENT_TEXT }}
+                      >
+                        Auto-opened
+                      </span>
+                    )}
                   </div>
-                  {expOpen[selected.id] ? (
-                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                  )}
+                  {expOpen[selected.id]
+                    ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                    : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  }
                 </button>
 
-                {expOpen[selected.id] ? (
-                  <p className="mt-3 whitespace-pre-wrap text-sm font-semibold text-muted-foreground leading-relaxed">
+                {expOpen[selected.id] && (
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                     {normalize(selected.explanation ?? "No explanation provided.")}
                   </p>
-                ) : null}
+                )}
               </div>
 
-              {/* Mark as understood */}
-              {(isWrong || isUnanswered) ? (
+              {/* Mark as understood + correct answer label */}
+              {(isWrong || isUnanswered) && (
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <button
                     type="button"
                     onClick={() => toggleUnderstood(selected.id)}
                     disabled={understoodSaving[selected.id]}
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-extrabold transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                      "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       understood[selected.id]
                         ? "border-emerald-300/40 bg-emerald-100/30 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300"
                         : "border-border bg-background text-foreground hover:bg-secondary/50",
                       understoodSaving[selected.id] ? "opacity-60" : ""
                     )}
                   >
-                    {understood[selected.id] ? (
-                      <>
-                        <CheckCircle2 className="h-4 w-4" />
-                        Got it
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="h-4 w-4 opacity-40" />
-                        Mark as understood
-                      </>
-                    )}
+                    <div
+                      className={cn("h-3.5 w-3.5 rounded-full border-2 flex-shrink-0", understood[selected.id] ? "border-emerald-600 bg-emerald-600" : "border-border")}
+                    />
+                    {understood[selected.id] ? "Got it" : "Mark as understood"}
                   </button>
 
-                  {/* Quick fix */}
-                  {(isWrong || isUnanswered) && correctOpt ? (
-                    <div className="text-right text-xs text-muted-foreground">
-                      Correct:{" "}
-                      <span className="font-extrabold text-foreground">
-                        {normalize(correctOpt.text)}
-                      </span>
-                    </div>
-                  ) : null}
+                  {correctOpt && (
+                    <p className="text-right text-xs text-muted-foreground">
+                      Correct: <span className="font-medium text-foreground">{normalize(correctOpt.text)}</span>
+                    </p>
+                  )}
                 </div>
-              ) : null}
-
-              {/* Retry actions for wrong/unanswered */}
-              {(isWrong || isUnanswered) && !understood[selected.id] ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={retryWrong}
-                    disabled={derived.wrongIds.length === 0}
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                      derived.wrongIds.length === 0
-                        ? "border border-border/60 bg-background text-muted-foreground opacity-60"
-                        : "bg-secondary text-foreground hover:opacity-90"
-                    )}
-                  >
-                    Retry wrong ({derived.wrongIds.length})
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                  <Link
-                    href={`/study/practice/${encodeURIComponent(setMeta.id)}`}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-                  >
-                    Retry full set
-                    <RefreshCcw className="h-4 w-4" />
-                  </Link>
-                </div>
-              ) : null}
+              )}
             </>
           )}
         </Card>
       </div>
 
-      {/* ── Sticky bottom nav (mobile) ───────────────────────────────────────── */}
-      <div
-        className="fixed inset-x-0 bottom-0 z-50 px-4"
-        style={{ paddingBottom: APP_BOTTOM_NAV_H }}
-        aria-label="Review controls"
-      >
-        <div className="pb-3">
-          <div className="rounded-3xl border border-border bg-background/90 p-3 shadow-lg backdrop-blur">
+      {/* ── Sticky bottom nav ─────────────────────────────────────────────── */}
+      {/* Global BottomNav is hidden on this page via layout.tsx — so bottom-0 is clean */}
+      <div className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4">
+        <div>
+          <div className="rounded-3xl border border-border bg-background/90 p-3 backdrop-blur">
             <div className="flex items-center justify-between gap-2">
               <button
-                type="button"
-                onClick={prev}
+                type="button" onClick={prev}
                 disabled={selectedIndexInAll <= 0}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   selectedIndexInAll <= 0
-                    ? "border-border/50 bg-background text-muted-foreground opacity-60"
+                    ? "border-border/50 bg-background text-muted-foreground opacity-50"
                     : "border-border bg-background text-foreground hover:bg-secondary/50"
                 )}
               >
-                <ArrowLeft className="h-4 w-4" />
-                Prev
+                <ArrowLeft className="h-4 w-4" /> Prev
               </button>
 
-              <button
-                type="button"
-                onClick={() => setPaletteOpen(true)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                {selectedIndexInAll + 1}/{derived.total}
-              </button>
-
-              {selected ? (
-                <button
-                  type="button"
-                  onClick={() => toggleFlag(selected.id)}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                    flagged[selected.id]
-                      ? "border-border bg-secondary text-foreground"
-                      : "border-border bg-background text-foreground hover:bg-secondary/50"
-                  )}
-                  aria-label={flagged[selected.id] ? "Unflag" : "Flag"}
-                >
-                  <Flag className="h-4 w-4" />
-                  {flagged[selected.id] ? "Flagged" : "Flag"}
-                </button>
-              ) : null}
+              {/* Counter + mini summary */}
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">
+                  {selectedIndexInAll + 1} / {derived.total}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {derived.wrong > 0 ? `${derived.wrong} wrong` : ""}
+                  {derived.wrong > 0 && derived.unanswered > 0 ? " · " : ""}
+                  {derived.unanswered > 0 ? `${derived.unanswered} skipped` : ""}
+                  {derived.wrong === 0 && derived.unanswered === 0 ? "all answered" : ""}
+                </p>
+              </div>
 
               <button
-                type="button"
-                onClick={next}
+                type="button" onClick={next}
                 disabled={selectedIndexInAll >= questions.length - 1}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  selectedIndexInAll >= questions.length - 1
-                    ? "border-border/50 bg-background text-muted-foreground opacity-60"
-                    : "border-border bg-background text-foreground hover:bg-secondary/50"
+                  "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  selectedIndexInAll >= questions.length - 1 ? "opacity-50" : ""
                 )}
+                style={{ background: ACCENT }}
               >
-                Next
-                <ArrowRight className="h-4 w-4" />
+                Next <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Question palette */}
+      {/* Question palette modal */}
       <QuestionPalette
         open={paletteOpen}
         questions={questions}
