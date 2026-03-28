@@ -37,7 +37,7 @@ type MaterialType =
 type Course = {
   id: string;
   course_code: string;
-  title: string | null;
+  course_title: string | null;
   study_departments?: {
     id: string;
     name: string;
@@ -378,7 +378,7 @@ export default function CourseHubPage() {
         .from("study_courses")
         .select(
           `
-          id,course_code,title,department_id,
+          id,course_code,course_title,department_id,
           study_departments:department_id(id,name,faculty_id,study_faculties:faculty_id(id,name))
         `
         )
@@ -603,7 +603,7 @@ export default function CourseHubPage() {
             <div className="min-w-0">
               <p className="text-xs font-extrabold text-muted-foreground">Course Hub</p>
               <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight text-foreground">{pageTitle}</h1>
-              {course?.title ? <p className="mt-1 text-sm text-muted-foreground">{normalize(course.title)}</p> : null}
+              {course?.course_title ? <p className="mt-1 text-sm text-muted-foreground">{normalize(course.course_title)}</p> : null}
               {dept || faculty ? (
                 <p className="mt-2 text-xs font-semibold text-muted-foreground">
                   {dept}

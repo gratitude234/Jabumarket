@@ -24,7 +24,7 @@ export function DueTodayWidget({ userId }: { userId: string }) {
         const now = new Date().toISOString();
         const { count: dueCount, error } = await supabase
           .from("study_weak_questions")
-          .select("id", { count: "exact", head: true })
+          .select("user_id", { count: "exact", head: true })
           .eq("user_id", userId)
           .lte("next_due_at", now)
           .is("graduated_at", null);
