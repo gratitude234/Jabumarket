@@ -173,7 +173,8 @@ export default function BottomNav() {
   // Full-screen flows that manage their own navigation — hide global bottom nav
   const isConversationPage  = /^\/inbox\/[^/]+$/.test(pathname);
   const isAttemptReviewPage = /^\/study\/history\/[^/]+$/.test(pathname);
-  if (isConversationPage || isAttemptReviewPage) return null;
+  const isUploadPage        = /^\/study\/materials\/upload/.test(pathname);
+  if (isConversationPage || isAttemptReviewPage || isUploadPage) return null;
 
   const meItem    = { href: "/me",               label: "Me",    icon: User,  badge: null };
   const riderItem = { href: "/rider/dashboard",  label: "Rider", icon: Truck, badge: null };
