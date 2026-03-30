@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "./_components/StudyTabs";
-import { Card, EmptyState, PageHeader, ContributorStatusHub } from "./_components/StudyUI";
-import UnifiedSearch from "./_components/UnifiedSearch";
+import { EmptyState, PageHeader } from "./_components/StudyUI";
 import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
 import { ForYouSection, MaterialCard, Section, Skeleton, type MaterialMini, type Chips } from "./_components/ForYouSection";
 import { ContinueCard } from "./_components/ContinueCard";
-import { StreakSection } from "./_components/StreakSection";
-import { DueTodayWidget } from "./_components/DueTodayWidget";
+import { HeroCard } from "./_components/HeroCard";
+import { getPracticeStreak } from "@/lib/studyPractice";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
@@ -19,7 +18,9 @@ import {
   Clock,
   Filter,
   GraduationCap,
-  Trophy,
+  LayoutGrid,
+  MessageCircle,
+  Star,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -81,6 +82,12 @@ function StudyHomeInner({
   }>({ show: false, suggested: null, current: null, session: null });
   const [switchingSemester, setSwitchingSemester] = useState(false);
 
+  // Streak count for HeroCard
+  const [streak, setStreak] = useState(0);
+
+  // Due count for HeroCard
+  const [dueCount, setDueCount] = useState<number | null>(null);
+
   // P-5: Exam countdown
   const [examCountdown, setExamCountdown] = useState<{
     daysLeft: number; semester: string;
@@ -107,6 +114,33 @@ function StudyHomeInner({
     }
     checkExamSeason();
   }, []);
+
+  // Fetch streak count
+  useEffect(() => {
+    getPracticeStreak()
+      .then((r) => { if (r) setStreak(r.streak); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch due count
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function fetchDue() {
+      try {
+        const now = new Date().toISOString();
+        const { count, error } = await supabase
+          .from("study_weak_questions")
+          .select("user_id", { count: "exact", head: true })
+          .eq("user_id", userId!)
+          .lte("next_due_at", now)
+          .is("graduated_at", null);
+        if (!cancelled && !error) setDueCount(count ?? 0);
+      } catch { /* non-critical */ }
+    }
+    fetchDue();
+    return () => { cancelled = true; };
+  }, [userId]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const quickLevel = prefs?.level ?? 100;
@@ -209,8 +243,6 @@ function StudyHomeInner({
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={rep.status} />
 
-      <UnifiedSearch placeholder="Search courses, past questions, topics…" />
-
       {/* Semester mismatch banner */}
       {semesterPrompt.show && (
         <div className="sticky top-[49px] z-20 -mx-4 flex items-center justify-between gap-3 border-b border-amber-200/60 bg-amber-50 px-4 py-2.5 dark:border-amber-800/40 dark:bg-amber-950/40">
@@ -306,141 +338,147 @@ function StudyHomeInner({
         </Link>
       )}
 
-      <ContributorStatusHub
-        loading={rep.loading}
-        status={rep.status}
-        role={rep.role}
-        scope={rep.scope}
+      {/* HeroCard */}
+      <HeroCard
+        displayName={displayName}
+        streak={streak}
+        dueCount={dueCount}
+        masteryPct={null}
+        hasPrefs={hasPrefs}
+        userId={userId}
       />
 
-      <StreakSection />
+      {/* Filter chips */}
+      <div className="flex flex-wrap gap-2">
+        {([
+          {
+            label: "Past Questions",
+            icon: (
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-muted text-[10px] font-bold text-muted-foreground">
+                PQ
+              </span>
+            ),
+            active: chips.type === "past_question",
+            onToggle: () =>
+              setChips((p) => ({ ...p, type: p.type === "past_question" ? undefined : "past_question" })),
+          },
+          {
+            label: "1st Sem",
+            icon: <Clock className="h-4 w-4" />,
+            active: chips.semester === "first",
+            onToggle: () =>
+              setChips((p) => ({ ...p, semester: p.semester === "first" ? undefined : "first" })),
+          },
+          {
+            label: "2nd Sem",
+            icon: <Clock className="h-4 w-4" />,
+            active: chips.semester === "second",
+            onToggle: () =>
+              setChips((p) => ({ ...p, semester: p.semester === "second" ? undefined : "second" })),
+          },
+          {
+            label: `${quickLevel}L`,
+            icon: <GraduationCap className="h-4 w-4" />,
+            active: chips.level === quickLevel,
+            onToggle: () =>
+              setChips((p) => ({ ...p, level: p.level === quickLevel ? undefined : quickLevel })),
+          },
+        ] as const).map(({ label, icon, active, onToggle }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={onToggle}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              active
+                ? "border-border bg-secondary text-foreground"
+                : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+            )}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
 
-      {/* M-9: Leaderboard link */}
-      <div className="-mt-2 flex justify-end">
         <Link
-          href="/study/leaderboard"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          href="/study/search"
+          className={cn(
+            "ml-auto inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-2 text-xs font-semibold text-foreground",
+            "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}
         >
-          <Trophy className="h-3.5 w-3.5" /> Leaderboard
+          <Filter className="h-4 w-4" />
+          Search
         </Link>
       </div>
 
-      {userId && <DueTodayWidget userId={userId} />}
-
-      {/* Welcome + chips */}
-      <Card className="rounded-3xl">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-muted-foreground">
-              Welcome{displayName ? `, ${displayName}` : ""} 👋
-            </p>
-            <h2 className="mt-1 text-xl font-extrabold tracking-tight text-foreground">
-              What do you want to study today?
-            </h2>
-
-            {loading ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <span className="h-6 w-20 animate-pulse rounded-full bg-muted" />
-                <span className="h-6 w-24 animate-pulse rounded-full bg-muted" />
-                <span className="h-6 w-20 animate-pulse rounded-full bg-muted" />
-              </div>
-            ) : hasPrefs ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="rounded-full border border-border bg-background px-2 py-1">
-                  {counts.courses} courses
-                </span>
-                <span className="rounded-full border border-border bg-background px-2 py-1">
-                  {counts.approvedMaterials} materials
-                </span>
-                <span className="rounded-full border border-border bg-background px-2 py-1">
-                  {counts.tutors} tutors
-                </span>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Set preferences to get personalized recommendations.
-              </p>
-            )}
+      {/* Quick Actions grid */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Practice — accent tile */}
+        <Link
+          href="/study/practice"
+          className="flex flex-col gap-3 rounded-3xl bg-[#5B35D5] p-4
+                     hover:bg-[#4526B8] focus-visible:outline-none
+                     focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20">
+            <LayoutGrid className="h-4 w-4 text-white" />
           </div>
-
-          <Link
-            href="/study/onboarding"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-              "text-sm font-semibold text-foreground hover:bg-secondary/50",
-              !hasPrefs && "border-transparent bg-secondary hover:opacity-90"
-            )}
-          >
-            {hasPrefs ? "Preferences" : "Set up"} <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        <div className="mt-4">
-          <div className="flex flex-wrap gap-2">
-            {([
-              {
-                label: "Past Questions",
-                icon: (
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-muted text-[10px] font-bold text-muted-foreground">
-                    PQ
-                  </span>
-                ),
-                active: chips.type === "past_question",
-                onToggle: () =>
-                  setChips((p) => ({ ...p, type: p.type === "past_question" ? undefined : "past_question" })),
-              },
-              {
-                label: "1st Sem",
-                icon: <Clock className="h-4 w-4" />,
-                active: chips.semester === "first",
-                onToggle: () =>
-                  setChips((p) => ({ ...p, semester: p.semester === "first" ? undefined : "first" })),
-              },
-              {
-                label: "2nd Sem",
-                icon: <Clock className="h-4 w-4" />,
-                active: chips.semester === "second",
-                onToggle: () =>
-                  setChips((p) => ({ ...p, semester: p.semester === "second" ? undefined : "second" })),
-              },
-              {
-                label: `${quickLevel}L`,
-                icon: <GraduationCap className="h-4 w-4" />,
-                active: chips.level === quickLevel,
-                onToggle: () =>
-                  setChips((p) => ({ ...p, level: p.level === quickLevel ? undefined : quickLevel })),
-              },
-            ] as const).map(({ label, icon, active, onToggle }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={onToggle}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  active
-                    ? "border-border bg-secondary text-foreground"
-                    : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                )}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-
-            <Link
-              href="/study/search"
-              className={cn(
-                "ml-auto inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-2 text-xs font-semibold text-foreground",
-                "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              )}
-            >
-              <Filter className="h-4 w-4" />
-              Search
-            </Link>
+          <div>
+            <p className="text-sm font-extrabold text-white">Practice</p>
+            <p className="text-xs text-white/70">Start a session</p>
           </div>
-        </div>
-      </Card>
+        </Link>
+
+        {/* Materials */}
+        <Link
+          href="/study/materials"
+          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+                     hover:bg-secondary/20 focus-visible:outline-none
+                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+            <BookOpen className="h-4 w-4 text-[#5B35D5]" />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold text-foreground">Materials</p>
+            <p className="text-xs text-muted-foreground">Notes &amp; PDFs</p>
+          </div>
+        </Link>
+
+        {/* Q&A Forum */}
+        <Link
+          href="/study/questions"
+          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+                     hover:bg-secondary/20 focus-visible:outline-none
+                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+            <MessageCircle className="h-4 w-4 text-[#5B35D5]" />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold text-foreground">Q&amp;A Forum</p>
+            <p className="text-xs text-muted-foreground">Ask or answer</p>
+          </div>
+        </Link>
+
+        {/* GPA Calculator */}
+        <Link
+          href="/study/gpa"
+          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+                     hover:bg-secondary/20 focus-visible:outline-none
+                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+            <Star className="h-4 w-4 text-[#5B35D5]" />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold text-foreground">GPA Calculator</p>
+            <p className="text-xs text-muted-foreground">Track grades</p>
+          </div>
+        </Link>
+      </div>
 
       <ContinueCard />
 
@@ -479,7 +517,7 @@ function StudyHomeInner({
         ) : filteredTrending.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {filteredTrending.map((m) => (
-              <MaterialCard key={m.id} m={m} trending />
+              <MaterialCard key={m.id} m={m} context="trending" />
             ))}
           </div>
         ) : trending.length > 0 ? (
@@ -564,23 +602,6 @@ function StudyHomeInner({
           )}
         </Section>
       )}
-
-      {/* M-11: GPA Calculator link */}
-      <Link
-        href="/study/gpa"
-        className={cn(
-          'flex items-center justify-between gap-3 rounded-3xl border bg-card p-4 shadow-sm no-underline',
-          'hover:bg-secondary/20'
-        )}
-      >
-        <div className="min-w-0">
-          <p className="text-sm font-extrabold text-foreground">GPA Calculator</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Track your grades and plan for your target GPA.
-          </p>
-        </div>
-        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-      </Link>
     </div>
   );
 }

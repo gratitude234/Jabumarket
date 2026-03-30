@@ -68,25 +68,49 @@ export function ContinueCard() {
             </div>
           </div>
         ) : attempts.length > 0 ? (
-          attempts.map((a) => (
-            <Link
-              key={a.id}
-              href={`/study/practice/${encodeURIComponent(a.set_id)}?attempt=${encodeURIComponent(a.id)}`}
-              className={cn(
-                "flex items-center gap-3 rounded-2xl border border-border bg-background px-3 py-2.5 hover:bg-secondary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              )}
-            >
-              <Bookmark className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">
-                  {a.study_quiz_sets?.title ?? "Practice set"}
-                  {a.study_quiz_sets?.course_code ? ` · ${a.study_quiz_sets.course_code}` : ""}
-                </p>
-                <p className="text-xs text-muted-foreground">Resume →</p>
-              </div>
-            </Link>
-          ))
+          attempts.map((a) => {
+            // PracticeAttemptRow has no answered_count field — progress bar falls back to Resume →
+            const answered: number | null = null;
+            const total: number | null = a.total_questions;
+            return (
+              <Link
+                key={a.id}
+                href={`/study/practice/${encodeURIComponent(a.set_id)}?attempt=${encodeURIComponent(a.id)}`}
+                className={cn(
+                  "rounded-2xl border border-border bg-background px-3 py-2.5 hover:bg-secondary/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#5B35D5]/[0.07] border border-[#5B35D5]/20">
+                    <Bookmark className="h-4 w-4 text-[#5B35D5]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {a.study_quiz_sets?.title ?? "Practice set"}
+                      {a.study_quiz_sets?.course_code ? ` · ${a.study_quiz_sets.course_code}` : ""}
+                    </p>
+                    {answered !== null && total !== null && total > 0 && (
+                      <>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {answered} / {total} questions · ~{Math.ceil(((total - answered) * 12) / 60)} min left
+                        </p>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="h-full rounded-full bg-[#5B35D5]"
+                            style={{ width: `${Math.round((answered / total) * 100)}%` }}
+                          />
+                        </div>
+                      </>
+                    )}
+                    {(answered === null || total === null || total === 0) && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">Resume →</p>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })
         ) : fallbackAttempt ? (
           <Link
             href={`/study/practice/${encodeURIComponent(fallbackAttempt.set_id)}?attempt=${encodeURIComponent(fallbackAttempt.id)}`}

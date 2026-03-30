@@ -65,13 +65,13 @@ export function DueTodayWidget({ userId }: { userId: string }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3",
-        "dark:border-amber-800/40 dark:bg-amber-950/40"
+        "flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#5B35D5]/[0.07] px-4 py-3",
+        "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10"
       )}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <BookOpen className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <BookOpen className="h-4 w-4 shrink-0 text-[#5B35D5]" />
+        <p className="text-sm font-semibold text-[#3B24A8] dark:text-indigo-200">
           You have{" "}
           <span className="font-extrabold">{count}</span>{" "}
           {count === 1 ? "question" : "questions"} due today
@@ -80,9 +80,9 @@ export function DueTodayWidget({ userId }: { userId: string }) {
       <Link
         href="/study/practice?due=1"
         className={cn(
-          "shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white",
-          "hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2",
-          "dark:bg-amber-500 dark:hover:bg-amber-400"
+          "shrink-0 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-bold text-white",
+          "hover:bg-[#4526B8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2",
+          "dark:bg-[#5B35D5] dark:hover:bg-[#4526B8]"
         )}
       >
         Start review →

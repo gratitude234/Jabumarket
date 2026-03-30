@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Bookmark, Filter, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bookmark, Filter, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./StudyUI";
@@ -220,6 +220,7 @@ export function ForYouSection({ chips, onClearFilters }: ForYouSectionProps) {
               key={m.id}
               m={m}
               weakAccuracy={weakAreas.get((m.course_code ?? "").toUpperCase())}
+              context="for-you"
             />
           ))}
         </div>
@@ -302,10 +303,43 @@ export function Section({ title, subtitle, href, hrefLabel, children }: SectionP
   );
 }
 
-export function MaterialCard({ m, trending, weakAccuracy }: { m: MaterialMini; trending?: boolean; weakAccuracy?: number }) {
+export function MaterialCard({
+  m,
+  trending,
+  weakAccuracy,
+  context = 'for-you',
+}: {
+  m: MaterialMini;
+  trending?: boolean;
+  weakAccuracy?: number;
+  context?: 'for-you' | 'trending';
+}) {
   const href = `/study/materials/${encodeURIComponent(m.id)}`;
   const isWeak = weakAccuracy !== undefined;
   const accuracyPct = isWeak ? Math.round(weakAccuracy * 100) : null;
+  const isNew = Date.now() - new Date(m.created_at).getTime() < 7 * 24 * 60 * 60 * 1000;
+
+  let rightElement: React.ReactNode;
+  if (context === 'trending') {
+    rightElement = (
+      <div className="shrink-0 text-right">
+        <p className="text-sm font-extrabold text-foreground">{m.downloads ?? 0}</p>
+        <p className="text-[10px] text-muted-foreground">downloads</p>
+      </div>
+    );
+  } else if (!isWeak) {
+    rightElement = isNew ? (
+      <span className="shrink-0 text-[10px] font-semibold rounded-full px-2 py-1 bg-[#5B35D5]/[0.07] text-[#3B24A8] border border-[#5B35D5]/20 dark:text-indigo-300">
+        New
+      </span>
+    ) : (
+      <span className="shrink-0 text-[10px] font-semibold rounded-full px-2 py-1 bg-secondary text-muted-foreground border border-border">
+        Dept. pick
+      </span>
+    );
+  } else {
+    rightElement = <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />;
+  }
 
   return (
     <Link
@@ -341,15 +375,9 @@ export function MaterialCard({ m, trending, weakAccuracy }: { m: MaterialMini; t
                 Needs work · {accuracyPct}%
               </span>
             )}
-            {trending && !isWeak && (
-              <span className="rounded-full border border-border bg-background px-2 py-1">
-                <TrendingUp className="mr-1 inline-block h-3.5 w-3.5" />
-                {m.downloads ?? 0}
-              </span>
-            )}
           </div>
         </div>
-        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        {rightElement}
       </div>
     </Link>
   );

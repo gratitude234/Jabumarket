@@ -1,176 +1,361 @@
-You are a Senior UI/UX Designer conducting a full visual and interaction audit of every single Study Hub page in Jabu Market — a campus super-app for Nigerian university students.
-You are asking one question across every screen: does this page feel like it was designed for a JABU student on a budget Android phone, in a hurry, who doesn't fully trust digital platforms yet — or does it feel like a generic web app that happens to have study features?
-Before forming a single opinion:
+# Study Hub Homepage Redesign — Implementation Prompt
 
-Read CLAUDE.md fully
-Open and read every single file under:
+## Phase 1 — Read files, summarise each, flag conflicts
 
-app/study/ — every page, every nested route
-app/study/_components/ — every component
-app/study-admin/ — every admin page
-Every shared component used exclusively or primarily by Study Hub
+Read the following files in full before writing a single line of code. After reading all of them, output a one-sentence summary of each file and flag any conflicts or dependencies between them.
 
+```
+app/study/StudyHomeClient.tsx
+app/study/_components/DueTodayWidget.tsx
+app/study/_components/StreakSection.tsx
+app/study/_components/StreakCard.tsx
+app/study/_components/ContinueCard.tsx
+app/study/_components/ForYouSection.tsx
+app/study/_components/StudyUI.tsx
+app/study/_components/UnifiedSearch.tsx
+```
 
-For every page, understand: what is the student trying to accomplish here, what is the first thing they see, and what is the one action this screen should drive them toward
-Do not form any opinion about any page until you have read its full component tree
+---
 
+## Phase 2 — Implement tasks in order
 
-AUDIT FRAMEWORK
-For every page, audit across these six dimensions:
-1. First Impression (0–3 seconds)
+Do not skip ahead. Complete each task fully before starting the next. After each task, output the full modified file.
 
-What is the first thing a student sees above the fold on a mobile screen?
-Is the purpose of this page immediately clear — or does the student have to read to understand where they are?
-Is the most important action on this page the most visually prominent element?
-Does the page feel like it belongs to Jabu Market — same card style, same spacing, same typography — or does it feel like a different product?
+---
 
-2. Navigation & Wayfinding
+### Task 1 — Remove duplicate search bar from `StudyHomeClient.tsx`
 
-Can the student always tell where they are inside Study Hub?
-Is the active tab or section clearly highlighted?
-Can the student get to any other Study Hub section in 2 taps from here?
-Is the back navigation always accessible — no trapped pages?
-Does the bottom navigation remain accessible — or does the page hide it?
+**File:** `app/study/StudyHomeClient.tsx`
 
-3. Content Hierarchy & Readability
+The global navigation already includes a search bar. The `<UnifiedSearch>` component rendered inside `StudyHomeClient` is a duplicate and should be removed.
 
-Is the most important information the largest and highest on the page?
-Is there a clear visual hierarchy — heading → subheading → body → metadata?
-Is text size appropriate for mobile — minimum 14px for body, 16px for primary content?
-Are labels, descriptions, and metadata in the right proportion — not competing for attention?
-Is there appropriate white space — not cramped, not wasteful?
+- Delete the `<UnifiedSearch ... />` JSX line from the return statement.
+- Remove the `UnifiedSearch` import if it is no longer used after this deletion.
+- Do not touch any other logic in this file. This task is scoped to this one removal.
 
-4. Interactive Elements & Tap Targets
+---
 
-Are all buttons, links, and tappable elements at least 44px tall?
-Are touch targets spaced far enough apart that fat-finger taps don't hit the wrong element?
-Is every interactive element visually distinct from static content — clear affordance?
-Are pressed/active/loading/disabled states defined for every interactive element?
-Is the primary CTA always visually dominant — one clear action per screen?
+### Task 2 — Fix `DueTodayWidget.tsx` brand color violation
 
-5. Empty States, Loading States & Error States
+**File:** `app/study/_components/DueTodayWidget.tsx`
 
-What does this page look like with zero data — blank or coached?
-Is there a loading skeleton that matches the real content layout — not a generic spinner?
-Is there an error state that explains what went wrong and what to do next?
-Does the empty state teach the student what this page is for and how to fill it?
+The due-today banner currently uses amber/orange tokens. Study Hub brand color is indigo (`#5B35D5`). Orange (`#FF5C00`) and amber are exclusively for the Marketplace/food wing and must never appear in Study Hub components.
 
-6. Mobile-First Execution
+Make the following replacements:
 
-Is every element reachable with one thumb on a standard-size phone?
-Does the layout work on a 360px wide screen — no horizontal overflow?
-Do any inputs get hidden behind the keyboard when focused?
-Is scrolling smooth — no layout jumps when new content loads?
-Are images lazy-loaded — no layout shift on slow connections?
+**When `count > 0` (the active banner):**
+- Container: replace `border-amber-200 bg-amber-50 dark:border-amber-800/40 dark:bg-amber-950/40` with `border-[#5B35D5]/20 bg-[#5B35D5]/[0.07] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10`
+- Icon `BookOpen`: replace `text-amber-600 dark:text-amber-400` with `text-[#5B35D5]`
+- Text `p`: replace `text-amber-900 dark:text-amber-200` with `text-[#3B24A8] dark:text-indigo-200`
+- CTA `Link`: replace `bg-amber-600 hover:bg-amber-700 focus-visible:ring-amber-600 dark:bg-amber-500 dark:hover:bg-amber-400` with `bg-[#5B35D5] hover:bg-[#4526B8] focus-visible:ring-[#5B35D5] dark:bg-[#5B35D5] dark:hover:bg-[#4526B8]`
 
+Do not change the zero-state (the green "Nothing due today" pill) — it is correct as-is.
 
-PAGES TO AUDIT — every single one
-Core Study Hub pages:
+---
 
-/study — Study Hub home
-/study/materials — Materials listing
-/study/materials/[id] — Material detail
-/study/practice — Practice home
-/study/practice/[setId] — Quiz session
-/study/questions — Q&A forum listing
-/study/questions/[id] — Question detail
-/study/questions/new — Ask a question
-/study/leaderboard — Leaderboard
-/study/onboarding — Study preferences setup
-/study/apply-rep — Course Rep application
-/study/library or /study/bookmarks — Saved items
-/study/ai-plan — AI study plan
-/study/tutors — Tutor directory
-/study/search — Search results
-/study/history — Practice history
-/study/gpa — GPA calculator (if exists)
+### Task 3 — Build `HeroCard` component and integrate into `StudyHomeClient.tsx`
 
-Study Admin pages:
+This task has two parts: (A) create a new component, (B) integrate it.
 
-/study-admin/ — Admin home
-/study-admin/import — Material import tool
-/study-admin/materials — Material approval queue
-/study-admin/reps — Rep application review
-Any other admin sub-pages
+#### Part A — Create `app/study/_components/HeroCard.tsx`
 
+Create a new file. This component is the new top-of-page greeting block. It consolidates: the greeting/name, streak stat, a mastery stat, and the due-today count — all in one card.
 
-FOR EVERY PAGE, GIVE ME:
-Page: /study/[route]
-Purpose: What the student is trying to accomplish here
-Above the fold (mobile): Describe exactly what a student sees in the first viewport on a 390px screen — no scrolling
-🔴 Critical UX failures — the student cannot complete the core task because of these
-🟡 Important improvements — friction that slows the student or reduces trust
-🟢 Polish — small changes that make the page feel premium and purposeful
-The one thing that must change: If you could only fix one thing on this page — what is it and why?
+**Component signature:**
+```tsx
+export function HeroCard({
+  displayName,
+  streak,
+  dueCount,
+  masteryPct,        // optional — pass null if not yet computed
+  hasPrefs,
+  userId,
+}: {
+  displayName: string;
+  streak: number;
+  dueCount: number | null;   // null = still loading
+  masteryPct: number | null;
+  hasPrefs: boolean;
+  userId: string | null;
+})
+```
 
-CROSS-CUTTING AUDIT
-After auditing every individual page, give me a cross-system view:
-Design Consistency Audit:
+**Layout:**
+```
+┌──────────────────────────────────────────┐
+│ Good morning                              │
+│ {displayName} 👋         [Preferences →] │
+│                                           │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│ │  {streak}│ │ {mastery}│ │ (blank   │  │  ← stat pills, 3-col grid
+│ │ day streak│ │ % mastery│ │ for now) │  │
+│ └──────────┘ └──────────┘ └──────────┘  │
+│                                           │
+│ [indigo pill] {n} cards due · Review now→ │  ← only if dueCount > 0
+└──────────────────────────────────────────┘
+```
 
-Are card styles (border radius, shadow, padding) identical across all Study Hub pages — or are there variations between materials cards, practice cards, and Q&A cards?
-Is the typography scale consistent — same heading sizes, same body sizes, same metadata sizes everywhere?
-Is the color system consistent — same primary, secondary, and destructive colors used the same way on every page?
-Are button styles consistent — same border radius, same padding, same font weight across all CTAs?
-Are section labels (the small uppercase tracking-wide labels above sections) styled identically everywhere?
-Do loading skeletons match the real content layout on every page — or are some pages using generic spinners?
-Are empty states consistent in structure — icon, heading, description, CTA — across all pages?
+**Styling rules:**
+- Outer card: `rounded-3xl border border-border bg-card p-4 shadow-sm`
+- Greeting line: `text-xs text-muted-foreground`
+- Name line: `text-lg font-extrabold text-foreground`
+- Preferences link: `text-sm font-semibold text-foreground hover:bg-secondary/50 rounded-2xl border border-border bg-background px-3 py-1.5` — only render if `hasPrefs` is true; if `!hasPrefs`, show a "Set up →" link pointing to `/study/onboarding`
+- Stat grid: `mt-3 grid grid-cols-3 gap-2`
+- Each stat tile: `rounded-2xl bg-secondary/60 px-3 py-2`
+  - Number: `text-base font-extrabold text-foreground`
+  - Label: `text-[10px] text-muted-foreground mt-0.5`
+- Streak tile: number = `{streak}`, label = `day streak${streak === 1 ? '' : 's'} 🔥`
+- Mastery tile: number = `{masteryPct !== null ? masteryPct + '%' : '—'}`, label = `mastery this week`
+- Third tile: leave empty for now — render `null` in that grid cell (reserved for future)
+- Due pill (only if `dueCount !== null && dueCount > 0`):
+  ```
+  mt-3 flex items-center justify-between gap-3 rounded-2xl
+  bg-[#5B35D5]/[0.07] border border-[#5B35D5]/20 px-3 py-2.5
+  dark:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30
+  ```
+  - Left text: `text-sm font-semibold text-[#3B24A8] dark:text-indigo-200` → `{dueCount} {dueCount === 1 ? 'card' : 'cards'} due today`
+  - Right CTA: `Link` to `/study/practice?due=1` — `text-xs font-bold text-white bg-[#5B35D5] hover:bg-[#4526B8] rounded-xl px-3 py-1.5` → "Review now →"
+- If `dueCount === 0`: render a small inline success note instead:
+  ```
+  mt-3 inline-flex items-center gap-2 rounded-full border border-border
+  bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground
+  ```
+  With `<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />` → "All caught up today"
 
-Navigation Consistency Audit:
+**Data for `masteryPct`:** For now, pass `null` — it will always render `—`. The mastery calculation is a future task.
 
-Is StudyTabs rendered correctly and consistently across every Study Hub page?
-Is the active tab highlighted correctly on every page — no pages where no tab appears selected?
-Are there any pages that break out of the Study Hub navigation — losing the tab bar unexpectedly?
-Is the "More" sheet consistent — same items in the same order on every page?
-Is the mobile search bar shown/hidden consistently across all Study Hub routes?
+#### Part B — Integrate `HeroCard` into `StudyHomeClient.tsx`
 
-Mobile Interaction Audit:
+In `StudyHomeClient.tsx`:
 
-Walk through Study Hub entirely on a 390px screen — list every element that overflows, wraps awkwardly, or becomes inaccessible
-Are there any tap targets smaller than 44px across any Study Hub page?
-Are there any forms where the keyboard hides the submit button or active input?
-Are there any pages where the bottom navigation is hidden or covered by page content?
-Are there any pages with horizontal scroll that shouldn't have it?
+1. Import `HeroCard` from `./_components/HeroCard`.
+2. Import `StreakSection` is already imported — read `StreakSection` to understand what data it fetches. You need the `streak` count from it. The cleanest approach: inline the streak fetch directly inside `StudyHomeClient` (you already have a `useEffect` pattern) and pass it down to `HeroCard`, instead of rendering `<StreakSection />` separately.
+   - Specifically: move the streak + activeDays fetch that currently lives in `StreakSection.tsx` into `StudyHomeClient.tsx`. Store `streak` as `number` in state (default `0`).
+3. Remove the `<StreakSection />` JSX render from `StudyHomeClient`.
+4. Remove the `DueTodayWidget` JSX render from `StudyHomeClient` (its color-fixed version is now embedded in `HeroCard`).
+5. Pass `userId` to `HeroCard` — it's available from `useStudyPrefs()`.
+6. The `dueCount` for `HeroCard` needs to come from a fetch. Move the Supabase query currently in `DueTodayWidget.tsx` into `StudyHomeClient.tsx` (same pattern as streak fetch). Store as `dueCount: number | null` (null = loading).
+7. Replace the old greeting card block (the Card containing "What do you want to study today?" + filter chips) with:
+   ```tsx
+   <HeroCard
+     displayName={displayName}
+     streak={streak}
+     dueCount={dueCount}
+     masteryPct={null}
+     hasPrefs={hasPrefs}
+     userId={userId}
+   />
+   ```
+8. Keep the filter chips — move them out of the removed greeting card and render them as a standalone `<div className="flex flex-wrap gap-2">` directly below `HeroCard`, exactly as they are now. Do not change their logic.
 
-Visual Weight Audit:
+---
 
-On every page — is there one clear primary action, or are multiple actions competing for equal visual weight?
-Are there any pages where destructive actions (delete, remove, cancel) are styled the same as primary actions?
-Are there any pages overusing bold text — so much that nothing stands out?
-Are there any pages with insufficient contrast — text too light against background?
+### Task 4 — Add Quick Actions grid to `StudyHomeClient.tsx`
 
-Information Architecture Audit:
+**File:** `app/study/StudyHomeClient.tsx`
 
-Is the Study Hub navigation hierarchy logical — do the tabs represent what students actually use most?
-Should Q&A be a primary tab — or is leaderboard/due-today more valuable in the primary nav?
-Are the most important features (materials, practice, due today) reachable in 1 tap from the home — or buried?
-Is there any content that exists but is only accessible through the "More" sheet — and should be promoted?
+Add a `QuickActions` block directly below the filter chips row (after the moved chips from Task 3). This is a 2×2 grid of navigation tiles.
 
+**Render this JSX block** (insert it as a named constant `QuickActionsGrid` inline in the return, or as a small internal component — your call):
 
-FINAL DELIVERABLE
-The Full Page-by-Page Audit:
-Every page with its critical failures, important improvements, and polish items — structured exactly as described above
-The Top 20 UI/UX Fixes:
-The 20 most impactful visual and interaction changes across all Study Hub pages — in priority order, with the exact page and component each fix applies to
-The Consistency Score:
-Rate Study Hub design consistency 1–10 across:
+```tsx
+<div className="grid grid-cols-2 gap-3">
+  {/* Practice — accent tile */}
+  <Link
+    href="/study/practice"
+    className="flex flex-col gap-3 rounded-3xl bg-[#5B35D5] p-4
+               hover:bg-[#4526B8] focus-visible:outline-none
+               focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+  >
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20">
+      <LayoutGrid className="h-4 w-4 text-white" />
+    </div>
+    <div>
+      <p className="text-sm font-extrabold text-white">Practice</p>
+      <p className="text-xs text-white/70">Start a session</p>
+    </div>
+  </Link>
 
-Card components
-Typography
-Color usage
-Button styles
-Empty states
-Loading states
-Navigation
+  {/* Materials */}
+  <Link
+    href="/study/materials"
+    className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+               hover:bg-secondary/20 focus-visible:outline-none
+               focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+  >
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+      <BookOpen className="h-4 w-4 text-[#5B35D5]" />
+    </div>
+    <div>
+      <p className="text-sm font-extrabold text-foreground">Materials</p>
+      <p className="text-xs text-muted-foreground">Notes &amp; PDFs</p>
+    </div>
+  </Link>
 
-For every score below 8 — list every specific inconsistency found
-The Mobile Audit Score:
-Rate the mobile experience 1–10. List every specific issue that's pulling the score down — by page, by component, by element
-The Navigation Verdict:
-Is the current Study Hub tab structure optimal for a Nigerian student during exam season? If not — what should the primary tabs be and why?
-The First Impression Test:
-A student opens Study Hub for the first time. They've never used it before. Describe what they see and feel in the first 5 seconds on 5 different pages — home, materials, practice, Q&A, and leaderboard. For each: is it immediately clear what this page is for and what to do next?
-The Single Biggest UX Failure:
-Across all Study Hub pages — the one screen or interaction that causes the most confusion, friction, or drop-off. Describe it in detail and give the exact fix.
-The bar: Every Study Hub page should pass this test — a JABU student in a noisy lecture hall, on a budget Android phone, with 3G signal, should be able to open any Study Hub page and immediately know where they are, what to do next, and how to get back. Does every page pass? If not — show me every failure, screen by screen."
+  {/* Q&A Forum */}
+  <Link
+    href="/study/questions"
+    className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+               hover:bg-secondary/20 focus-visible:outline-none
+               focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+  >
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+      <MessageCircle className="h-4 w-4 text-[#5B35D5]" />
+    </div>
+    <div>
+      <p className="text-sm font-extrabold text-foreground">Q&amp;A Forum</p>
+      <p className="text-xs text-muted-foreground">Ask or answer</p>
+    </div>
+  </Link>
 
-Run /plan first. Open every page file before commenting on it. Never describe a page you haven't read. Go screen by screen, component by component. 🔥
+  {/* GPA Calculator */}
+  <Link
+    href="/study/gpa"
+    className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
+               hover:bg-secondary/20 focus-visible:outline-none
+               focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+  >
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+      <Star className="h-4 w-4 text-[#5B35D5]" />
+    </div>
+    <div>
+      <p className="text-sm font-extrabold text-foreground">GPA Calculator</p>
+      <p className="text-xs text-muted-foreground">Track grades</p>
+    </div>
+  </Link>
+</div>
+```
+
+Add the following to the lucide-react import in `StudyHomeClient.tsx`:
+`LayoutGrid, MessageCircle, Star`
+
+(`BookOpen` is likely already imported — check before adding it again.)
+
+Also, **remove** the standalone GPA Calculator `<Link>` block that currently sits at the very bottom of the return statement (the one that says "Track your grades and plan for your target GPA.") — it is now redundant.
+
+---
+
+### Task 5 — Remove `ContributorStatusHub` from the main feed
+
+**File:** `app/study/StudyHomeClient.tsx`
+
+The `ContributorStatusHub` component currently renders in the main content feed, interrupting the study content flow. It should not appear on the home page at all.
+
+- Remove the `<ContributorStatusHub ... />` JSX render from `StudyHomeClient.tsx`.
+- Remove the `ContributorStatusHub` import if it becomes unused.
+- Do NOT delete or modify `ContributorStatusHub` in `StudyUI.tsx` — it may be used elsewhere or moved to the Profile/More sheet in a future task.
+- The `rep` data from `useStudyPrefs()` can remain — it is also used for `contributorStatus` passed to `StudyTabs`. Do not touch `StudyTabs`.
+
+---
+
+### Task 6 — Improve `ContinueCard.tsx` — progress context
+
+**File:** `app/study/_components/ContinueCard.tsx`
+
+The in-progress attempt items currently show only the set title and a bare "Resume →" text. Improve each in-progress item to show:
+
+1. **Progress fraction** — e.g., "18 / 40 questions"
+2. **Progress bar** — a thin bar showing completion percentage
+3. **Estimated time remaining** — e.g., "~8 min left" (calculate as: remaining questions × 12 seconds, formatted as minutes, rounded up)
+
+**Check the `PracticeAttemptRow` type** (in `lib/studyPractice.ts` or wherever it's defined) for available fields before writing any code. You need to find:
+- The field that holds questions answered so far (likely `answered_count`, `current_question`, or similar)
+- The field for total questions in the set (likely `total_questions`)
+
+If neither field is reliably populated on in-progress attempts, fall back to showing just the set title + "Resume →" with no progress bar (do not show "0 / 0"). Only render the progress fraction and bar when both `answered` and `total` are non-null and `total > 0`.
+
+**Updated JSX for each in-progress attempt item:**
+```tsx
+<Link key={a.id} href={...} className={...}>
+  <div className="flex items-center gap-3">
+    {/* Icon */}
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#5B35D5]/[0.07] border border-[#5B35D5]/20">
+      <Bookmark className="h-4 w-4 text-[#5B35D5]" />
+    </div>
+
+    {/* Info */}
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-sm font-semibold text-foreground">
+        {a.study_quiz_sets?.title ?? "Practice set"}
+        {a.study_quiz_sets?.course_code ? ` · ${a.study_quiz_sets.course_code}` : ""}
+      </p>
+
+      {/* Only render if data is available */}
+      {answered !== null && total !== null && total > 0 && (
+        <>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {answered} / {total} questions · ~{Math.ceil(((total - answered) * 12) / 60)} min left
+          </p>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-[#5B35D5]"
+              style={{ width: `${Math.round((answered / total) * 100)}%` }}
+            />
+          </div>
+        </>
+      )}
+
+      {(answered === null || total === null || total === 0) && (
+        <p className="mt-0.5 text-xs text-muted-foreground">Resume →</p>
+      )}
+    </div>
+  </div>
+</Link>
+```
+
+---
+
+### Task 7 — Differentiate `MaterialCard` between "For You" and "Trending" contexts
+
+**File:** `app/study/_components/ForYouSection.tsx`
+
+Currently `MaterialCard` receives a `trending` boolean but the visual difference is minimal (just a small TrendingUp icon). The redesign requires:
+
+**For "For You" cards** — show a contextual badge on the right instead of the arrow:
+- If the material is a weak area (`isWeak === true`): existing amber "Needs work" badge (no change needed here)
+- If the material was uploaded in the last 7 days (`created_at` is within 7 days of now): show an indigo "New" badge
+- Otherwise: show a subtle "Dept. pick" badge
+
+**For "Trending" cards** — show the download count right-aligned, styled as:
+```tsx
+<div className="shrink-0 text-right">
+  <p className="text-sm font-extrabold text-foreground">{m.downloads ?? 0}</p>
+  <p className="text-[10px] text-muted-foreground">downloads</p>
+</div>
+```
+Remove the `ArrowRight` from trending cards — the download count replaces it.
+
+**Implementation:**
+- Add a `context?: 'for-you' | 'trending'` prop to `MaterialCard` (default `'for-you'` to avoid breaking other call sites)
+- When `context === 'trending'`: replace the `ArrowRight` with the download count block above. Remove the `trending` prop usage (it becomes redundant once `context` exists — keep it for one version for backwards compat, but derive behavior from `context`).
+- When `context === 'for-you'` and `!isWeak`: add a right-side badge:
+  ```tsx
+  const isNew = Date.now() - new Date(m.created_at).getTime() < 7 * 24 * 60 * 60 * 1000;
+  // badge: isNew → indigo "New" | else → muted "Dept. pick"
+  ```
+  Badge styles:
+  - New: `text-[10px] font-semibold rounded-full px-2 py-1 bg-[#5B35D5]/[0.07] text-[#3B24A8] border border-[#5B35D5]/20 dark:text-indigo-300`
+  - Dept. pick: `text-[10px] font-semibold rounded-full px-2 py-1 bg-secondary text-muted-foreground border border-border`
+
+Update all `MaterialCard` usages in `StudyHomeClient.tsx`:
+- For You grid: add `context="for-you"`
+- Trending grid: add `context="trending"`
+
+---
+
+## Verification checklist
+
+After completing all tasks, confirm the following before finishing:
+
+- [ ] No `<UnifiedSearch />` component renders inside `StudyHomeClient.tsx`
+- [ ] No amber/orange color tokens exist anywhere in `DueTodayWidget.tsx`
+- [ ] `HeroCard` renders with indigo due-today pill (not amber/orange)
+- [ ] `StreakSection` is no longer rendered in `StudyHomeClient.tsx`
+- [ ] `DueTodayWidget` is no longer rendered as a standalone in `StudyHomeClient.tsx`
+- [ ] Quick actions 2×2 grid renders below filter chips
+- [ ] GPA Calculator standalone link at bottom of page is removed (it's now in the quick actions grid)
+- [ ] `ContributorStatusHub` is no longer rendered in `StudyHomeClient.tsx`
+- [ ] In-progress ContinueCard items show progress bar and fraction (when data is available)
+- [ ] For You and Trending cards are visually distinct (badge vs download count)
+- [ ] No orange/amber accent (`#FF5C00`, `amber-*`, `orange-*`) appears anywhere in any Study Hub component touched by this task
+- [ ] All new indigo references use `#5B35D5` (not Tailwind `indigo-*` — we use the custom hex to stay consistent with the brand token)
