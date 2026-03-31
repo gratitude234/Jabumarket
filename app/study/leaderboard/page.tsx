@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { ArrowLeft, Crown, Medal, MessageSquare, Star, Trophy, User, Users, GraduationCap, Globe } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { PointsBreakdown } from "./PointsBreakdown";
 
 // 5-min revalidation — swap for MATERIALIZED VIEW + pg_cron when user base grows.
 export const revalidate = 300;
@@ -49,63 +50,6 @@ function initials(name: string): string {
   const a = parts[0]?.[0] ?? "?";
   const b = parts[1]?.[0] ?? "";
   return (a + b).toUpperCase();
-}
-
-// ─── Points breakdown ─────────────────────────────────────────────────────────
-
-const POINT_RULES: Array<{ key: keyof LeaderRow; label: string; multiplier: number }> = [
-  { key: "accepted",         label: "Accepted answers", multiplier: 5 },
-  { key: "answers",          label: "Answers posted",   multiplier: 2 },
-  { key: "questions",        label: "Questions asked",  multiplier: 1 },
-  { key: "question_upvotes", label: "Upvotes received", multiplier: 1 },
-  { key: "practice_points",  label: "Practice pts",     multiplier: 1 },
-];
-
-function PointsBreakdown({ row }: { row: LeaderRow }) {
-  return (
-    <details className="group">
-      <summary
-        className={cn(
-          "flex cursor-pointer list-none items-center gap-1",
-          "text-[11px] font-semibold text-muted-foreground select-none",
-          "hover:text-foreground transition-colors",
-          "[&::-webkit-details-marker]:hidden"
-        )}
-      >
-        <Star className="h-3 w-3" />
-        <span className="group-open:hidden">Show breakdown</span>
-        <span className="hidden group-open:inline">Hide breakdown</span>
-      </summary>
-
-      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-        {POINT_RULES.map(({ key, label, multiplier }) => {
-          const count = row[key] as number;
-          const earned = count * multiplier;
-          return (
-            <div
-              key={key}
-              className="rounded-xl border border-border bg-background px-2.5 py-2"
-            >
-              <p className="text-[10px] font-semibold text-muted-foreground">{label}</p>
-              <p className="mt-0.5 text-sm font-extrabold text-foreground">
-                {count}
-                <span className="ml-1 text-[10px] font-semibold text-muted-foreground">
-                  ×{multiplier}
-                </span>
-              </p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">= {earned} pts</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {row.practice_days > 0 && (
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          🔥 Practiced on {row.practice_days} day{row.practice_days !== 1 ? "s" : ""}
-        </p>
-      )}
-    </details>
-  );
 }
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────

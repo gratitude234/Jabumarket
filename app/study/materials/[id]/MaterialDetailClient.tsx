@@ -994,11 +994,6 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
         )}
       </div>
 
-      {/* ── Inline preview strip ── */}
-      {hasFile && (
-        <InlinePreview url={fileUrl} title={title} kind={kind} />
-      )}
-
       {/* ── Pre-generated AI Summary ── */}
       {m.ai_summary ? (
         <div className="rounded-3xl border bg-card p-4 shadow-sm">
@@ -1022,6 +1017,11 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             </p>
           </div>
         </div>
+      )}
+
+      {/* ── Inline preview strip ── */}
+      {hasFile && (
+        <InlinePreview url={fileUrl} title={title} kind={kind} />
       )}
 
       {/* ── AI Summarize ── */}

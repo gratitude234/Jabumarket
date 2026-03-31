@@ -23,6 +23,8 @@ import {
   GraduationCap,
   CalendarClock,
   TrendingUp,
+  LayoutGrid,
+  Share2,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
 import { cn, msToClock, normalize } from "@/lib/utils";
@@ -76,8 +78,8 @@ function formatDue(iso: string): string {
 
 const MILESTONE_STYLES: Record<MilestoneLevel, string> = {
   perfect:   "border-amber-300/50  bg-amber-50   text-amber-900  dark:border-amber-700/50 dark:bg-amber-950/60 dark:text-amber-200",
-  excellent: "border-violet-300/50 bg-violet-50  text-violet-900 dark:border-violet-700/50 dark:bg-violet-950/60 dark:text-violet-200",
-  great:     "border-orange-300/50 bg-orange-50  text-orange-900 dark:border-orange-700/50 dark:bg-orange-950/60 dark:text-orange-200",
+  excellent: "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300",
+  great:     "border-teal-300/50 bg-teal-50/80 text-teal-900 dark:border-teal-700/50 dark:bg-teal-950/60 dark:text-teal-200",
   good:      "border-emerald-300/50 bg-emerald-50 text-emerald-900 dark:border-emerald-700/50 dark:bg-emerald-950/60 dark:text-emerald-200",
   done:      "border-border bg-card text-foreground",
 };
@@ -137,32 +139,32 @@ function AiExplainInline({
         onClick={fetchExplanation}
         className={cn(
           "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-all",
-          "border-violet-200/70 bg-violet-50/60 hover:bg-violet-100/60",
-          "dark:border-violet-700/30 dark:bg-violet-950/20 dark:hover:bg-violet-950/30",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+          "border-[#5B35D5]/20 bg-[#EEEDFE] hover:bg-[#EEEDFE]",
+          "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:hover:bg-[#5B35D5]/15",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
         )}
       >
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.10] text-[#5B35D5] dark:text-indigo-300">
           <Sparkles className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Ask AI to go deeper</p>
-          <p className="text-[11px] text-violet-500/80 dark:text-violet-400/70">Expanded explanation powered by Gemini</p>
+          <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">Ask AI to go deeper</p>
+          <p className="text-[11px] text-[#5B35D5]/70 dark:text-[#5B35D5]/60">Expanded explanation powered by Gemini</p>
         </div>
-        <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#5B35D5]" />
       </button>
     );
   }
 
   if (state.status === "loading") {
     return (
-      <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-3", "border-violet-200/70 bg-violet-50/60", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600">
+      <div className={cn("flex items-center gap-3 rounded-2xl border px-3 py-3", "border-[#5B35D5]/20 bg-[#EEEDFE]", "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10")}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.10] text-[#5B35D5]">
           <Loader2 className="h-4 w-4 animate-spin" />
         </span>
         <div>
-          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Thinking…</p>
-          <p className="text-[11px] text-violet-500/80">Gemini is generating your explanation</p>
+          <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">Thinking…</p>
+          <p className="text-[11px] text-[#5B35D5]/70">Gemini is generating your explanation</p>
         </div>
       </div>
     );
@@ -192,13 +194,13 @@ function AiExplainInline({
 
   // done
   return (
-    <div className={cn("rounded-2xl border px-3 py-3 space-y-2", "border-violet-200/70 bg-violet-50/50", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+    <div className={cn("rounded-2xl border px-3 py-3 space-y-2", "border-[#5B35D5]/20 bg-[#EEEDFE]", "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10")}>
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.10] text-[#5B35D5] dark:text-indigo-300">
           <Sparkles className="h-3.5 w-3.5" />
         </span>
-        <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300">AI Explanation</p>
-        <span className="ml-auto text-[10px] font-semibold text-violet-400/80">Gemini · {state.cached ? "cached" : "generated"}</span>
+        <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">AI Explanation</p>
+        <span className="ml-auto text-[10px] font-semibold text-[#5B35D5]/60">Gemini · {state.cached ? "cached" : "generated"}</span>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{state.text}</p>
       <p className="text-[10px] text-muted-foreground">AI can make mistakes. Cross-check with your textbook or lecturer.</p>
@@ -278,10 +280,14 @@ export default function PracticeTakeClient() {
     isRetryMode,
     isDueMode,
     studyMode,
+    goToQuestion,
   } = engine;
 
   // Instant feedback: reveal correctness after first tap (per question)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+
+  // Question navigator drawer
+  const [navOpen, setNavOpen] = useState(false);
 
   // Milestone toast — fires once when finalization completes
   const [milestone, setMilestone] = useState<Milestone | null>(null);
@@ -430,17 +436,45 @@ export default function PracticeTakeClient() {
     setRevealed((m) => ({ ...m, [current.id]: true }));
   }
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) return;
+      if (submitted) return;
+      if (current && isRevealed) return; // don't fire if answer already revealed
+
+      const keyMap: Record<string, number> = { a: 0, b: 1, c: 2, d: 3 };
+      const optionIndex = keyMap[e.key.toLowerCase()];
+
+      if (optionIndex !== undefined && currentOptions[optionIndex]) {
+        onPick(currentOptions[optionIndex].id);
+        return;
+      }
+
+      if (e.key === "ArrowRight") { goNext(); return; }
+      if (e.key === "ArrowLeft") { goPrev(); return; }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOptions, submitted, current, isRevealed]);
+
+  const isUrgent = typeof meta?.time_limit_minutes === "number" && typeof timeLeftMs === "number"
+    ? timeLeftMs / (meta.time_limit_minutes * 60 * 1000) < 0.20
+    : false;
+
   if (dueFetching || (isDueParam && !engineReady)) {
     return (
       <div className="space-y-4 pb-28 md:pb-6">
         <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 py-2 backdrop-blur border-b border-border">
           <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-            <div className="h-full w-2/5 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-violet-500/70" />
+            <div className="h-full w-2/5 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-[#5B35D5]/70" />
           </div>
         </div>
-        <div className="mt-4 rounded-3xl border border-violet-200/60 bg-violet-50/50 dark:border-violet-800/40 dark:bg-violet-950/20 p-4">
+        <div className="mt-4 rounded-3xl border border-[#5B35D5]/20 bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 p-4">
           <div className="flex items-center gap-3">
-            <GraduationCap className="h-5 w-5 text-violet-600 dark:text-violet-400 shrink-0" />
+            <GraduationCap className="h-5 w-5 text-[#5B35D5] dark:text-indigo-300 shrink-0" />
             <div>
               <p className="text-sm font-extrabold text-foreground">Loading Due Today</p>
               <p className="text-xs text-muted-foreground mt-0.5">Finding your queued questions…</p>
@@ -514,7 +548,7 @@ if (err || !meta) {
 
           <div className="flex items-center gap-2">
             {studyMode ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-300/50 bg-violet-100/60 px-2.5 py-2 text-xs font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#5B35D5]/25 bg-[#EEEDFE] px-2.5 py-2 text-xs font-extrabold text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300">
                 <GraduationCap className="h-4 w-4" />
                 Study
               </span>
@@ -522,6 +556,7 @@ if (err || !meta) {
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
+                  isUrgent && "animate-pulse",
                   timeLeftMs <= 30_000
                     ? "border-rose-300/40 bg-rose-100/40 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
                     : timeLeftMs <= 120_000
@@ -538,11 +573,14 @@ if (err || !meta) {
               </span>
             )}
 
-            <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-2 text-xs font-extrabold text-foreground">
-              <span className="tabular-nums">{idx + 1}</span>
-              <span className="text-muted-foreground">/</span>
-              <span className="tabular-nums">{total}</span>
-            </span>
+            <button
+              type="button"
+              onClick={() => setNavOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/50"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              {idx + 1}/{questions.length}
+            </button>
           </div>
         </div>
 
@@ -551,7 +589,7 @@ if (err || !meta) {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 {isDueMode && (
-                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-violet-300/50 bg-violet-100/60 px-2 py-0.5 text-[10px] font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#5B35D5]/25 bg-[#EEEDFE] px-2 py-0.5 text-[10px] font-extrabold text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300">
                     Due
                   </span>
                 )}
@@ -659,6 +697,28 @@ if (err || !meta) {
               >
                 Try again
               </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const setTitle = normalize(meta?.title ?? "");
+                  const text = `I scored ${stats.correct}/${stats.total} on "${setTitle}" on Jabumarket Study Hub!`;
+                  try {
+                    if (typeof navigator.share === "function") {
+                      await navigator.share({ text, title: "My Practice Score" });
+                    } else {
+                      await navigator.clipboard.writeText(text);
+                    }
+                  } catch { /* user cancelled */ }
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground",
+                  "hover:bg-secondary/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                )}
+              >
+                <Share2 className="h-4 w-4" />
+                Share result
+              </button>
               {/* Retry Weak Questions — only shown when there are wrong/unanswered */}
               {stats.correct < stats.total && (
                 <button
@@ -685,7 +745,7 @@ if (err || !meta) {
           {weakSummary && weakSummary.filter((r) => !r.wasCorrect).length > 0 ? (
             <Card className="rounded-3xl">
               <div className="flex items-center gap-2.5 mb-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5] dark:text-indigo-300">
                   <CalendarClock className="h-4 w-4" />
                 </span>
                 <div>
@@ -751,9 +811,9 @@ if (err || !meta) {
                   href="/study/practice?view=due"
                   className={cn(
                     "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold",
-                    "bg-violet-600 text-white hover:bg-violet-700",
-                    "dark:bg-violet-700 dark:hover:bg-violet-600",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                    "bg-[#5B35D5] text-white hover:bg-[#4526B8]",
+                    "dark:bg-[#4526B8] dark:hover:bg-[#4526B8]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
                   )}
                 >
                   <CalendarClock className="h-4 w-4" />
@@ -986,7 +1046,7 @@ if (err || !meta) {
                     className={cn(
                       "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                       studyMode
-                        ? "bg-violet-600 text-white dark:bg-violet-700"
+                        ? "bg-[#5B35D5] text-white dark:bg-[#4526B8]"
                         : "bg-secondary text-foreground"
                     )}
                   >
@@ -1005,8 +1065,8 @@ if (err || !meta) {
           {isRevealed && current ? (
             <div className="space-y-2">
               {current.explanation ? (
-                <div className="rounded-2xl border border-violet-200/70 bg-violet-50/50 px-3 py-3 dark:border-violet-700/30 dark:bg-violet-950/20">
-                  <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 mb-1">Explanation</p>
+                <div className="rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-3 py-3 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
+                  <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300 mb-1">Explanation</p>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                     {current.explanation}
                   </p>
@@ -1044,7 +1104,7 @@ if (err || !meta) {
                 className={cn(
                   "shrink-0 inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                   studyMode
-                    ? "border-violet-300/50 bg-violet-100/60 text-violet-800 hover:bg-violet-100 dark:border-violet-700/50 dark:bg-violet-950/30 dark:text-violet-300"
+                    ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] hover:bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300"
                     : "border-border bg-background text-foreground hover:bg-secondary/50"
                 )}
               >
@@ -1088,6 +1148,64 @@ if (err || !meta) {
             >
               <X className="h-3.5 w-3.5" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Question navigator */}
+      {navOpen && !submitted && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setNavOpen(false)}>
+          <div
+            className="w-full rounded-t-3xl border-t border-border bg-card p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">Jump to question</p>
+              <button
+                type="button"
+                onClick={() => setNavOpen(false)}
+                className="grid h-8 w-8 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-8 gap-2 max-h-48 overflow-y-auto">
+              {questions.map((q, i) => {
+                const isAnswered = !!answers[q.id];
+                const isCurrent = i === idx;
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => { goToQuestion(i); setNavOpen(false); }}
+                    className={cn(
+                      "grid h-9 w-full place-items-center rounded-xl border text-xs font-semibold transition",
+                      isCurrent
+                        ? "border-[#5B35D5] bg-[#5B35D5] text-white"
+                        : isAnswered
+                          ? "border-emerald-300/50 bg-emerald-50 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-300"
+                          : "border-border bg-background text-muted-foreground hover:bg-secondary/50"
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex items-center gap-4 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border-[#5B35D5] bg-[#5B35D5] border inline-block" />
+                Current
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border-emerald-300/50 bg-emerald-50 border inline-block" />
+                Answered
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border-border bg-background border inline-block" />
+                Not yet
+              </span>
+            </div>
           </div>
         </div>
       )}

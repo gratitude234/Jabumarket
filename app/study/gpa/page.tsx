@@ -769,6 +769,7 @@ function ImportModal({
 export default function GpaPage() {
   const [banner, setBanner]           = useState<Banner>(null);
   const [syncStatus, setSyncStatus]   = useState<SyncStatus>("idle");
+  const [isAuthed, setIsAuthed]       = useState<boolean | null>(null);
   const [scaleKey, setScaleKey]       = useState<ScaleKey>("ng_5");
   const [customScale, setCustomScale] = useState<GradeMap>({ ...NG_5 });
   const [whatIfMode, setWhatIfMode]   = useState(false);
@@ -874,6 +875,7 @@ export default function GpaPage() {
       try {
         const { data: auth } = await supabase.auth.getUser();
         const user = auth?.user ?? null;
+        if (!cancelled) setIsAuthed(!!user);
         if (!user || cancelled) return;
 
         setSyncStatus("syncing");
@@ -1150,6 +1152,20 @@ export default function GpaPage() {
 
   return (
     <div className="space-y-4 pb-24 md:pb-6">
+      {/* ── Unauthenticated warning ─────────────────────────────────────────── */}
+      {isAuthed === false && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Sign in to sync your GPA data across devices.</p>
+          </div>
+          <Link href="/login?next=/study/gpa"
+            className="shrink-0 rounded-2xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground no-underline hover:bg-secondary/50">
+            Sign in
+          </Link>
+        </div>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="rounded-3xl border bg-card p-4 shadow-sm sm:p-5">
         <Link href="/study" className="inline-flex items-center gap-2 text-sm font-semibold text-foreground no-underline hover:underline">

@@ -1424,6 +1424,58 @@ export default function MaterialsClient() {
             ) : null}
           </div>
 
+          {/* Quick type + sort chips */}
+          <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(["all", "past_question", "handout"] as MaterialTypeKey[]).map((key) => {
+              const label = key === "all" ? "All" : key === "past_question" ? "Past Q" : "Handout";
+              const active = typeParam === key;
+              return (
+                <button key={key} type="button"
+                  onClick={() => router.replace(buildHref(pathname, {
+                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    session: sessionParam || null, type: key !== "all" ? key : null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                    mine: mineParam ? mineParam : null,
+                  }))}
+                  className={cn(
+                    "flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  )}
+                >{label}</button>
+              );
+            })}
+            <button type="button" onClick={openFilters}
+              className="flex-shrink-0 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition">
+              More ↓
+            </button>
+            <div className="ml-auto flex-shrink-0">
+              <button type="button"
+                onClick={() => {
+                  const next = sortParam === "newest" ? "downloads_desc" : "newest";
+                  router.replace(buildHref(pathname, {
+                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
+                    sort: next !== "newest" ? next : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                    mine: mineParam ? mineParam : null,
+                  }));
+                }}
+                className={cn(
+                  "flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  sortParam !== "newest" ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {sortParam === "downloads_desc" ? <Download className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                {sortParam === "downloads_desc" ? "Most downloaded" : "Newest"}
+              </button>
+            </div>
+          </div>
+
           {hasAnyFilters ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               {total > 0 && (

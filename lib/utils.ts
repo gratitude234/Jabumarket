@@ -174,6 +174,42 @@ export function clamp(n: number, min: number, max: number): number {
  * This is used as a runtime fallback when the academic calendar table is
  * unavailable — replacing every hardcoded `"2025/2026"` string in the codebase.
  */
+// ---------------------------------------------------------------------------
+// Study-specific color and format helpers (Task 1 — consolidated from client files)
+// ---------------------------------------------------------------------------
+
+/** Score percentage → accent color (for rings, text, bars) */
+export function pctToColor(pct: number): string {
+  if (pct >= 70) return "#1D9E75";   // teal  — mastered
+  if (pct >= 60) return "#378ADD";   // blue  — good
+  if (pct >= 50) return "#BA7517";   // amber — passing
+  if (pct >= 45) return "#E8762A";   // orange-amber — borderline
+  return "#A32D2D";                  // red   — needs work
+}
+
+/** Score percentage → background fill color (for cards, pills) */
+export function pctToBg(pct: number): string {
+  if (pct >= 70) return "#EAF3DE";
+  if (pct >= 50) return "#FAEEDA";
+  return "#FCEBEB";
+}
+
+/** Duration in seconds → human-readable string */
+export function formatDuration(totalSeconds: number): string {
+  if (totalSeconds <= 0) return "0m";
+  const m = Math.floor(totalSeconds / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+}
+
+/** Score / total → percentage string with % symbol */
+export function fmtPct(score: number, total: number): string {
+  if (!total) return "—";
+  return `${Math.round((score / total) * 100)}%`;
+}
+
 export function currentAcademicSessionFallback(): string {
   const now = new Date();
   const year = now.getFullYear();

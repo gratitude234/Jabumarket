@@ -1,6 +1,6 @@
 "use client";
 // app/study/questions/[id]/QuestionDetailClient.tsx
-import { cn } from "@/lib/utils";
+import { cn, formatWhen } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -18,17 +18,6 @@ function maskEmail(email: string | null | undefined): string {
   if (!email) return "Anonymous";
   if (email === "ai@jabumarket.app") return "AI · Gemini";
   return (email.split("@")[0] ?? email).replace(/[._]/g, " ");
-}
-
-function formatWhen(iso?: string | null) {
-  if (!iso) return "";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 type QuestionRow = {
@@ -446,12 +435,19 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                   {answers.map((a) => {
                     const isAi = !!(a.is_ai || a.author_email === "ai@jabumarket.app");
                     return (
-                      <div key={a.id} className="rounded-2xl border p-4"
+                      <div key={a.id}
+                        className={cn("rounded-2xl border p-4", a.is_accepted ? "border-l-[3px]" : "")}
                         style={
-                          a.is_accepted ? { borderColor: "#97C459", background: "#EAF3DE" } :
+                          a.is_accepted ? { borderColor: "#97C459", borderLeftColor: "#1D9E75", background: "#EAF3DE" } :
                           isAi          ? { borderColor: "#AFA9EC", background: ACCENT_BG } :
                           undefined
                         }>
+                        {a.is_accepted && (
+                          <div className="mb-2 flex items-center gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "#1D9E75" }} />
+                            <span className="text-xs font-semibold" style={{ color: "#3B6D11" }}>Accepted answer</span>
+                          </div>
+                        )}
                         {isAi && (
                           <div className="mb-2 flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"

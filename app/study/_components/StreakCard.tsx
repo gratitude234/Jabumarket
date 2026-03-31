@@ -125,7 +125,7 @@ function getRecoveryPrompt(
 
 const PROMPT_STYLES: Record<PromptVariant, string> = {
   safe:      "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
-  milestone: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300",
+  milestone: "border-teal-300/50 bg-teal-50/80 text-teal-900 dark:border-teal-700/50 dark:bg-teal-950/60 dark:text-teal-200",
   "at-risk": "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
   broken:    "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
   cold:      "border-border bg-secondary/40 text-muted-foreground",
@@ -204,7 +204,7 @@ export default function StreakCard({
           className={cn(
             "grid h-12 w-12 shrink-0 place-items-center rounded-2xl border",
             currentStreak > 0
-              ? "bg-orange-500/10 border-orange-500/20"
+              ? "bg-[#5B35D5]/[0.07] border-[#5B35D5]/20"
               : "bg-muted/40 border-border"
           )}
         >

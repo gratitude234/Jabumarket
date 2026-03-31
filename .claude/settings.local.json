@@ -18,7 +18,8 @@
       "Bash(node:*)",
       "Bash(grep -v \"^$\")",
       "Bash(grep -E \"^C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\\\\\\\(app\\\\study|app\\\\study\\\\_components|lib\\\\studyPractice\\)\")",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(ls:*)"
     ]
   }
 }

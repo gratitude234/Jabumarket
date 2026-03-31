@@ -1,5 +1,5 @@
 "use client";
-import { cn } from "@/lib/utils";
+import { cn, formatWhen, normalizeQuery, buildHref, pctToColor } from "@/lib/utils";
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -10,7 +10,6 @@ import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/Study
 import { StudyPrefsProvider, useStudyPrefs } from "../_components/StudyPrefsContext";
 import { RequestCourseModal } from "../_components/RequestCourseModal";
 import {
-  ArrowLeft,
   ArrowRight,
   BookOpen,
   GraduationCap,
@@ -34,24 +33,6 @@ import {
   Lock,
   PenLine,
 } from "lucide-react";
-
-function normalizeQuery(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
-
-function formatWhen(iso?: string | null) {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diff = Date.now() - t;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
 
 type SortKey = "newest" | "oldest";
 const SORTS: Array<{ key: SortKey; label: string; icon: React.ReactNode }> = [
@@ -109,18 +90,6 @@ type SetAttemptSummary = {
   inProgressId: string | null;  // id of an in_progress attempt, if any
   inProgressPct: number | null; // progress through in-progress attempt (answered/total)
 };
-
-function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
-  const sp = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v === null || v === undefined) return;
-    const s = String(v).trim();
-    if (!s) return;
-    sp.set(k, s);
-  });
-  const qs = sp.toString();
-  return qs ? `${path}?${qs}` : path;
-}
 
 function Chip({
   active,
@@ -429,21 +398,13 @@ function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) 
 
 // ─── Score ring ───────────────────────────────────────────────────────────────
 
-function pctToRingColor(pct: number): string {
-  if (pct >= 70) return "#1D9E75";
-  if (pct >= 60) return "#378ADD";
-  if (pct >= 50) return "#BA7517";
-  if (pct >= 45) return "#E8762A";
-  return "#A32D2D";
-}
-
 function ScoreRingSmall({ pct }: { pct: number | null }) {
   const size = 48;
   const r = 19;
   const cx = 24;
   const circ = 2 * Math.PI * r;
   const offset = pct != null ? circ * (1 - Math.max(0, Math.min(100, pct)) / 100) : circ;
-  const color = pct != null ? pctToRingColor(pct) : undefined;
+  const color = pct != null ? pctToColor(pct) : undefined;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
       style={{ flexShrink: 0 }} aria-label={pct != null ? `Best score: ${pct}%` : "Not attempted"}>
@@ -555,7 +516,7 @@ function QuizSetCard({
               </span>
               {bestPct != null && (
                 <span className="text-[11px] font-extrabold"
-                  style={{ color: pctToRingColor(bestPct) }}>
+                  style={{ color: pctToColor(bestPct) }}>
                   Best {bestPct}%
                 </span>
               )}
@@ -936,7 +897,7 @@ function SuggestedTodayWidget() {
   return (
     <div className="rounded-3xl border border-border bg-background p-4">
       <div className="flex items-start gap-3">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5]">
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
@@ -1032,7 +993,6 @@ function PracticeHomeInner() {
   const [dueLoading, setDueLoading] = useState(true);
 
   // Attempts
-  const [latestAttempt, setLatestAttempt] = useState<LatestAttempt | null>(null);
   const [recentAttempts, setRecentAttempts] = useState<LatestAttempt[]>([]);
 
   // User prefs — used to personalize the "For you" tab without requiring URL params
@@ -1180,7 +1140,6 @@ function PracticeHomeInner() {
         const uid = auth?.user?.id;
         if (!uid) {
           if (mounted) {
-            setLatestAttempt(null);
             setRecentAttempts([]);
           }
           return;
@@ -1202,17 +1161,14 @@ function PracticeHomeInner() {
         if (!mounted) return;
 
         if (res.error) {
-          setLatestAttempt(null);
           setRecentAttempts([]);
           return;
         }
 
         const rows = ((res.data as any[]) ?? []).filter(Boolean) as LatestAttempt[];
-        setLatestAttempt(rows[0] ?? null);
         setRecentAttempts(rows.slice(0, 6));
       } catch {
         if (mounted) {
-          setLatestAttempt(null);
           setRecentAttempts([]);
         }
       }
@@ -1588,55 +1544,6 @@ function PracticeHomeInner() {
         </Link>
       )}
 
-      {/* Suggested for today widget */}
-      <SuggestedTodayWidget />
-
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          href="/study"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
-            "hover:bg-secondary/50",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link>
-
-        <div className="flex items-center gap-2">
-          {/* Rep-gated Create button */}
-          {repStatus === "approved" && (
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
-                "hover:bg-secondary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              )}
-              title="Create a new practice set (rep access)"
-            >
-              <Plus className="h-4 w-4" />
-              Create set
-            </button>
-          )}
-
-          <Link
-            href="/study/practice/history"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground no-underline",
-              "hover:opacity-90",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            )}
-          >
-            <History className="h-4 w-4" />
-            History
-          </Link>
-        </div>
-      </div>
-
       {/* Header */}
       <Card className="rounded-3xl">
         <PageHeader
@@ -1653,15 +1560,15 @@ function PracticeHomeInner() {
 
       {/* ── Due Today card (SRS) ─────────────────────────────────────── */}
       {!dueLoading && dueData && dueData.total > 0 ? (
-        <Card className="w-full max-w-full overflow-hidden rounded-3xl border-violet-200/70 bg-gradient-to-br from-violet-50/60 to-background p-4 dark:border-violet-800/40 dark:from-violet-950/20">
+        <Card className="w-full max-w-full overflow-hidden rounded-3xl border-[#5B35D5]/20 bg-[#EEEDFE] p-4 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5]">
                   <GraduationCap className="h-4 w-4" />
                 </span>
                 <p className="text-base font-semibold text-foreground">Due today</p>
-                <span className="inline-flex items-center rounded-full border border-violet-300/50 bg-violet-100/60 px-2 py-0.5 text-[11px] font-extrabold text-violet-800 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-300">
+                <span className="inline-flex items-center rounded-full border border-[#5B35D5]/25 bg-[#5B35D5]/[0.07] px-2 py-0.5 text-[11px] font-extrabold text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300">
                   {dueData.total} question{dueData.total !== 1 ? "s" : ""}
                 </span>
               </div>
@@ -1696,9 +1603,9 @@ function PracticeHomeInner() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold",
                     i === 0
-                      ? "bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-700 dark:hover:bg-violet-600"
-                      : "border border-violet-300/50 bg-violet-50 text-violet-800 hover:bg-violet-100 dark:border-violet-700/50 dark:bg-violet-950/30 dark:text-violet-300",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      ? "bg-[#5B35D5] text-white hover:bg-[#4526B8] dark:bg-[#5B35D5] dark:hover:bg-[#4526B8]"
+                      : "border border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] hover:bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   )}
                 >
                   <GraduationCap className="h-3.5 w-3.5 shrink-0" />
@@ -1713,47 +1620,28 @@ function PracticeHomeInner() {
         </Card>
       ) : null}
 
-      {/* Continue card */}
-      {latestAttempt?.set_id ? (
-        <Card className="w-full max-w-full overflow-hidden rounded-3xl p-4">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-muted-foreground">Continue</p>
-              <p className="mt-1 truncate text-base font-semibold text-foreground">
-                {(latestAttempt.study_quiz_sets?.title ?? "Practice set").trim() || "Practice set"}
-              </p>
-              <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-                {latestAttempt.study_quiz_sets?.course_code ? (
-                  <span className="max-w-full truncate rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
-                    {String(latestAttempt.study_quiz_sets.course_code).toUpperCase()}
-                  </span>
-                ) : null}
-                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatWhen(latestAttempt.updated_at ?? latestAttempt.created_at)}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => startSet(String(latestAttempt.set_id))}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground",
-                "hover:opacity-90",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              )}
-            >
-              <Play className="h-4 w-4" />
-              Continue
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </Card>
-      ) : null}
-
       {/* Tabs: For you / Recent / All */}
       <MiniTabs value={viewParam} onChange={setView} />
+
+      {repStatus === "approved" && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-3 py-2 text-sm font-semibold text-[#3B24A8]",
+              "hover:bg-[#5B35D5]/10",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+            )}
+          >
+            <Plus className="h-4 w-4" />
+            Create set
+          </button>
+        </div>
+      )}
+
+      {/* Suggested for today widget */}
+      <SuggestedTodayWidget />
 
       {/* NOT STICKY: Search + filters (regular block) */}
       <Card className="w-full max-w-full overflow-hidden rounded-3xl border bg-background/85 backdrop-blur p-3">
@@ -2254,7 +2142,7 @@ function PracticeHomeInner() {
                       "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       previewMode === "study"
-                        ? "bg-violet-100 text-violet-800 border border-violet-300/60 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-700/50"
+                        ? "bg-[#EEEDFE] text-[#3B24A8] border border-[#5B35D5]/25 dark:bg-[#5B35D5]/10 dark:text-indigo-200 dark:border-[#5B35D5]/30"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -2279,7 +2167,7 @@ function PracticeHomeInner() {
               </div>
               <p className="px-1 text-xs text-muted-foreground">
                 {previewMode === "study" ? (
-                  <><span className="font-semibold text-violet-700 dark:text-violet-400">Study mode:</span>{" "}answer revealed with explanation after each pick. No timer.</>
+                  <><span className="font-semibold text-[#3B24A8] dark:text-indigo-300">Study mode:</span>{" "}answer revealed with explanation after each pick. No timer.</>
                 ) : (
                   <><span className="font-semibold">Exam mode:</span>{" "}answers shown after you submit. Timer active if set.</>
                 )}
@@ -2296,7 +2184,7 @@ function PracticeHomeInner() {
                     "hover:opacity-90",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                     previewMode === "study"
-                      ? "bg-violet-600 text-white border border-violet-500 dark:bg-violet-700"
+                      ? "bg-[#5B35D5] text-white border border-[#4526B8] hover:bg-[#4526B8]"
                       : "border border-border bg-secondary text-foreground"
                   )}
                 >

@@ -1,6 +1,6 @@
 "use client";
 // app/study/questions/QuestionsClient.tsx
-import { cn } from "@/lib/utils";
+import { cn, normalizeQuery, formatWhen, buildHref } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -36,30 +36,6 @@ type QuestionRow = {
 
 const PAGE_SIZE = 14;
 
-function normalizeQuery(v: string) { return v.trim().replace(/\s+/g, " "); }
-
-function formatWhen(iso?: string | null) {
-  if (!iso) return "";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
-  const sp = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v == null) return;
-    const s = String(v).trim();
-    if (s) sp.set(k, s);
-  });
-  const qs = sp.toString();
-  return qs ? `${path}?${qs}` : path;
-}
-
 // ─── Question Card ─────────────────────────────────────────────────────────────
 // Title-first. Left border encodes status at a glance. Whole card is the tap target.
 
@@ -91,6 +67,9 @@ function QuestionCard({ q, saved, saving, onToggleSave }: {
     >
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium leading-snug text-foreground">{title}</p>
+        {q.body && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{q.body.trim()}</p>
+        )}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {code && (
@@ -383,7 +362,8 @@ function QuestionsInner() {
 
       {!hasPrefs && (
         <Link href="/study/onboarding"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 no-underline dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300">
+          className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm no-underline"
+          style={{ borderColor: "#AFA9EC", background: "#EEEDFE", color: "#3C3489" }}>
           <span>Set your department to see questions from your courses.</span>
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
@@ -602,6 +582,17 @@ function QuestionsInner() {
             checked={draftUnsolved} onChange={setDraftUnsolved} />
         </div>
       </Drawer>
+
+      {/* Floating Ask button */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-40 flex justify-end px-4 md:bottom-6">
+        <Link
+          href="/study/questions/ask"
+          className="pointer-events-auto inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white shadow-lg no-underline hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{ background: ACCENT }}
+        >
+          <MessageSquarePlus className="h-4 w-4" /> Ask
+        </Link>
+      </div>
 
       {toast && (
         <Toast text={toast.text} actionLabel={toast.undo ? "Undo" : undefined}

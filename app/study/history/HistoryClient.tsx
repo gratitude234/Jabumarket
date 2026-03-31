@@ -1,5 +1,5 @@
 "use client";
-import { cn } from "@/lib/utils";
+import { cn, normalizeQuery, formatWhen, formatDuration, buildHref, pctToColor, pctToBg } from "@/lib/utils";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -27,34 +27,6 @@ const ACCENT_TEXT = "#3C3489"; // purple-800
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function normalizeQuery(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
-
-function formatWhen(iso?: string | null): string {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const diff = Date.now() - t;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function formatDuration(totalSeconds: number): string {
-  if (totalSeconds <= 0) return "0m";
-  const m = Math.floor(totalSeconds / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
-}
-
 function watToday(): string {
   return new Date(Date.now() + 3_600_000).toISOString().slice(0, 10);
 }
@@ -74,29 +46,6 @@ function getDateGroup(iso: string | null | undefined): string {
   if (itemDay >= thisWeekStart) return "This week";
   if (itemDay >= lastWeekStart) return "Last week";
   return d.toLocaleString("default", { month: "long", year: "numeric" });
-}
-
-function buildHref(path: string, params: Record<string, string | number | null | undefined>) {
-  const sp = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v == null) return;
-    const s = String(v).trim();
-    if (s) sp.set(k, s);
-  });
-  const qs = sp.toString();
-  return qs ? `${path}?${qs}` : path;
-}
-
-function pctToColor(pct: number): string {
-  if (pct >= 70) return "#1D9E75";
-  if (pct >= 50) return "#BA7517";
-  return "#A32D2D";
-}
-
-function pctToBg(pct: number): string {
-  if (pct >= 70) return "#EAF3DE";
-  if (pct >= 50) return "#FAEEDA";
-  return "#FCEBEB";
 }
 
 function pctToTextColor(pct: number): string {

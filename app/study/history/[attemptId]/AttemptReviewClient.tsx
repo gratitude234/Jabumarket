@@ -1,6 +1,6 @@
 "use client";
 // app/study/history/[attemptId]/AttemptReviewClient.tsx
-import { cn } from "@/lib/utils";
+import { cn, normalize, pctToColor } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -31,10 +31,6 @@ const ACCENT_TEXT = "#3C3489";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-function normalize(v: string) {
-  return v.trim().replace(/\s+/g, " ");
-}
-
 function fmtDate(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -51,14 +47,6 @@ function fmtDuration(seconds?: number | null) {
   const s = seconds % 60;
   if (m <= 0) return `${s}s`;
   return `${m}m ${s}s`;
-}
-
-function pctToColor(pct: number): string {
-  if (pct >= 70) return "#1D9E75";
-  if (pct >= 60) return "#378ADD";
-  if (pct >= 50) return "#BA7517";
-  if (pct >= 45) return "#E8762A";
-  return "#A32D2D";
 }
 
 function scoreGrade(correct: number, total: number) {

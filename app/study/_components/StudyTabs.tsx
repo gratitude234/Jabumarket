@@ -140,7 +140,7 @@ function MoreSheet({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
 
@@ -287,11 +287,13 @@ function StudyOnboardingBannerInner() {
   const { shouldShowBanner } = useStudyOnboardingBanner();
   if (!shouldShowBanner) return null;
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 flex items-center justify-between gap-3">
-      <p className="text-sm text-amber-800">Complete your study profile to get personalised content.</p>
+    <div className="rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] p-3 flex items-center justify-between gap-3">
+      <p className="text-sm text-[#3B24A8] dark:text-indigo-200">
+        Complete your study profile to get personalised content.
+      </p>
       <Link
         href="/study/onboarding"
-        className="shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-amber-700"
+        className="shrink-0 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-[#4526B8]"
       >
         Set up →
       </Link>
@@ -382,6 +384,47 @@ export default function StudyTabs({
 
   const overflowItems: OverflowItem[] = [
     {
+      href: "/study/history",
+      label: "History",
+      description: "Review your recent study activity",
+      icon: History,
+      color:
+        "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400",
+    },
+    {
+      href: "/study/library",
+      label: "Bookmarks",
+      description: "Your saved materials, sets and questions",
+      icon: BookMarked,
+      color:
+        "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
+    },
+    {
+      href: "/study/gpa",
+      label: "GPA Calculator",
+      description: "Track your CGPA across semesters",
+      icon: Calculator,
+      color:
+        "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
+    },
+    {
+      href: "/study/leaderboard",
+      label: "Leaderboard",
+      description: "Top contributors and practice streaks",
+      icon: Trophy,
+      color:
+        "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
+    },
+    {
+      href: "/study/ai-plan",
+      label: "AI Study Plan",
+      description: "Generate a personalised study schedule with Gemini",
+      icon: BrainCircuit,
+      color:
+        "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
+      badge: "AI",
+    },
+    {
       href: "/study/materials/upload",
       label: "Upload Materials",
       description: "Share past questions, notes, and slides",
@@ -409,53 +452,12 @@ export default function StudyTabs({
         ]
       : []),
     {
-      href: "/study/history",
-      label: "History",
-      description: "Review your recent study activity",
-      icon: History,
-      color:
-        "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400",
-    },
-    {
-      href: "/study/library",
-      label: "Bookmarks",
-      description: "Your saved materials, sets and questions",
-      icon: BookMarked,
-      color:
-        "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
-    },
-    {
-      href: "/study/gpa",
-      label: "GPA Calculator",
-      description: "Track your CGPA across semesters",
-      icon: Calculator,
-      color:
-        "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
-    },
-    {
       href: "/study/tutors",
       label: "Tutors",
       description: "Find verified tutors for your courses",
       icon: GraduationCap,
       color:
-        "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400",
-    },
-    {
-      href: "/study/leaderboard",
-      label: "Leaderboard",
-      description: "Top contributors and practice streaks",
-      icon: Trophy,
-      color:
         "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
-    },
-    {
-      href: "/study/ai-plan",
-      label: "AI Study Plan",
-      description: "Generate a personalised study schedule with Gemini",
-      icon: BrainCircuit,
-      color:
-        "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
-      badge: "AI",
     },
   ];
 
@@ -487,7 +489,9 @@ export default function StudyTabs({
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                       active
                         ? "border-primary/30 bg-primary/10 text-primary"
-                        : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                        : tab.href === "/study/practice"
+                          ? "border-[#5B35D5]/25 bg-[#EEEDFE]/60 text-[#5B35D5] hover:bg-[#EEEDFE]"
+                          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     )}
                   >
                     {tab.icon}
