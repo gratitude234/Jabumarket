@@ -20,14 +20,11 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
-  Maximize2,
   RefreshCw,
   RotateCcw,
   Share2,
   Sparkles,
   Star,
-  ThumbsDown,
-  ThumbsUp,
   X,
   ZoomIn,
   ZoomOut,
@@ -245,7 +242,7 @@ function InlinePreview({
   title: string;
   kind: "pdf" | "image" | "other";
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   if (kind === "other" || !url) return null;
 
@@ -255,7 +252,7 @@ function InlinePreview({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors",
+          "flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors",
           "hover:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         )}
         aria-expanded={open}
@@ -264,25 +261,33 @@ function InlinePreview({
           {kind === "pdf"
             ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
             : <ImageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
-          <span className="text-sm font-semibold text-foreground">
-            {open ? "Hide preview" : `Preview ${kind === "pdf" ? "PDF" : "image"}`}
-          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {open ? "Hide preview" : `Preview ${kind === "pdf" ? "PDF" : "image"}`}
+            </p>
+            {!open && (
+              <p className="text-xs text-muted-foreground">Tap to expand inline</p>
+            )}
+          </div>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        <div className="flex items-center gap-2">
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/50"
+          >
+            Open <ExternalLink className="h-3 w-3" />
+          </a>
+          {open
+            ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </div>
       </button>
 
       {open && (
         <div className="border-t border-border p-3">
-          {/* Toolbar */}
-          <div className="mb-2 flex items-center justify-end gap-2">
-            <a
-              href={url} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/50"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Open in tab
-            </a>
-          </div>
-
           {kind === "pdf" && <PdfViewer url={url} heightClass="h-[60vh]" />}
           {kind === "image" && <ImageViewer url={url} title={title} heightClass="h-[60vh]" />}
         </div>
@@ -365,153 +370,6 @@ function PreviewModal({
   );
 }
 
-// ─── Material rating (thumbs up / down) ──────────────────────────────────────
-
-type RatingVote = 1 | -1 | null;
-
-function MaterialRating({
-  materialId,
-  initialUp,
-  initialDown,
-}: {
-  materialId: string;
-  initialUp: number;
-  initialDown: number;
-}) {
-  const [myVote, setMyVote]   = useState<RatingVote>(null);
-  const [up, setUp]           = useState(initialUp);
-  const [down, setDown]       = useState(initialDown);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy]       = useState(false);
-
-  // Fetch existing vote on mount
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const userId = await getAuthedUserId();
-      if (!userId || cancelled) { setLoading(false); return; }
-      const { data } = await supabase
-        .from("study_material_ratings")
-        .select("vote")
-        .eq("user_id", userId)
-        .eq("material_id", materialId)
-        .maybeSingle();
-      if (!cancelled) {
-        setMyVote((data?.vote as RatingVote) ?? null);
-        setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [materialId]);
-
-  async function handleVote(vote: 1 | -1) {
-    if (busy) return;
-    const userId = await getAuthedUserId();
-    if (!userId) return;
-
-    setBusy(true);
-    const prev = myVote;
-
-    // Optimistic update
-    const removing = prev === vote;
-    setMyVote(removing ? null : vote);
-    setUp((n)  => n + (vote ===  1 ? (removing ? -1 : prev === -1 ? 1 : 1) : (prev ===  1 ? -1 : 0)));
-    setDown((n) => n + (vote === -1 ? (removing ? -1 : prev ===  1 ? 1 : 1) : (prev === -1 ? -1 : 0)));
-
-    try {
-      if (removing) {
-        await supabase
-          .from("study_material_ratings")
-          .delete()
-          .eq("user_id", userId)
-          .eq("material_id", materialId);
-      } else {
-        await supabase
-          .from("study_material_ratings")
-          .upsert(
-            { user_id: userId, material_id: materialId, vote, updated_at: new Date().toISOString() },
-            { onConflict: "user_id,material_id" }
-          );
-      }
-    } catch {
-      // Revert on error
-      setMyVote(prev);
-      setUp(initialUp);
-      setDown(initialDown);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const total = up + down;
-  const upPct = total > 0 ? Math.round((up / total) * 100) : null;
-
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <p className="text-xs font-semibold text-muted-foreground">Was this helpful?</p>
-
-      <div className="mt-3 flex items-center gap-3">
-        {/* Thumbs up */}
-        <button
-          type="button"
-          onClick={() => handleVote(1)}
-          disabled={loading || busy}
-          aria-label="Thumbs up"
-          aria-pressed={myVote === 1}
-          className={cn(
-            "flex items-center gap-1.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            myVote === 1
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              : "border-border bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-            (loading || busy) ? "opacity-60 cursor-not-allowed" : ""
-          )}
-        >
-          <ThumbsUp className="h-4 w-4" />
-          <span>{up}</span>
-        </button>
-
-        {/* Thumbs down */}
-        <button
-          type="button"
-          onClick={() => handleVote(-1)}
-          disabled={loading || busy}
-          aria-label="Thumbs down"
-          aria-pressed={myVote === -1}
-          className={cn(
-            "flex items-center gap-1.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            myVote === -1
-              ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
-              : "border-border bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-            (loading || busy) ? "opacity-60 cursor-not-allowed" : ""
-          )}
-        >
-          <ThumbsDown className="h-4 w-4" />
-          <span>{down}</span>
-        </button>
-
-        {/* Approval % */}
-        {upPct !== null && (
-          <p className="ml-1 text-xs text-muted-foreground">
-            {upPct}% found this helpful
-          </p>
-        )}
-      </div>
-
-      {/* Bar */}
-      {total > 0 && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-            style={{ width: `${upPct}%` }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── AI Summarize Card ────────────────────────────────────────────────────────
 
 type AiSummaryState =
@@ -526,12 +384,14 @@ function AiSummarizeCard({
   description,
   courseCode,
   materialType,
+  compact,
 }: {
   materialId: string;
   title: string;
   description: string | null;
   courseCode: string | null | undefined;
   materialType: string | null;
+  compact?: boolean;
 }) {
   const [state, setState] = useState<AiSummaryState>({ status: "idle" });
 
@@ -562,38 +422,50 @@ function AiSummarizeCard({
   }
 
   if (state.status === "idle") {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          onClick={fetchSummary}
+          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#5B35D5] hover:underline focus-visible:outline-none"
+        >
+          <Sparkles className="h-3 w-3" />
+          Regenerate with Gemini
+        </button>
+      );
+    }
     return (
       <button
         type="button"
         onClick={fetchSummary}
         className={cn(
           "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
-          "border-violet-200/70 bg-violet-50/60 hover:bg-violet-100/60",
-          "dark:border-violet-700/30 dark:bg-violet-950/20 dark:hover:bg-violet-950/30",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+          "border-[#5B35D5]/20 bg-[#EEEDFE]/60 hover:bg-[#EEEDFE]/80",
+          "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/[0.07] dark:hover:bg-[#5B35D5]/10",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
         )}
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5] dark:text-indigo-400">
           <Sparkles className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">Summarize with AI</p>
-          <p className="text-xs text-violet-500/80 dark:text-violet-400/70">Get key topics & exam tips · Powered by Gemini</p>
+          <p className="text-sm font-extrabold text-[#3B24A8] dark:text-indigo-300">Summarize with AI</p>
+          <p className="text-xs text-[#5B35D5]/80 dark:text-indigo-400/70">Get key topics & exam tips · Powered by Gemini</p>
         </div>
-        <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#5B35D5]/70" />
       </button>
     );
   }
 
   if (state.status === "loading") {
     return (
-      <div className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3", "border-violet-200/70 bg-violet-50/60", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600">
+      <div className={cn("flex items-center gap-3 rounded-2xl border px-4 py-3", "border-[#5B35D5]/20 bg-[#EEEDFE]/60", "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/[0.07]")}>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5]">
           <Loader2 className="h-4 w-4 animate-spin" />
         </span>
         <div>
-          <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">Analysing material…</p>
-          <p className="text-xs text-violet-500/80">Gemini is generating your summary</p>
+          <p className="text-sm font-extrabold text-[#3B24A8] dark:text-indigo-300">Analysing material…</p>
+          <p className="text-xs text-[#5B35D5]/80">Gemini is generating your summary</p>
         </div>
       </div>
     );
@@ -623,14 +495,14 @@ function AiSummarizeCard({
 
   // done
   return (
-    <div className={cn("rounded-2xl border px-4 py-4 space-y-4", "border-violet-200/70 bg-violet-50/50", "dark:border-violet-700/30 dark:bg-violet-950/20")}>
+    <div className={cn("rounded-2xl border px-4 py-4 space-y-4", "border-[#5B35D5]/20 bg-[#EEEDFE]/50", "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/[0.07]")}>
       {/* Header */}
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5] dark:text-indigo-400">
           <Sparkles className="h-3.5 w-3.5" />
         </span>
-        <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">AI Summary</p>
-        <span className="ml-auto text-[10px] font-semibold text-violet-400/80">Gemini · {state.cached ? "cached" : "generated"}</span>
+        <p className="text-sm font-extrabold text-[#3B24A8] dark:text-indigo-300">AI Summary</p>
+        <span className="ml-auto text-[10px] font-semibold text-[#5B35D5]/70">Gemini · {state.cached ? "cached" : "generated"}</span>
       </div>
 
       {/* Overview */}
@@ -639,10 +511,10 @@ function AiSummarizeCard({
       {/* Key Topics */}
       {state.keyTopics.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-extrabold text-violet-700 dark:text-violet-300">Key Topics</p>
+          <p className="mb-2 text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">Key Topics</p>
           <div className="flex flex-wrap gap-2">
             {state.keyTopics.map((t, i) => (
-              <span key={i} className="rounded-full border border-violet-200/60 bg-background px-2.5 py-1 text-xs font-semibold text-foreground dark:border-violet-700/30">
+              <span key={i} className="rounded-full border border-[#5B35D5]/20 bg-background px-2.5 py-1 text-xs font-semibold text-foreground dark:border-[#5B35D5]/30">
                 {t}
               </span>
             ))}
@@ -653,11 +525,11 @@ function AiSummarizeCard({
       {/* Exam Tips */}
       {state.examTips.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-extrabold text-violet-700 dark:text-violet-300">Exam Tips</p>
+          <p className="mb-2 text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">Exam Tips</p>
           <ul className="space-y-1.5">
             {state.examTips.map((tip, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-foreground">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B35D5]" />
                 {tip}
               </li>
             ))}
@@ -685,10 +557,8 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [hasUpvoted, setHasUpvoted] = useState(false);
-  const [upvoteCount, setUpvoteCount] = useState(m.up_votes ?? 0);
+  const [upvoteCount] = useState(m.up_votes ?? 0);
   const [relatedMaterials, setRelatedMaterials] = useState<any[]>([]);
-  const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(msg: string) {
@@ -757,8 +627,6 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       setDownloads((d) => Math.max(0, d - 1));
     }
     showToast("Download started");
-    // Show rating prompt after short delay (user returns to page after download)
-    setTimeout(() => setShowRatingPrompt(true), 2000);
   }
 
   function handlePreview() {
@@ -771,17 +639,6 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     }
     // pdf / image: open fullscreen modal — no download count (inline strip is free)
     setPreviewOpen(true);
-  }
-
-  async function handleUpvote() {
-    const res = await fetch(`/api/study/materials/${m.id}/vote`, {
-      method: 'POST',
-    });
-    const json = await res.json();
-    if (json.ok) {
-      setHasUpvoted(json.voted);
-      setUpvoteCount(prev => json.voted ? prev + 1 : Math.max(0, prev - 1));
-    }
   }
 
   async function handleShare() {
@@ -899,56 +756,41 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
         </div>
 
         {/* Action buttons */}
-        <div className="mt-5 flex items-center gap-2 overflow-x-auto">
-          <button
-            type="button" onClick={handleToggleSave} disabled={saving}
-            className={cn(
-              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              saved ? "border-border bg-secondary text-foreground" : "border-border/60 bg-background text-foreground hover:bg-secondary/50",
-              saving ? "opacity-70" : ""
-            )}
-            aria-label={saved ? "Unsave" : "Save to Library"}
-          >
-            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-            {saved ? "Saved" : "Save"}
-          </button>
-
-          <button
-            type="button" onClick={handlePreview} disabled={!hasFile}
-            className={cn(
-              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              !hasFile
-                ? "cursor-not-allowed border-border/60 bg-muted text-muted-foreground"
-                : "border-border bg-secondary text-foreground hover:opacity-90"
-            )}
-          >
-            <Maximize2 className="h-4 w-4" />
-            {kind === "other" ? "Open file" : "Fullscreen"}
-          </button>
-
+        <div className="mt-5 flex items-center gap-2">
           <a
             href={hasFile ? `/api/study/materials/${m.id}/download` : "#"}
             download
             onClick={(e) => { if (!hasFile) { e.preventDefault(); return; } handleDownload(); }}
             className={cn(
-              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold no-underline transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold no-underline transition",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2",
               !hasFile
-                ? "pointer-events-none border-border/60 bg-muted text-muted-foreground"
-                : "border-border/60 bg-background text-foreground hover:bg-secondary/50"
+                ? "pointer-events-none border border-border/60 bg-muted text-muted-foreground"
+                : "bg-[#5B35D5] text-white hover:bg-[#4526B8]"
             )}
           >
             <Download className="h-4 w-4" />
             Download
           </a>
-
+          <button
+            type="button"
+            onClick={handleToggleSave}
+            disabled={saving}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              saved ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#3B24A8]" : "border-border/60 bg-background text-foreground hover:bg-secondary/50",
+              saving ? "opacity-70" : ""
+            )}
+          >
+            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+            {saved ? "Saved" : "Save"}
+          </button>
           <button
             type="button"
             onClick={handleShare}
             className={cn(
-              "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border/60 bg-background px-4 py-3 text-sm font-semibold transition",
+              "inline-flex items-center gap-2 rounded-2xl border border-border/60 bg-background px-4 py-3 text-sm font-semibold transition",
               "hover:bg-secondary/50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             )}
@@ -956,116 +798,50 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             <Share2 className="h-4 w-4" />
             Share
           </button>
-
-          <button
-            type="button"
-            onClick={handleUpvote}
-            className={cn(
-              'inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition',
-              hasUpvoted
-                ? 'border-border bg-secondary text-foreground'
-                : 'border-border/60 bg-background text-muted-foreground hover:bg-secondary/50'
-            )}
-          >
-            <ThumbsUp className="h-4 w-4" />
-            {hasUpvoted ? 'Helpful' : 'Mark as helpful'}
-            {upvoteCount > 0 && ` · ${upvoteCount}`}
-          </button>
         </div>
 
-        {showRatingPrompt && !hasUpvoted && (
-          <div className="mt-3 flex items-center gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-3">
-            <p className="text-sm font-semibold text-foreground flex-1">Was this material helpful?</p>
-            <button
-              type="button"
-              onClick={() => { handleUpvote(); setShowRatingPrompt(false); }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-secondary/50"
-            >
-              <ThumbsUp className="h-3.5 w-3.5" /> Yes
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRatingPrompt(false)}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Skip
-            </button>
-          </div>
-        )}
+        {/* Download + upvote stat line */}
+        <p className="mt-2.5 text-xs text-muted-foreground">
+          {downloads.toLocaleString("en-NG")} downloads
+          {upvoteCount > 0 && ` · ${upvoteCount} found helpful`}
+        </p>
       </div>
 
-      {/* ── Pre-generated AI Summary ── */}
+      {/* ── AI Summary strip ── */}
       {m.ai_summary ? (
-        <div className="rounded-3xl border bg-card p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-semibold text-foreground">AI Summary</p>
-            <span className="ml-auto rounded-full border bg-background px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-              Verify before your exam
-            </span>
+        <div className="rounded-r-2xl border-l-[3px] border-[#5B35D5] bg-[#EEEDFE] px-4 py-3.5 dark:bg-[#5B35D5]/10">
+          <div className="mb-2 flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-[#5B35D5]" />
+            <p className="text-xs font-bold uppercase tracking-wider text-[#3B24A8] dark:text-indigo-300">AI Summary</p>
+            <span className="ml-auto text-[10px] font-medium text-[#5B35D5]/70">verify before your exam</span>
           </div>
-          <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-            {m.ai_summary}
-          </p>
+          <p className="text-sm leading-relaxed text-[#3B24A8]/85 dark:text-indigo-200">{m.ai_summary}</p>
+          <div className="mt-3 border-t border-[#5B35D5]/15 pt-2">
+            <AiSummarizeCard
+              materialId={m.id}
+              title={title}
+              description={m.description}
+              courseCode={course?.course_code}
+              materialType={m.material_type}
+              compact
+            />
+          </div>
         </div>
       ) : (
-        <div className="rounded-3xl border border-dashed bg-card p-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              AI summary not yet available for this material.
-            </p>
-          </div>
+        <div className="rounded-r-2xl border-l-[3px] border-border bg-card px-4 py-3.5">
+          <AiSummarizeCard
+            materialId={m.id}
+            title={title}
+            description={m.description}
+            courseCode={course?.course_code}
+            materialType={m.material_type}
+          />
         </div>
       )}
 
       {/* ── Inline preview strip ── */}
       {hasFile && (
         <InlinePreview url={fileUrl} title={title} kind={kind} />
-      )}
-
-      {/* ── AI Summarize ── */}
-      <div className="pl-14">
-        <AiSummarizeCard
-          materialId={m.id}
-          title={title}
-          description={m.description}
-          courseCode={course?.course_code}
-          materialType={m.material_type}
-        />
-      </div>
-
-      {/* Stats + uploader */}
-      <MaterialRating
-        materialId={m.id}
-        initialUp={m.up_votes ?? 0}
-        initialDown={m.down_votes ?? 0}
-      />
-
-      {/* Related materials */}
-      {relatedMaterials.length > 0 && (
-        <div className="mt-6">
-          <p className="text-sm font-semibold text-foreground mb-3">
-            More for {course?.course_code ?? "this course"}
-          </p>
-          <div className="space-y-2">
-            {relatedMaterials.map((r) => (
-              <Link
-                key={r.id}
-                href={`/study/materials/${r.id}`}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 hover:bg-secondary/50 no-underline"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{r.title ?? "Untitled"}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {r.material_type?.replace("_", " ")} · {r.downloads ?? 0} downloads
-                  </p>
-                </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </Link>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* About this material */}
@@ -1116,6 +892,32 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
           </div>
         </div>
       </div>
+
+      {/* Related materials */}
+      {relatedMaterials.length > 0 && (
+        <div className="mt-6">
+          <p className="text-sm font-semibold text-foreground mb-3">
+            More for {course?.course_code ?? "this course"}
+          </p>
+          <div className="space-y-2">
+            {relatedMaterials.map((r) => (
+              <Link
+                key={r.id}
+                href={`/study/materials/${r.id}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 hover:bg-secondary/50 no-underline"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{r.title ?? "Untitled"}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {r.material_type?.replace("_", " ")} · {r.downloads ?? 0} downloads
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Report */}
       <div className="rounded-2xl border border-border bg-background p-3 text-center">

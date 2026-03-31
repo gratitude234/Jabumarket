@@ -2,7 +2,7 @@
 import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import StudyHomeClient from "./StudyHomeClient";
-import { Card, SkeletonCard } from "./_components/StudyUI";
+import { SkeletonCard } from "./_components/StudyUI";
 
 // Non-user-specific data (counts + trending) cached for 60 s on the server.
 // Every individual user's prefs/streak/forYou are still fetched client-side.
@@ -91,35 +91,38 @@ async function fetchStaticData(): Promise<{
 function StudyHomeFallback() {
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <Card className="rounded-3xl">
+      {/* Hero card skeleton */}
+      <div className="animate-pulse rounded-3xl border border-border bg-card p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="h-6 w-40 rounded bg-muted" />
-            <div className="mt-2 h-4 w-72 max-w-full rounded bg-muted" />
-            <div className="mt-2 h-3 w-52 rounded bg-muted" />
+          <div className="space-y-2">
+            <div className="h-3 w-24 rounded bg-muted" />
+            <div className="h-6 w-36 rounded bg-muted" />
           </div>
-          <div className="h-10 w-28 rounded-2xl bg-muted" />
+          <div className="h-9 w-24 rounded-2xl bg-muted" />
         </div>
-        <div className="mt-4 h-11 w-full rounded-2xl bg-muted" />
-        <div className="mt-4 flex gap-2 overflow-hidden">
-          <div className="h-9 w-24 rounded-full bg-muted" />
-          <div className="h-9 w-28 rounded-full bg-muted" />
-          <div className="h-9 w-24 rounded-full bg-muted" />
-          <div className="h-9 w-28 rounded-full bg-muted" />
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="h-14 rounded-2xl bg-muted" />
+          <div className="h-14 rounded-2xl bg-muted" />
+          <div className="h-14 rounded-2xl bg-muted" />
         </div>
-      </Card>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-20 rounded-3xl border border-border bg-card shadow-sm"
-          />
-        ))}
+        <div className="mt-3 h-11 rounded-2xl bg-muted" />
+        <div className="mt-3 h-px rounded bg-muted" />
+        <div className="mt-3 h-8 rounded bg-muted" />
       </div>
+
+      {/* Quick actions skeleton */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-28 animate-pulse rounded-3xl bg-muted" />
+        <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
+        <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
+        <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
+      </div>
+
+      {/* Content skeletons */}
       <div className="space-y-3">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard lines={3} />
+        <SkeletonCard className="rounded-3xl" />
+        <SkeletonCard className="rounded-3xl" />
+        <SkeletonCard className="rounded-3xl" lines={3} />
       </div>
     </div>
   );

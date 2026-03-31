@@ -5,22 +5,18 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "./_components/StudyTabs";
-import { EmptyState, PageHeader } from "./_components/StudyUI";
+import { EmptyState } from "./_components/StudyUI";
 import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
 import { ForYouSection, MaterialCard, Section, Skeleton, type MaterialMini, type Chips } from "./_components/ForYouSection";
 import { ContinueCard } from "./_components/ContinueCard";
 import { HeroCard } from "./_components/HeroCard";
-import { getPracticeStreak } from "@/lib/studyPractice";
+import { QuickActions } from "./_components/QuickActions";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
   BookOpen,
   Clock,
-  Filter,
   GraduationCap,
-  LayoutGrid,
-  MessageCircle,
-  Star,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -82,12 +78,6 @@ function StudyHomeInner({
   }>({ show: false, suggested: null, current: null, session: null });
   const [switchingSemester, setSwitchingSemester] = useState(false);
 
-  // Streak count for HeroCard
-  const [streak, setStreak] = useState(0);
-
-  // Due count for HeroCard
-  const [dueCount, setDueCount] = useState<number | null>(null);
-
   // P-5: Exam countdown
   const [examCountdown, setExamCountdown] = useState<{
     daysLeft: number; semester: string;
@@ -114,33 +104,6 @@ function StudyHomeInner({
     }
     checkExamSeason();
   }, []);
-
-  // Fetch streak count
-  useEffect(() => {
-    getPracticeStreak()
-      .then((r) => { if (r) setStreak(r.streak); })
-      .catch(() => {});
-  }, []);
-
-  // Fetch due count
-  useEffect(() => {
-    if (!userId) return;
-    let cancelled = false;
-    async function fetchDue() {
-      try {
-        const now = new Date().toISOString();
-        const { count, error } = await supabase
-          .from("study_weak_questions")
-          .select("user_id", { count: "exact", head: true })
-          .eq("user_id", userId!)
-          .lte("next_due_at", now)
-          .is("graduated_at", null);
-        if (!cancelled && !error) setDueCount(count ?? 0);
-      } catch { /* non-critical */ }
-    }
-    fetchDue();
-    return () => { cancelled = true; };
-  }, [userId]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const quickLevel = prefs?.level ?? 100;
@@ -283,23 +246,6 @@ function StudyHomeInner({
         </div>
       )}
 
-      <PageHeader
-        title="Study"
-        subtitle="Browse materials, practice past questions, and track your progress."
-        right={
-          <Link
-            href="/study/practice"
-            className={cn(
-              "inline-flex items-center gap-2 rounded-2xl bg-secondary px-3 py-2",
-              "text-sm font-semibold text-foreground hover:opacity-90",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            )}
-          >
-            Practice <ArrowRight className="h-4 w-4" />
-          </Link>
-        }
-      />
-
       {/* P-5: Exam countdown banner */}
       {examCountdown && (
         <Link
@@ -338,17 +284,17 @@ function StudyHomeInner({
         </Link>
       )}
 
-      {/* HeroCard */}
       <HeroCard
         displayName={displayName}
-        streak={streak}
-        dueCount={dueCount}
-        masteryPct={null}
         hasPrefs={hasPrefs}
         userId={userId}
       />
 
-      {/* Filter chips */}
+      <QuickActions />
+
+      <ContinueCard />
+
+      {/* Filter chips for For You */}
       <div className="flex flex-wrap gap-2">
         {([
           {
@@ -392,7 +338,7 @@ function StudyHomeInner({
               "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               active
-                ? "border-border bg-secondary text-foreground"
+                ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
                 : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
             )}
           >
@@ -400,106 +346,7 @@ function StudyHomeInner({
             {label}
           </button>
         ))}
-
-        <Link
-          href="/study/search"
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-2 text-xs font-semibold text-foreground",
-            "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          )}
-        >
-          <Filter className="h-4 w-4" />
-          Search
-        </Link>
       </div>
-
-      {/* Quick Actions grid */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* Practice — accent tile */}
-        <Link
-          href="/study/practice"
-          className="flex flex-col gap-3 rounded-3xl bg-[#5B35D5] p-4
-                     hover:bg-[#4526B8] focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20">
-            <LayoutGrid className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-white">Practice</p>
-            <p className="text-xs text-white/70">Start a session</p>
-          </div>
-        </Link>
-
-        {/* Materials */}
-        <Link
-          href="/study/materials"
-          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
-                     hover:bg-secondary/20 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-            <BookOpen className="h-4 w-4 text-[#5B35D5]" />
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-foreground">Materials</p>
-            <p className="text-xs text-muted-foreground">Notes &amp; PDFs</p>
-          </div>
-        </Link>
-
-        {/* Q&A Forum */}
-        <Link
-          href="/study/questions"
-          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
-                     hover:bg-secondary/20 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-            <MessageCircle className="h-4 w-4 text-[#5B35D5]" />
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-foreground">Q&amp;A Forum</p>
-            <p className="text-xs text-muted-foreground">Ask or answer</p>
-          </div>
-        </Link>
-
-        {/* GPA Calculator */}
-        <Link
-          href="/study/gpa"
-          className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-4 shadow-sm
-                     hover:bg-secondary/20 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-            <Star className="h-4 w-4 text-[#5B35D5]" />
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-foreground">GPA Calculator</p>
-            <p className="text-xs text-muted-foreground">Track grades</p>
-          </div>
-        </Link>
-      </div>
-
-      <ContinueCard />
-
-      {!loading && !hasPrefs && (
-        <EmptyState
-          title="Personalize your Study Home"
-          description="Set your faculty, department, and level so we can recommend the best materials for you."
-          action={
-            <Link
-              href="/study/onboarding"
-              className={cn(
-                "inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2",
-                "text-sm font-semibold text-foreground hover:opacity-90"
-              )}
-            >
-              Set preferences <ArrowRight className="h-4 w-4" />
-            </Link>
-          }
-          icon={GraduationCap}
-        />
-      )}
 
       <ForYouSection chips={chips} onClearFilters={clearFilters} />
 

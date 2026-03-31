@@ -307,20 +307,21 @@ export function MaterialCard({
   m,
   trending,
   weakAccuracy,
-  context = 'for-you',
+  context = "for-you",
 }: {
   m: MaterialMini;
   trending?: boolean;
   weakAccuracy?: number;
-  context?: 'for-you' | 'trending';
+  context?: "for-you" | "trending";
 }) {
   const href = `/study/materials/${encodeURIComponent(m.id)}`;
   const isWeak = weakAccuracy !== undefined;
   const accuracyPct = isWeak ? Math.round(weakAccuracy * 100) : null;
   const isNew = Date.now() - new Date(m.created_at).getTime() < 7 * 24 * 60 * 60 * 1000;
+  const effectiveContext = trending ? "trending" : context;
 
   let rightElement: React.ReactNode;
-  if (context === 'trending') {
+  if (effectiveContext === "trending") {
     rightElement = (
       <div className="shrink-0 text-right">
         <p className="text-sm font-extrabold text-foreground">{m.downloads ?? 0}</p>
@@ -329,16 +330,16 @@ export function MaterialCard({
     );
   } else if (!isWeak) {
     rightElement = isNew ? (
-      <span className="shrink-0 text-[10px] font-semibold rounded-full px-2 py-1 bg-[#5B35D5]/[0.07] text-[#3B24A8] border border-[#5B35D5]/20 dark:text-indigo-300">
+      <span className="shrink-0 self-start rounded-full border border-[#5B35D5]/20 bg-[#EEEDFE] px-2 py-0.5 text-[10px] font-semibold text-[#3B24A8] dark:text-indigo-300">
         New
       </span>
     ) : (
-      <span className="shrink-0 text-[10px] font-semibold rounded-full px-2 py-1 bg-secondary text-muted-foreground border border-border">
+      <span className="shrink-0 self-start rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
         Dept. pick
       </span>
     );
   } else {
-    rightElement = <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />;
+    rightElement = null;
   }
 
   return (

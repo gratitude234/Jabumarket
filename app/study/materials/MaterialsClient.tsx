@@ -5,12 +5,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
-  ArrowLeft,
   ArrowRight,
   Search,
   X,
   UploadCloud,
-  BookOpen,
   FileText,
   Clock,
   SlidersHorizontal,
@@ -20,19 +18,15 @@ import {
   Bookmark,
   BookmarkCheck,
   Download,
-  Image as ImageIcon,
-  Presentation,
-  File,
   SortAsc,
   SortDesc,
-  ThumbsUp,
-  ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 
 import { getAuthedUserId, toggleSaved } from "@/lib/studySaved";
 import { cn, formatWhen, normalizeQuery, safeSearchTerm, buildHref, asInt, clamp } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
-import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
+import { Card, EmptyState, SkeletonCard } from "../_components/StudyUI";
 import { RequestCourseModal } from "../_components/RequestCourseModal";
 
 type SortKey = "newest" | "oldest" | "downloads_desc" | "downloads_asc";
@@ -444,212 +438,128 @@ function detectFileKind(m: MaterialRow): "pdf" | "image" | "other" {
 }
 
 function MaterialCard({
-  m,
-  saved,
-  saving,
-  onToggleSave,
-  onDownload,
+  m, saved, saving, onToggleSave, onDownload,
 }: {
-  m: MaterialRow;
-  saved: boolean;
-  saving: boolean;
-  onToggleSave: () => void;
-  onDownload: () => void;
+  m: MaterialRow; saved: boolean; saving: boolean; onToggleSave: () => void; onDownload: () => void;
 }) {
   const title = (m.title ?? "Untitled material").trim() || "Untitled material";
   const courseCode = (m.study_courses?.course_code ?? "").toString().trim();
-  const courseLabel = (m.study_courses?.course_title ?? "").toString().trim();
-  const dept = (m.study_courses?.department ?? "").toString().trim();
-  const faculty = (m.study_courses?.faculty ?? "").toString().trim();
-
-  const metaBits = [
-    typeof m.study_courses?.level === "number" ? `${m.study_courses.level}L` : "",
-    m.study_courses?.semester ? `${m.study_courses.semester} sem` : "",
-    m.session ? String(m.session) : "",
-    m.material_type ? String(m.material_type) : "",
-  ].filter(Boolean);
-
   const kind = detectFileKind(m);
-
-  const badge =
-    kind === "pdf"
-      ? "PDF"
-      : kind === "image"
-      ? "IMAGE"
-      : (m.file_path ?? "").toLowerCase().match(/\.(ppt|pptx)/)
-      ? "PPT"
-      : "FILE";
-
-  const badgeIcon =
-    badge === "PDF" ? (
-      <FileText className="h-5 w-5 text-foreground" />
-    ) : badge === "IMAGE" ? (
-      <ImageIcon className="h-5 w-5 text-foreground" />
-    ) : badge === "PPT" ? (
-      <Presentation className="h-5 w-5 text-foreground" />
-    ) : (
-      <File className="h-5 w-5 text-foreground" />
-    );
-
-  const href = `/api/study/materials/${m.id}/download`;
-  const disabled = false;
   const isVerified = !!m.verified;
   const isFeatured = !!m.featured;
+  const dlCount = m.downloads ?? 0;
+  const isPopular = dlCount > 50;
+
+  const typeStyle: Record<string, { border: string; iconBg: string; iconText: string; abbr: string }> = {
+    past_question: { border: "border-l-[3px] border-l-[#5B35D5] rounded-l-none rounded-r-3xl", iconBg: "bg-[#EEEDFE]", iconText: "text-[#5B35D5]", abbr: "PQ" },
+    handout: { border: "border-l-[3px] border-l-[#1D9E75] rounded-l-none rounded-r-3xl", iconBg: "bg-[#E1F5EE]", iconText: "text-[#1D9E75]", abbr: "H" },
+    note: { border: "border-l-[3px] border-l-[#378ADD] rounded-l-none rounded-r-3xl", iconBg: "bg-[#E6F1FB]", iconText: "text-[#185FA5]", abbr: "N" },
+    slides: { border: "border-l-[3px] border-l-[#D85A30] rounded-l-none rounded-r-3xl", iconBg: "bg-[#FAECE7]", iconText: "text-[#993C1D]", abbr: "S" },
+    timetable: { border: "border-l-[3px] border-l-[#888780] rounded-l-none rounded-r-3xl", iconBg: "bg-secondary", iconText: "text-muted-foreground", abbr: "T" },
+  };
+  const ts = typeStyle[m.material_type ?? ""] ?? { border: "rounded-3xl", iconBg: "bg-secondary", iconText: "text-muted-foreground", abbr: "?" };
+
+  const fileLabel =
+    kind === "pdf" ? "PDF"
+    : kind === "image" ? "IMG"
+    : (m.file_path ?? "").toLowerCase().match(/\.(ppt|pptx)/) ? "PPT"
+    : "FILE";
+
+  const metaParts = [
+    m.study_courses?.level ? `${m.study_courses.level}L` : "",
+    m.study_courses?.semester ? m.study_courses.semester : "",
+    m.session ? String(m.session) : "",
+  ].filter(Boolean);
+  const metaLine = [courseCode, ...metaParts].filter(Boolean).join(" · ");
+
+  let aiPreview: string | null = null;
+  if (m.ai_summary) {
+    try {
+      const parsed = JSON.parse(m.ai_summary);
+      aiPreview = parsed?.overview ?? parsed?.keyTopics?.[0] ?? null;
+    } catch {
+      aiPreview = typeof m.ai_summary === "string" ? m.ai_summary : null;
+    }
+  }
 
   return (
-    <Card className="rounded-3xl p-4 cursor-pointer">
-      <Link href={`/study/materials/${m.id}`} className="block no-underline">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-base font-semibold text-foreground">{title}</p>
-            {isVerified ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Verified
-              </span>
-            ) : null}
-            {isFeatured ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                <Star className="h-3.5 w-3.5" />
-                Featured
-              </span>
-            ) : null}
+    <div className={cn("overflow-hidden border border-border bg-card shadow-sm transition hover:border-border hover:shadow-md", ts.border)}>
+      <Link href={`/study/materials/${m.id}`} className="block p-4 no-underline">
+        <div className="flex items-start gap-3">
+          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-border/60", ts.iconBg)}>
+            <span className={cn("text-[11px] font-extrabold leading-none", ts.iconText)}>{ts.abbr}</span>
+            <span className="mt-0.5 font-mono text-[8px] font-medium text-muted-foreground">{fileLabel}</span>
           </div>
-
-          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-            {m.description ? m.description : dept || faculty ? `${dept}${dept && faculty ? " • " : ""}${faculty}` : " "}
-          </p>
-
-          {(() => {
-            const raw = (m as any)?.ai_summary;
-            if (!raw) return null;
-            try {
-              const parsed = JSON.parse(raw);
-              const preview = parsed?.overview ?? parsed?.keyTopics?.[0] ?? null;
-              if (!preview) return null;
-              return (
-                <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground italic">
-                  ✦ {String(preview)}
-                </p>
-              );
-            } catch {
-              return null;
-            }
-          })()}
-
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              {badge}
-            </span>
-
-            {courseCode ? (
-              <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">
-                {courseCode}
-              </span>
-            ) : null}
-
-            {courseLabel ? (
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold leading-snug text-foreground line-clamp-2">{title}</p>
+            {metaLine && <p className="mt-1 text-xs text-muted-foreground">{metaLine}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {courseCode && (
+                <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">{courseCode}</span>
+              )}
               <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                {courseLabel}
+                {dlCount.toLocaleString("en-NG")} downloads
               </span>
-            ) : null}
-
-            {metaBits.map((b) => (
-              <span
-                key={b}
-                className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground"
-              >
-                {b}
-              </span>
-            ))}
-
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
-              {formatWhen(m.created_at)}
-            </span>
+              {isPopular && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/50 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-300">Popular</span>
+              )}
+              {isVerified && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-teal-300/50 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 dark:border-teal-700/40 dark:bg-teal-950/30 dark:text-teal-300">
+                  <CheckCircle2 className="h-3 w-3" /> Verified
+                </span>
+              )}
+              {isFeatured && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/50 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-300">
+                  <Star className="h-3 w-3" /> Featured
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            <a
+              href={`/api/study/materials/${m.id}/download`}
+              download
+              onClick={(e) => { e.stopPropagation(); onDownload(); }}
+              className={cn("inline-flex items-center gap-1.5 rounded-xl bg-[#5B35D5] px-2.5 py-2 text-xs font-semibold text-white no-underline","hover:bg-[#4526B8]","focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2")}
+              aria-label="Download"
+            >
+              <Download className="h-3.5 w-3.5" /> Download
+            </a>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
+              disabled={saving}
+              className={cn(
+                "grid h-8 w-8 place-items-center rounded-xl border transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                saved ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]" : "border-border bg-background text-muted-foreground hover:bg-secondary/50",
+                saving ? "opacity-70" : ""
+              )}
+              aria-label={saved ? "Unsave material" : "Save material"}
+            >
+              {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+            </button>
           </div>
         </div>
-
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border bg-background">
-          {badgeIcon}
-        </div>
-      </div>
       </Link>
 
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onToggleSave}
-          disabled={saving}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-semibold transition",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            saved
-              ? "border-border bg-secondary text-foreground"
-              : "border-border/60 bg-background text-foreground hover:bg-secondary/50",
-            saving ? "opacity-70" : ""
-          )}
-          aria-label={saved ? "Unsave material" : "Save material"}
-          title={saved ? "Saved" : "Save"}
-        >
-          {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-          <span className="hidden sm:inline">{saved ? "Saved" : "Save"}</span>
-        </button>
+      {aiPreview && (
+        <div className="mx-4 mb-4 rounded-r-xl border-l-2 border-[#5B35D5] bg-[#EEEDFE] px-3 py-2">
+          <div className="mb-1 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-[#5B35D5]" />
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#3B24A8]">AI Summary</span>
+          </div>
+          <p className="line-clamp-2 text-xs leading-relaxed text-[#3B24A8]/80">{aiPreview}</p>
+        </div>
+      )}
 
-        <Link
-          href={`/study/materials/${m.id}`}
-          className={cn(
-            "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition no-underline",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            "bg-secondary text-foreground border-border hover:opacity-90"
-          )}
-        >
-          <BookOpen className="h-4 w-4" />
-          {kind === "other" ? "Open" : "Preview"}
-        </Link>
-
-        <a
-          href={href}
-          download
-          onClick={(e) => {
-            if (disabled) {
-              e.preventDefault();
-              return;
-            }
-            onDownload();
-          }}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-semibold transition no-underline",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            disabled
-              ? "pointer-events-none bg-muted text-muted-foreground border-border/60"
-              : "border-border/60 bg-background text-foreground hover:bg-secondary/50"
-          )}
-          aria-label="Download"
-          title="Download"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Download</span>
-        </a>
+      <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+        <span>{formatWhen(m.created_at)}</span>
+        {(m.up_votes ?? 0) > 0 && (
+          <><span>·</span><span className="text-emerald-700 dark:text-emerald-400">👍 {m.up_votes} found helpful</span></>
+        )}
       </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold text-muted-foreground">
-          {(m.downloads ?? 0).toLocaleString("en-NG")} downloads
-        </span>
-        {(m.up_votes ?? 0) > 0 ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-            <ThumbsUp className="h-3 w-3" /> {m.up_votes}
-          </span>
-        ) : null}
-        {(m.downloads ?? 0) > 50 ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-            Popular
-          </span>
-        ) : null}
-      </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1249,7 +1159,6 @@ export default function MaterialsClient() {
   const showingTo = Math.min(total, materials.length);
 
   const activeTypeLabel = MATERIAL_TYPES.find((t) => t.key === typeParam)?.label ?? "All";
-  const activeSortLabel = SORTS.find((s) => s.key === sortParam)?.label ?? "Newest";
 
   function onPreviewMaterial(m: MaterialRow) {
     const href = "";
@@ -1292,86 +1201,6 @@ export default function MaterialsClient() {
         </Link>
       )}
 
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          href="/study"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
-            "hover:bg-secondary/50",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link>
-
-      </div>
-
-      <Card className="rounded-3xl">
-        <PageHeader
-          title="Materials"
-          subtitle="Approved past questions, handouts, slides & notes."
-          right={
-            <div className="hidden sm:flex items-center gap-2">
-              {myBadge ? (
-                <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
-                  <Star className="h-4 w-4" />
-                  {myBadge}
-                </span>
-              ) : null}
-              <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
-                <Sparkles className="h-4 w-4" />
-                {activeSortLabel}
-              </span>
-            </div>
-          }
-        />
-      </Card>
-
-      {/* Scope toggle */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Link
-        href="/study/materials/my"
-        className={cn(
-          "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          "border-border bg-background hover:bg-secondary/50 text-foreground"
-        )}
-        title="Manage your uploads (My uploads)"
-      >
-        <Star className="h-4 w-4" />
-        My uploads
-      </Link>
-        <Chip
-          active={!mineOnly}
-          onClick={() =>
-            router.replace(
-              buildHref(pathname, {
-                q: qParam || null,
-                level: levelParam || null,
-                semester: semesterParam || null,
-                faculty: facultyParam || null,
-                dept: deptParam || null,
-                course: courseParam || null,
-                session: sessionParam || null,
-                type: typeParam !== "all" ? typeParam : null,
-                sort: sortParam !== "newest" ? sortParam : null,
-                verified: verifiedOnly ? "1" : null,
-                featured: featuredOnly ? "1" : null,
-                // Mark explicit "All" so we don't auto-scope back to mine after prefs load.
-                mine: "0",
-              })
-            )
-          }
-          title="Browse materials across all departments"
-        >
-          <BookOpen className="h-4 w-4" />
-          All materials
-        </Chip>
-      </div>
-
-
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
       <div className="sticky top-16 z-30">
         <Card className="rounded-3xl border bg-background/85 backdrop-blur">
@@ -1384,96 +1213,40 @@ export default function MaterialsClient() {
               className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
             {q ? (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className={cn(
-                  "grid h-9 w-9 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                )}
-                aria-label="Clear search"
-              >
+              <button type="button" onClick={() => setQ("")}
+                className={cn("grid h-9 w-9 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50","focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2")}
+                aria-label="Clear search">
                 <X className="h-4 w-4" />
               </button>
             ) : null}
-
-            <button
-              type="button"
-              onClick={openFilters}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
-                "hover:bg-secondary/50",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              )}
-            >
+            <button type="button" onClick={openFilters}
+              className={cn("inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground","hover:bg-secondary/50","focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2")}>
               <SlidersHorizontal className="h-4 w-4" />
               Filters
             </button>
-            {materials.length > 0 ? (
-              <Link
-                href="/study/materials/upload"
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground no-underline",
-                  "hover:bg-secondary/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                )}
-              >
-                <UploadCloud className="h-4 w-4" />
-                + Upload
-              </Link>
-            ) : null}
-          </div>
-
-          {/* Quick type + sort chips */}
-          <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(["all", "past_question", "handout"] as MaterialTypeKey[]).map((key) => {
-              const label = key === "all" ? "All" : key === "past_question" ? "Past Q" : "Handout";
-              const active = typeParam === key;
-              return (
-                <button key={key} type="button"
-                  onClick={() => router.replace(buildHref(pathname, {
-                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
-                    session: sessionParam || null, type: key !== "all" ? key : null,
-                    sort: sortParam !== "newest" ? sortParam : null,
-                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
-                    mine: mineParam ? mineParam : null,
-                  }))}
-                  className={cn(
-                    "flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  )}
-                >{label}</button>
-              );
-            })}
-            <button type="button" onClick={openFilters}
-              className="flex-shrink-0 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition">
-              More ↓
+            {/* Sort toggle — cycles between newest and downloads_desc */}
+            <button type="button"
+              onClick={() => {
+                const next = sortParam === "downloads_desc" ? "newest" : "downloads_desc";
+                router.replace(buildHref(pathname, {
+                  q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                  faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                  session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
+                  sort: next !== "newest" ? next : null,
+                  verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                  mine: mineParam || null,
+                }));
+              }}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-semibold transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                sortParam === "downloads_desc"
+                  ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
+                  : "border-border bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+              )}>
+              {sortParam === "downloads_desc" ? <TrendingUp className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+              {sortParam === "downloads_desc" ? "Popular" : "Newest"}
             </button>
-            <div className="ml-auto flex-shrink-0">
-              <button type="button"
-                onClick={() => {
-                  const next = sortParam === "newest" ? "downloads_desc" : "newest";
-                  router.replace(buildHref(pathname, {
-                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
-                    session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
-                    sort: next !== "newest" ? next : null,
-                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
-                    mine: mineParam ? mineParam : null,
-                  }));
-                }}
-                className={cn(
-                  "flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  sortParam !== "newest" ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {sortParam === "downloads_desc" ? <Download className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                {sortParam === "downloads_desc" ? "Most downloaded" : "Newest"}
-              </button>
-            </div>
           </div>
 
           {hasAnyFilters ? (
@@ -1581,12 +1354,48 @@ export default function MaterialsClient() {
               </Chip>
             ) : null}
 
-            <span className="ml-auto shrink-0 inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
-              <Sparkles className="h-4 w-4" />
-              {activeSortLabel}
-            </span>
           </div>
         </Card>
+      </div>
+
+      {/* Quick-access type filter chips */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "past_question", label: "Past Q" },
+            { key: "handout", label: "Handout" },
+            { key: "note", label: "Lecture Note" },
+            { key: "slides", label: "Slides" },
+          ] as const
+        ).map(({ key, label }) => {
+          const active = typeParam === key;
+          return (
+            <button key={key} type="button"
+              onClick={() => router.replace(buildHref(pathname, {
+                q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                session: sessionParam || null, type: key !== "all" ? key : null,
+                sort: sortParam !== "newest" ? sortParam : null,
+                verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                mine: mineParam || null,
+              }))}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                active
+                  ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
+                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+              )}
+            >{label}</button>
+          );
+        })}
+        <button type="button" onClick={openFilters}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background px-3 py-2 text-sm font-semibold text-muted-foreground transition",
+            "hover:bg-secondary/50 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}>More ↓</button>
       </div>
 
       {/* Error */}
@@ -1884,6 +1693,22 @@ export default function MaterialsClient() {
           </div>
         </div>
       ) : null}
+
+      {/* Upload FAB */}
+      <Link
+        href="/study/materials/upload"
+        className={cn(
+          "fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full no-underline",
+          "bg-[#5B35D5] text-white shadow-lg",
+          "hover:bg-[#4526B8]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2",
+          "md:bottom-8 md:right-8"
+        )}
+        aria-label="Upload a material"
+        title="Upload a material"
+      >
+        <UploadCloud className="h-6 w-6" />
+      </Link>
     </div>
   );
 }
