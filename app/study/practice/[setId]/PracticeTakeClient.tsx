@@ -23,7 +23,6 @@ import {
   GraduationCap,
   CalendarClock,
   TrendingUp,
-  LayoutGrid,
   Share2,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
@@ -283,6 +282,9 @@ export default function PracticeTakeClient() {
     goToQuestion,
   } = engine;
 
+  // Inline submit confirmation (replaces window.confirm)
+  const [pendingSubmit, setPendingSubmit] = useState(false);
+
   // Instant feedback: reveal correctness after first tap (per question)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
 
@@ -403,13 +405,16 @@ export default function PracticeTakeClient() {
   function handleSubmitClick() {
     if (submitted) return;
     const unanswered = stats.total - stats.answered;
-    if (unanswered > 0) {
-      const confirmed = window.confirm(
-        `${unanswered} question${unanswered !== 1 ? "s" : ""} unanswered — submit anyway?`
-      );
-      if (!confirmed) return;
+    if (unanswered > 0 && !pendingSubmit) {
+      setPendingSubmit(true);
+      return;
     }
+    setPendingSubmit(false);
     setSubmitted(true);
+  }
+
+  function cancelSubmit() {
+    setPendingSubmit(false);
   }
 
   function resetAll() {
@@ -436,33 +441,43 @@ export default function PracticeTakeClient() {
     setRevealed((m) => ({ ...m, [current.id]: true }));
   }
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts: A/B/C/D to select, Enter/ArrowRight to advance
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement).tagName)) return;
       if (submitted) return;
-      if (current && isRevealed) return; // don't fire if answer already revealed
+      if (navOpen) return;
 
       const keyMap: Record<string, number> = { a: 0, b: 1, c: 2, d: 3 };
       const optionIndex = keyMap[e.key.toLowerCase()];
 
-      if (optionIndex !== undefined && currentOptions[optionIndex]) {
-        onPick(currentOptions[optionIndex].id);
+      if (optionIndex !== undefined) {
+        const option = opts[optionIndex] as AnyOption | undefined;
+        if (!option) return;
+        if (current && revealed[current.id]) return;
+        choose(current!.id, option.id);
+        setRevealed((m) => ({ ...m, [current!.id]: true }));
         return;
       }
 
-      if (e.key === "ArrowRight") { goNext(); return; }
-      if (e.key === "ArrowLeft") { goPrev(); return; }
+      if (e.key === "ArrowRight" || (e.key === "Enter" && current && revealed[current.id])) {
+        if (!isLast) {
+          setIdx((v) => Math.min(questions.length - 1, v + 1));
+        } else {
+          handleSubmitClick();
+        }
+        return;
+      }
+
+      if (e.key === "ArrowLeft") {
+        setIdx((v) => Math.max(0, v - 1));
+      }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentOptions, submitted, current, isRevealed]);
-
-  const isUrgent = typeof meta?.time_limit_minutes === "number" && typeof timeLeftMs === "number"
-    ? timeLeftMs / (meta.time_limit_minutes * 60 * 1000) < 0.20
-    : false;
+  }, [opts, current, revealed, submitted, navOpen, isLast, questions.length, choose, setIdx]);
 
   if (dueFetching || (isDueParam && !engineReady)) {
     return (
@@ -492,7 +507,7 @@ export default function PracticeTakeClient() {
     <div className="space-y-4 pb-28 md:pb-6">
       <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 py-2 backdrop-blur border-b border-border">
         <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-          <div className="h-full w-1/3 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-foreground/70" />
+          <div className="h-full w-1/3 animate-[progress_1.2s_ease-in-out_infinite] rounded-full bg-[#5B35D5]/70" />
         </div>
       </div>
     </div>
@@ -556,7 +571,7 @@ if (err || !meta) {
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
-                  isUrgent && "animate-pulse",
+                  timeLeftMs <= 30_000 && "animate-pulse",
                   timeLeftMs <= 30_000
                     ? "border-rose-300/40 bg-rose-100/40 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
                     : timeLeftMs <= 120_000
@@ -575,11 +590,19 @@ if (err || !meta) {
 
             <button
               type="button"
-              onClick={() => setNavOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/50"
+              onClick={() => setNavOpen((v) => !v)}
+              aria-label="Open question navigator"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                navOpen
+                  ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
+                  : "border-border bg-background text-foreground hover:bg-secondary/50"
+              )}
             >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              {idx + 1}/{questions.length}
+              <span className="tabular-nums">{idx + 1}</span>
+              <span className="text-muted-foreground">/</span>
+              <span className="tabular-nums">{questions.length}</span>
             </button>
           </div>
         </div>
@@ -605,7 +628,7 @@ if (err || !meta) {
           </div>
 
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-            <div className="h-full rounded-full bg-foreground/80" style={{ width: `${answeredPct}%` }} />
+            <div className="h-full rounded-full bg-[#5B35D5]" style={{ width: `${answeredPct}%` }} />
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
             <span className="tabular-nums">{answeredPct}% done</span>
@@ -636,72 +659,62 @@ if (err || !meta) {
       ) : submitted ? (
         /* Results */
         <div className="mt-4 space-y-3">
-          <Card className="rounded-3xl">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-foreground">
-                  {isDueMode ? "Due Today — Done" : isRetryMode ? "Retry Results" : "Results"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Score:{" "}
-                  <span className="font-extrabold text-foreground">{stats.correct}</span> /{" "}
-                  <span className="font-extrabold text-foreground">{stats.total}</span>
-                  {finalizing ? (
-                    <span className="ml-2 inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
-                    </span>
-                  ) : null}
-                </p>
-                {isDueMode && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Spaced repetition queue for this set.
-                  </p>
-                )}
-                {!isDueMode && isRetryMode && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Practising weak questions only.
-                  </p>
-                )}
+          <div className="overflow-hidden rounded-3xl bg-[#5B35D5]">
+            <div className="px-5 py-6 text-center">
+              {milestone && (
+                <div className="mb-3 text-4xl">{milestone.emoji}</div>
+              )}
+              <div className="text-5xl font-extrabold tracking-tight text-white">
+                {stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0}%
               </div>
-
-              <button
-                type="button"
-                onClick={resetAll}
-                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <RefreshCcw className="h-4 w-4" /> Restart
-              </button>
+              <div className="mt-1 text-sm font-semibold text-white/70">
+                {stats.correct} / {stats.total} correct
+              </div>
+              <div className="mt-2 truncate px-4 text-sm font-semibold text-white/60">
+                {normalize(meta.title)}
+                {meta.course_code ? ` · ${meta.course_code}` : ""}
+              </div>
+              <div className="mt-4 flex items-center justify-center gap-6 text-xs font-semibold text-white/70">
+                {streakCount !== null && (
+                  <span>🔥 {streakCount}-day streak</span>
+                )}
+                {finalizing ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+                  </span>
+                ) : (
+                  <span>✓ Saved</span>
+                )}
+                {isDueMode && <span>📚 Due review</span>}
+                {isRetryMode && <span>🔁 Retry mode</span>}
+              </div>
             </div>
-          </Card>
 
-          <Card className="rounded-3xl">
-            <p className="text-xs font-extrabold text-muted-foreground">Set</p>
-            <p className="mt-1 text-sm font-semibold text-foreground">{normalize(meta.title)}</p>
-            {meta.course_code || meta.level ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {[meta.course_code, meta.level].filter(Boolean).join(" • ")}
-              </p>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Link
-                href="/study/practice"
-                className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground hover:bg-secondary/50"
-              >
-                Back to sets
-              </Link>
+            <div className="flex flex-wrap items-center justify-center gap-2 border-t border-white/15 px-5 py-4">
               <button
                 type="button"
                 onClick={resetAll}
-                className="inline-flex items-center justify-center rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
               >
-                Try again
+                <RefreshCcw className="h-4 w-4" /> Retry
               </button>
+
+              {stats.correct < stats.total && (
+                <button
+                  type="button"
+                  onClick={() => { setRevealed({}); retryWeakQuestions(); }}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry weak ({stats.total - stats.correct})
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={async () => {
-                  const setTitle = normalize(meta?.title ?? "");
-                  const text = `I scored ${stats.correct}/${stats.total} on "${setTitle}" on Jabumarket Study Hub!`;
+                  const pct = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+                  const text = `I scored ${pct}% on "${normalize(meta.title)}" on Jabumarket Study Hub!`;
                   try {
                     if (typeof navigator.share === "function") {
                       await navigator.share({ text, title: "My Practice Score" });
@@ -710,36 +723,20 @@ if (err || !meta) {
                     }
                   } catch { /* user cancelled */ }
                 }}
-                className={cn(
-                  "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-sm font-extrabold text-foreground",
-                  "hover:bg-secondary/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                )}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
               >
                 <Share2 className="h-4 w-4" />
-                Share result
+                Share
               </button>
-              {/* Retry Weak Questions — only shown when there are wrong/unanswered */}
-              {stats.correct < stats.total && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRevealed({});
-                    retryWeakQuestions();
-                  }}
-                  className={cn(
-                    "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold",
-                    "bg-rose-500/10 text-rose-700 hover:bg-rose-500/20",
-                    "dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-950/50",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
-                  )}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Retry Weak ({stats.total - stats.correct})
-                </button>
-              )}
+
+              <Link
+                href="/study/practice"
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-extrabold text-[#5B35D5] no-underline hover:bg-white/90"
+              >
+                Back to sets
+              </Link>
             </div>
-          </Card>
+          </div>
 
           {/* ── SRS summary card ──────────────────────────────────────────── */}
           {weakSummary && weakSummary.filter((r) => !r.wasCorrect).length > 0 ? (
@@ -835,88 +832,102 @@ if (err || !meta) {
             </Card>
           ) : null}
 
-          {/* Streak feedback */}
-          {streakCount !== null && (
-            <div className={cn(
-              "rounded-3xl border p-4",
-              streakCount >= 7
-                ? "border-amber-300/50 bg-amber-50 dark:bg-amber-950/20"
-                : "border-border bg-background"
-            )}>
-              <p className="text-sm font-extrabold text-foreground">
-                {streakCount === 1
-                  ? "You started a streak today — come back tomorrow!"
-                  : streakCount >= 7
-                  ? `${streakCount}-day streak — you're on a roll!`
-                  : `${streakCount}-day streak — keep it going!`}
+          {/* What next? */}
+          <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+            <div className="border-b border-border px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                What next?
               </p>
             </div>
-          )}
-
-          {/* What next? */}
-          <div className="rounded-3xl border border-border bg-background p-4">
-            <p className="text-xs font-extrabold uppercase tracking-widest text-muted-foreground mb-3">What next?</p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {weakSummary && weakSummary.some((r) => !r.wasCorrect) && (
-                <Link
-                  href={`/study/practice/${setId}?due=1`}
-                  className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            <div className="grid grid-cols-2 divide-x divide-y divide-border">
+              {stats.correct < stats.total && (
+                <button
+                  type="button"
+                  onClick={() => { setRevealed({}); retryWeakQuestions(); }}
+                  className="flex flex-col gap-2 p-4 text-left hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
-                  <RotateCcw className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-semibold text-foreground">Retry weak questions</p>
-                </Link>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/30">
+                    <RotateCcw className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Retry weak Qs</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {stats.total - stats.correct} questions below 60%
+                    </p>
+                  </div>
+                </button>
               )}
+
               {meta?.course_code && (
                 <Link
                   href={`/study/materials?course=${encodeURIComponent(meta.course_code)}`}
-                  className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
-                  <BookOpen className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-semibold text-foreground">Browse materials for {meta.course_code}</p>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E1F5EE]">
+                    <BookOpen className="h-4 w-4 text-[#1D9E75]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{meta.course_code} materials</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Brush up on weak topics</p>
+                  </div>
                 </Link>
               )}
+
               <Link
                 href="/study/practice"
-                className="flex flex-col gap-1.5 rounded-2xl border border-border bg-background p-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
-                <GraduationCap className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm font-semibold text-foreground">Try another set</p>
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#EEEDFE]">
+                  <GraduationCap className="h-4 w-4 text-[#5B35D5]" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Another set</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Browse all practice sets</p>
+                </div>
+              </Link>
+
+              <Link
+                href="/study/history"
+                className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/30">
+                  <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">View history</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Track progress over time</p>
+                </div>
               </Link>
             </div>
           </div>
-
-          {/* Tutor prompt for low scores */}
-          {submitted && stats.total > 0 && (stats.correct / stats.total) < 0.5 && (
-            <Link
-              href={`/study/tutors${meta?.course_code ? `?course=${encodeURIComponent(meta.course_code)}` : ''}`}
-              className="flex items-center justify-between gap-3 rounded-2xl border bg-background px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 no-underline"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">Need help?</p>
-                <p className="text-xs text-muted-foreground">
-                  Browse tutors for {meta?.course_code ?? 'this course'}.
-                </p>
-              </div>
-              <GraduationCap className="h-5 w-5 shrink-0 text-muted-foreground" />
-            </Link>
-          )}
-
-          {/* GPA calculator prompt */}
-          {stats.correct > 0 && (
-            <div className="text-sm text-muted-foreground text-center mt-4">
-              Want to track how this affects your GPA?{" "}
-              <Link
-                href="/study/gpa"
-                className="underline underline-offset-2 font-semibold text-foreground hover:opacity-80"
-              >
-                Open GPA calculator →
-              </Link>
-            </div>
-          )}
         </div>
       ) : (
         /* Question */
         <div className="mt-4 space-y-3">
+          {pendingSubmit && (
+            <div className="rounded-2xl border border-amber-300/50 bg-amber-50 px-4 py-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                {stats.total - stats.answered} question{stats.total - stats.answered !== 1 ? "s" : ""} unanswered — submit anyway?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSubmitClick}
+                  className="rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                >
+                  Submit anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelSubmit}
+                  className="rounded-xl border border-amber-300/50 bg-background px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50 dark:text-amber-200"
+                >
+                  Go back
+                </button>
+              </div>
+            </div>
+          )}
+
           <Card className="rounded-3xl">
             <p className="text-xs font-extrabold text-muted-foreground">
               Question <span className="tabular-nums">{idx + 1}</span> of{" "}
@@ -1044,9 +1055,9 @@ if (err || !meta) {
                     type="button"
                     onClick={handleSubmitClick}
                     className={cn(
-                      "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                       studyMode
-                        ? "bg-[#5B35D5] text-white dark:bg-[#4526B8]"
+                        ? "bg-[#5B35D5] text-white hover:bg-[#4526B8]"
                         : "bg-secondary text-foreground"
                     )}
                   >
@@ -1086,36 +1097,6 @@ if (err || !meta) {
             </div>
           ) : null}
 
-          {/* Bottom quick actions (simple, mobile-friendly) */}
-          <Card className="rounded-3xl">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-extrabold text-muted-foreground">Quick actions</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {studyMode
-                    ? "Finish when you’re done. Your progress is saved."
-                    : "Submit anytime. After you pick an option, it locks and shows the correct one."}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSubmitClick}
-                className={cn(
-                  "shrink-0 inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                  studyMode
-                    ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] hover:bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300"
-                    : "border-border bg-background text-foreground hover:bg-secondary/50"
-                )}
-              >
-                {studyMode ? (
-                  <><GraduationCap className="h-4 w-4" /> Finish</>
-                ) : (
-                  <><Send className="h-4 w-4" /> Submit</>
-                )}
-              </button>
-            </div>
-          </Card>
         </div>
       )}
 

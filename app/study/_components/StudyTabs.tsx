@@ -218,7 +218,7 @@ function MoreSheet({
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                   "active:scale-[0.98]",
                   active
-                    ? "border-primary/20 bg-primary/5"
+                    ? "border-[#5B35D5]/20 bg-[#EEEDFE]"
                     : "border-border/60 bg-background hover:bg-secondary/50 hover:border-border"
                 )}
               >
@@ -237,7 +237,7 @@ function MoreSheet({
                     <p
                       className={cn(
                         "text-sm font-bold",
-                        active ? "text-primary" : "text-foreground"
+                        active ? "text-[#3B24A8]" : "text-foreground"
                       )}
                     >
                       {item.label}
@@ -250,7 +250,7 @@ function MoreSheet({
                             ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
                             : item.badge === "Reapply"
                             ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
-                            : "bg-foreground text-background"
+                            : "bg-[#EEEDFE] text-[#3B24A8] border border-[#5B35D5]/20"
                         )}
                       >
                         {item.badge}
@@ -265,7 +265,7 @@ function MoreSheet({
 
                 {/* Active dot */}
                 {active && (
-                  <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                  <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B35D5]" />
                 )}
               </Link>
             );
@@ -287,8 +287,8 @@ function StudyOnboardingBannerInner() {
   const { shouldShowBanner } = useStudyOnboardingBanner();
   if (!shouldShowBanner) return null;
   return (
-    <div className="rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] p-3 flex items-center justify-between gap-3">
-      <p className="text-sm text-[#3B24A8] dark:text-indigo-200">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
+      <p className="text-sm font-medium text-[#3B24A8] dark:text-indigo-200">
         Complete your study profile to get personalised content.
       </p>
       <Link
@@ -397,7 +397,7 @@ export default function StudyTabs({
       description: "Your saved materials, sets and questions",
       icon: BookMarked,
       color:
-        "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
+        "bg-[#EEEDFE] text-[#5B35D5]",
     },
     {
       href: "/study/gpa",
@@ -421,7 +421,7 @@ export default function StudyTabs({
       description: "Generate a personalised study schedule with Gemini",
       icon: BrainCircuit,
       color:
-        "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
+        "bg-[#EEEDFE] text-[#5B35D5]",
       badge: "AI",
     },
     {
@@ -457,7 +457,7 @@ export default function StudyTabs({
       description: "Find verified tutors for your courses",
       icon: GraduationCap,
       color:
-        "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
+        "bg-purple-50 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
     },
   ];
 
@@ -488,7 +488,7 @@ export default function StudyTabs({
                       "leading-none select-none",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                       active
-                        ? "border-primary/30 bg-primary/10 text-primary"
+                        ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
                         : tab.href === "/study/practice"
                           ? "border-[#5B35D5]/25 bg-[#EEEDFE]/60 text-[#5B35D5] hover:bg-[#EEEDFE]"
                           : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -512,13 +512,13 @@ export default function StudyTabs({
                 "leading-none select-none",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 overflowActive
-                  ? "border-primary/30 bg-primary/10 text-primary"
+                  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]"
                   : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
               )}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
               {overflowActive && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#5B35D5] ring-2 ring-background" />
               )}
             </button>
           </div>
@@ -538,7 +538,7 @@ export default function StudyTabs({
                     "leading-none select-none",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                     active
-                      ? "border-primary/30 bg-primary/10 text-primary"
+                      ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
                       : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                   )}
                 >
@@ -558,14 +558,14 @@ export default function StudyTabs({
                 "leading-none select-none",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                 overflowActive
-                  ? "border-primary/30 bg-primary/10 text-primary"
+                  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]"
                   : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
               )}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
               <span>More</span>
               {overflowActive && (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5B35D5]" />
               )}
             </button>
           </div>

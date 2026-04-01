@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, Flag,
+  AlertTriangle, CheckCircle2, Flag,
   GraduationCap, Loader2, RotateCcw, Send,
   Sparkles, ThumbsUp, Zap,
 } from "lucide-react";
@@ -176,7 +176,7 @@ function AnswerUpvoteButton({ answerId, initialCount, meId, onError }: {
     <button type="button" onClick={toggle} disabled={loading}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors",
-        voted ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-secondary/60",
+        voted ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]" : "border-border bg-background text-foreground hover:bg-secondary/60",
         loading && "opacity-60 cursor-not-allowed"
       )}>
       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />}
@@ -318,27 +318,6 @@ export default function QuestionDetailClient({ id }: { id: string }) {
   return (
     <div className="space-y-4 pb-24 md:pb-6">
 
-      {/* Top bar */}
-      <div className="flex items-center gap-3">
-        <Link href="/study/questions"
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground no-underline hover:bg-secondary/50">
-          <ArrowLeft className="h-4 w-4" /> Questions
-        </Link>
-        {question && (
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            {question.course_code && (
-              <span className="shrink-0 rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                {question.course_code}
-              </span>
-            )}
-            {question.level && (
-              <span className="shrink-0 rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                {question.level}L
-              </span>
-            )}
-          </div>
-        )}
-      </div>
 
       {loading ? <QuestionSkeleton /> : error ? (
         <div className="rounded-2xl border border-border bg-background p-5">
@@ -388,7 +367,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                 <button type="button" onClick={toggleUpvote} disabled={myVoteLoading}
                   className={cn(
                     "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium transition-colors",
-                    myUpvoted ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-secondary/60",
+                    myUpvoted ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]" : "border-border bg-background text-foreground hover:bg-secondary/60",
                     myVoteLoading && "opacity-70"
                   )}>
                   {myVoteLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
@@ -434,20 +413,37 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                 <>
                   {answers.map((a) => {
                     const isAi = !!(a.is_ai || a.author_email === "ai@jabumarket.app");
-                    return (
-                      <div key={a.id}
-                        className={cn("rounded-2xl border p-4", a.is_accepted ? "border-l-[3px]" : "")}
-                        style={
-                          a.is_accepted ? { borderColor: "#97C459", borderLeftColor: "#1D9E75", background: "#EAF3DE" } :
-                          isAi          ? { borderColor: "#AFA9EC", background: ACCENT_BG } :
-                          undefined
-                        }>
-                        {a.is_accepted && (
-                          <div className="mb-2 flex items-center gap-1.5">
-                            <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "#1D9E75" }} />
-                            <span className="text-xs font-semibold" style={{ color: "#3B6D11" }}>Accepted answer</span>
+                    return a.is_accepted ? (
+                      /* Accepted answer — pinned visual with teal banner header */
+                      <div key={a.id} className="overflow-hidden rounded-2xl border border-teal-300/50 dark:border-teal-700/40">
+                        {/* Banner */}
+                        <div className="flex items-center gap-2 border-b border-teal-200/60 bg-[#E1F5EE] px-4 py-2.5 dark:border-teal-700/30 dark:bg-teal-950/30">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#1D9E75]" />
+                          <span className="text-xs font-bold text-[#085041] dark:text-teal-300">
+                            Accepted answer
+                          </span>
+                        </div>
+                        {/* Answer body */}
+                        <div className="bg-card p-4">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{a.body}</p>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              <span className="font-medium capitalize text-foreground">{maskEmail(a.author_email)}</span>
+                              {" · "}{formatWhen(a.created_at)}
+                            </span>
+                            <AnswerUpvoteButton
+                              answerId={a.id}
+                              initialCount={a.upvotes_count ?? 0}
+                              meId={meId}
+                              onError={(msg) => setPostError(msg)}
+                            />
                           </div>
-                        )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Regular or AI answer */
+                      <div key={a.id} className="rounded-2xl border p-4"
+                        style={isAi ? { borderColor: "#AFA9EC", background: ACCENT_BG } : undefined}>
                         {isAi && (
                           <div className="mb-2 flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
@@ -457,7 +453,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                             <span className="text-[10px]" style={{ color: "#534AB7" }}>Verify before your exam</span>
                           </div>
                         )}
-                        <p className="whitespace-pre-wrap text-sm text-foreground">{a.body}</p>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{a.body}</p>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs text-muted-foreground">
                             {isAi ? (
@@ -470,21 +466,20 @@ export default function QuestionDetailClient({ id }: { id: string }) {
                             )}
                           </span>
                           <div className="flex items-center gap-2">
-                            {a.is_accepted ? (
-                              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-                                style={{ background: "#1D9E75", color: "#fff" }}>
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Accepted
-                              </span>
-                            ) : isMyQuestion ? (
+                            {isMyQuestion && !a.is_accepted && (
                               <button type="button" onClick={() => acceptAnswer(a.id)}
                                 className="inline-flex items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/60"
                                 style={{ borderColor: "#97C459" }}>
                                 <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "#1D9E75" }} /> Accept
                               </button>
-                            ) : null}
+                            )}
                             {!isAi && (
-                              <AnswerUpvoteButton answerId={a.id} initialCount={a.upvotes_count ?? 0}
-                                meId={meId} onError={(msg) => setPostError(msg)} />
+                              <AnswerUpvoteButton
+                                answerId={a.id}
+                                initialCount={a.upvotes_count ?? 0}
+                                meId={meId}
+                                onError={(msg) => setPostError(msg)}
+                              />
                             )}
                           </div>
                         </div>
@@ -534,7 +529,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
               className="w-full resize-none rounded-2xl border border-border bg-background p-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
             />
             <div className="flex items-center justify-between gap-2">
-              <span className={cn("text-xs", answerBody.length > ANSWER_MAX - 100 ? "text-amber-600" : "text-muted-foreground")}>
+              <span className={cn("text-xs tabular-nums", answerBody.length > ANSWER_MAX - 100 ? "text-rose-600" : "text-muted-foreground")}>
                 {answerBody.length}/{ANSWER_MAX}
               </span>
               <div className="flex gap-2">

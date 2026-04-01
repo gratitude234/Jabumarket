@@ -6,12 +6,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "../_components/StudyTabs";
-import { Card, EmptyState, PageHeader, SkeletonCard } from "../_components/StudyUI";
+import { Card, EmptyState, SkeletonCard } from "../_components/StudyUI";
 import { StudyPrefsProvider, useStudyPrefs } from "../_components/StudyPrefsContext";
 import { RequestCourseModal } from "../_components/RequestCourseModal";
 import {
   ArrowRight,
   BookOpen,
+  CalendarClock,
   GraduationCap,
   CheckCircle2,
   Clock,
@@ -383,7 +384,7 @@ function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) 
               "inline-flex shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               active
-                ? "border-primary/30 bg-primary/10 text-primary"
+                ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
                 : "border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
             )}
           >
@@ -1537,87 +1538,71 @@ function PracticeHomeInner() {
       {!hasPrefs && (
         <Link
           href="/study/onboarding"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 no-underline dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200"
         >
           <span><strong>Tip:</strong> Set your department to personalise your practice sets.</span>
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Link>
       )}
 
-      {/* Header */}
-      <Card className="rounded-3xl">
-        <PageHeader
-          title="Practice"
-          subtitle="Pick a set, preview it, and start in one tap."
-          right={
-            <span className="hidden sm:inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
-              <Sparkles className="h-4 w-4" />
-              {activeSortLabel}
-            </span>
-          }
-        />
-      </Card>
-
       {/* ── Due Today card (SRS) ─────────────────────────────────────── */}
       {!dueLoading && dueData && dueData.total > 0 ? (
-        <Card className="w-full max-w-full overflow-hidden rounded-3xl border-[#5B35D5]/20 bg-[#EEEDFE] p-4 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5]">
-                  <GraduationCap className="h-4 w-4" />
-                </span>
-                <p className="text-base font-semibold text-foreground">Due today</p>
-                <span className="inline-flex items-center rounded-full border border-[#5B35D5]/25 bg-[#5B35D5]/[0.07] px-2 py-0.5 text-[11px] font-extrabold text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300">
-                  {dueData.total} question{dueData.total !== 1 ? "s" : ""}
-                </span>
+        <div className="overflow-hidden rounded-3xl border border-[#5B35D5]/20 bg-card shadow-sm">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5B35D5]">
+                <CalendarClock className="h-4 w-4 text-white" />
               </div>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Questions you’ve missed before, timed for today’s review.
-              </p>
-              {/* Show which sets have due questions */}
-              <div className="mt-2.5 flex max-w-full flex-wrap gap-1.5">
-                {dueData.sets.slice(0, 3).map((s) => (
-                  <span
-                    key={s.set_id}
-                    className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground"
-                  >
-                    {s.course_code ? (
-                      <span className="font-extrabold text-foreground">{s.course_code}</span>
-                    ) : null}
-                    {s.question_count} Q
-                  </span>
-                ))}
-                {dueData.sets.length > 3 ? (
-                  <span className="text-[11px] text-muted-foreground">+{dueData.sets.length - 3} more sets</span>
-                ) : null}
+              <div>
+                <p className="text-sm font-extrabold text-foreground">Due for review today</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Questions you’ve missed before, spaced for today
+                </p>
               </div>
             </div>
+            <span className="rounded-full border border-[#5B35D5]/20 bg-[#EEEDFE] px-2.5 py-1 text-[11px] font-extrabold text-[#3B24A8]">
+              {dueData.total} Q
+            </span>
+          </div>
 
-            <div className="flex flex-col gap-2 shrink-0">
-              {dueData.sets.slice(0, 3).map((s, i) => (
+          {/* Per-course rows */}
+          <div className="border-t border-[#5B35D5]/10">
+            {dueData.sets.map((s, i) => (
+              <div
+                key={s.set_id}
+                className={cn(
+                  "flex items-center justify-between gap-3 px-4 py-3",
+                  i < dueData.sets.length - 1 && "border-b border-[#5B35D5]/10"
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div
+                    className="h-2 w-2 shrink-0 rounded-full bg-[#5B35D5]"
+                    style={{ opacity: Math.max(0.3, 1 - i * 0.25) }}
+                  />
+                  <span className="text-sm font-semibold text-foreground">
+                    {s.course_code ?? s.set_title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    · {s.question_count} question{s.question_count !== 1 ? "s" : ""}
+                  </span>
+                </div>
                 <button
-                  key={s.set_id}
                   type="button"
                   onClick={() => router.push(`/study/practice/${s.set_id}?mode=study&due=1`)}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold",
-                    i === 0
-                      ? "bg-[#5B35D5] text-white hover:bg-[#4526B8] dark:bg-[#5B35D5] dark:hover:bg-[#4526B8]"
-                      : "border border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] hover:bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    "shrink-0 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-bold text-white",
+                    "hover:bg-[#4526B8]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
                   )}
                 >
-                  <GraduationCap className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate max-w-[120px]">
-                    {s.course_code ?? s.set_title.slice(0, 18)}
-                  </span>
-                  <span className="opacity-75">({s.question_count})</span>
+                  Review →
                 </button>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        </Card>
+        </div>
       ) : null}
 
       {/* Tabs: For you / Recent / All */}

@@ -67,8 +67,8 @@ function QuestionCard({ q, saved, saving, onToggleSave }: {
     >
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium leading-snug text-foreground">{title}</p>
-        {q.body && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{q.body.trim()}</p>
+        {q.body && q.body.trim().length > 0 && (
+          <p className="mt-1 line-clamp-1 text-xs text-muted-foreground leading-relaxed">{q.body.trim()}</p>
         )}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -362,26 +362,18 @@ function QuestionsInner() {
 
       {!hasPrefs && (
         <Link href="/study/onboarding"
-          className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm no-underline"
-          style={{ borderColor: "#AFA9EC", background: "#EEEDFE", color: "#3C3489" }}>
+          className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
           <span>Set your department to see questions from your courses.</span>
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
       )}
 
-      {/* Page header + Ask CTA */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-medium text-foreground">Questions</h1>
-          <p className="text-xs text-muted-foreground">
-            {total > 0 ? `${total} question${total !== 1 ? "s" : ""}` : "Ask, answer, learn with your peers"}
-          </p>
-        </div>
-        <Link href="/study/questions/ask"
-          className="inline-flex items-center gap-1.5 rounded-2xl px-4 py-2.5 text-sm font-medium text-white no-underline"
-          style={{ background: ACCENT }}>
-          <MessageSquarePlus className="h-4 w-4" /> Ask
-        </Link>
+      {/* Page header */}
+      <div>
+        <h1 className="text-xl font-extrabold tracking-tight text-foreground">Q&amp;A Forum</h1>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {total > 0 ? `${total} question${total !== 1 ? "s" : ""} · ask, answer, learn` : "Ask, answer, learn with your peers"}
+        </p>
       </div>
 
       {/* Merged search bar — detects course code pattern automatically */}
@@ -438,8 +430,8 @@ function QuestionsInner() {
                 "flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 isActive
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary/40"
               )}
             >
               {label}
@@ -457,7 +449,7 @@ function QuestionsInner() {
               }))}
               className={cn(
                 "flex-shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground"
+                active ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]" : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary/40"
               )}
             >
               {lvl}L
@@ -583,16 +575,22 @@ function QuestionsInner() {
         </div>
       </Drawer>
 
-      {/* Floating Ask button */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-40 flex justify-end px-4 md:bottom-6">
-        <Link
-          href="/study/questions/ask"
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white shadow-lg no-underline hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          style={{ background: ACCENT }}
-        >
-          <MessageSquarePlus className="h-4 w-4" /> Ask
-        </Link>
-      </div>
+      {/* Floating Ask FAB — always accessible while scrolling */}
+      <Link
+        href="/study/questions/ask"
+        className={cn(
+          "fixed bottom-24 right-4 z-40 flex items-center justify-center rounded-full no-underline",
+          "bg-[#5B35D5] text-white shadow-lg shadow-[#5B35D5]/30",
+          "hover:bg-[#4526B8]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2",
+          "md:bottom-8 md:right-8"
+        )}
+        style={{ width: 52, height: 52 }}
+        aria-label="Ask a question"
+        title="Ask a question"
+      >
+        <MessageSquarePlus className="h-5 w-5" />
+      </Link>
 
       {toast && (
         <Toast text={toast.text} actionLabel={toast.undo ? "Undo" : undefined}

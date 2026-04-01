@@ -101,10 +101,10 @@ export default function AskQuestionClient() {
 
       {/* Auth gate */}
       {!userId && (
-        <div className="rounded-2xl border border-amber-200/70 bg-amber-50/60 p-4 dark:border-amber-700/30 dark:bg-amber-950/10">
+        <div className="rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] p-4 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-background">
-              <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B35D5]">
+              <ShieldAlert className="h-4 w-4 text-white" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">Sign in required</p>
@@ -130,7 +130,7 @@ export default function AskQuestionClient() {
             <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Title
             </label>
-            <span className={cn("text-xs", titleRemaining < 20 ? "text-amber-600" : "text-muted-foreground")}>
+            <span className={cn("text-xs tabular-nums", titleRemaining < 20 ? "text-rose-600" : "text-muted-foreground")}>
               {title.length}/{TITLE_MAX}
             </span>
           </div>
@@ -141,6 +141,17 @@ export default function AskQuestionClient() {
             className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             maxLength={TITLE_MAX}
           />
+          {title.length > 0 && (
+            <div className="mt-2 h-0.5 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  titleRemaining < 20 ? "bg-rose-500" : "bg-[#5B35D5]"
+                )}
+                style={{ width: `${Math.min(100, (title.length / TITLE_MAX) * 100)}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Course + Level side by side */}
@@ -180,7 +191,7 @@ export default function AskQuestionClient() {
             <label className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Details
             </label>
-            <span className={cn("text-xs", bodyRemaining < 200 ? "text-amber-600" : "text-muted-foreground")}>
+            <span className={cn("text-xs tabular-nums", bodyRemaining < 200 ? "text-rose-600" : "text-muted-foreground")}>
               {body.length}/{BODY_MAX}
             </span>
           </div>

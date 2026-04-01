@@ -236,7 +236,11 @@ export default function BottomNav() {
                   href={item.href}
                   className={[
                     "flex flex-col items-center justify-center gap-1 text-xs no-underline",
-                    active ? "text-primary font-medium" : "text-muted-foreground",
+                    active
+                      ? item.href === "/study"
+                        ? "text-[#5B35D5] font-semibold"
+                        : "text-[#FF5C00] font-semibold"
+                      : "text-muted-foreground",
                   ].join(" ")}
                 >
                   <span className="relative">
