@@ -1354,6 +1354,15 @@ export default function MaterialsClient() {
               </Chip>
             ) : null}
 
+            {courseParam ? (
+              <Link
+                href={`/study/courses/${encodeURIComponent(courseParam)}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#5B35D5]/25 bg-[#EEEDFE] px-3 py-1.5 text-xs font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10"
+              >
+                {courseParam} hub →
+              </Link>
+            ) : null}
+
           </div>
         </Card>
       </div>

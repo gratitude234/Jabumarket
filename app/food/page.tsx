@@ -50,7 +50,7 @@ export default async function FoodPage({
   // Bug fix: previous version was missing the verification check.
   const { data: vendors } = await supabase
     .from('vendors')
-    .select('id, name, description, avatar_url, opens_at, closes_at, accepts_orders, accepts_delivery, day_schedule')
+    .select('id, user_id, name, description, avatar_url, opens_at, closes_at, accepts_orders, accepts_delivery, day_schedule')
     .eq('vendor_type', 'food')
     .eq('accepts_orders', true)
     .or('verified.eq.true,verification_status.eq.verified')
@@ -163,6 +163,7 @@ export default async function FoodPage({
 
       {/* Search + vendor grid (shell owns search-active state) */}
       <FoodPageShell
+        currentUserId={user?.id ?? null}
         vendors={filteredList.map((v) => {
           const rating    = ratingsMap[v.id];
           const menuItems = menuMap[v.id] ?? [];
@@ -172,7 +173,7 @@ export default async function FoodPage({
               ? `${formatHour(v.opens_at)} – ${formatHour(v.closes_at)}`
               : null;
           return {
-            id: v.id, name: v.name, description: v.description,
+            id: v.id, user_id: (v as any).user_id ?? null, name: v.name, description: v.description,
             avatar_url: v.avatar_url, opens_at: v.opens_at, closes_at: v.closes_at,
             open, hours, rating: rating ?? null, menuItems,
             day_schedule: (v as any).day_schedule ?? null,

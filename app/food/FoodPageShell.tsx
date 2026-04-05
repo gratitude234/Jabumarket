@@ -10,9 +10,10 @@ import type { FoodVendorData } from './FoodVendorGrid';
 type Props = {
   vendors: FoodVendorData[];
   emptyNode: React.ReactNode;
+  currentUserId?: string | null;
 };
 
-export default function FoodPageShell({ vendors, emptyNode }: Props) {
+export default function FoodPageShell({ vendors, emptyNode, currentUserId }: Props) {
   const [searchActive, setSearchActive] = useState(false);
 
   return (
@@ -22,7 +23,7 @@ export default function FoodPageShell({ vendors, emptyNode }: Props) {
       {/* Vendor grid is hidden (not unmounted) while search is active so
           MealBuilder state inside it isn't destroyed on clear */}
       <div className={searchActive ? 'hidden' : undefined}>
-        {vendors.length === 0 ? emptyNode : <FoodVendorGrid vendors={vendors} />}
+        {vendors.length === 0 ? emptyNode : <FoodVendorGrid vendors={vendors} currentUserId={currentUserId} />}
       </div>
     </>
   );

@@ -9,6 +9,7 @@ npm run dev      # Start development server (localhost:3000)
 npm run build    # Production build (also type-checks — run this to verify changes)
 npm run start    # Start production server
 npm run lint     # ESLint check
+npx shadcn@latest add <component>  # Add a shadcn/ui component to components/ui/
 ```
 
 No test suite is configured.
@@ -48,11 +49,11 @@ Three distinct clients — always use the right one:
 | Server | `lib/supabase/server.ts` → `createSupabaseServerClient()` | Server Components, Route Handlers (must `await`) |
 | Admin / Service Role | `lib/supabase/admin.ts` → `createSupabaseAdminClient()` | Route Handlers that bypass RLS — **never import in client components** |
 
-Session cookies are refreshed by `proxy.ts` (acts as Next.js middleware — `middleware.ts` is intentionally unused).
+Session cookies are refreshed by `proxy.ts` — this file IS the Next.js middleware (named `proxy.ts` instead of `middleware.ts`, which is intentionally absent). It exports both `proxy` and `config` (with the standard `matcher`).
 
 ### Layout System
 
-`AppChrome` (`components/layout/AppChrome.tsx`) wraps all non-admin pages with `TopNav`, `MobileTopBar`, and `BottomNav`. Admin pages (`/admin/*`) and study-admin pages (`/study-admin/*`) render children directly via their own shells — **do not add AppChrome wrappers to admin routes**.
+`AppChrome` (`components/layout/AppChrome.tsx`) wraps all non-admin pages with `TopNav`, `MobileTopBar`, and `BottomNav`. The page container class is `"mx-auto w-full max-w-6xl px-4 md:px-6 lg:max-w-7xl lg:px-8"`. Admin pages (`/admin/*`) and study-admin pages (`/study-admin/*`) render children directly via their own shells — **do not add AppChrome wrappers to admin routes**.
 
 - `components/admin/AdminShell.tsx` — shell for `/admin/*`
 - `components/studyAdmin/StudyAdminShell.tsx` — shell for `/study-admin/*`
@@ -92,6 +93,10 @@ Storage bucket: `study-materials`. Path: `materials/{dept_id}/{course_code}/{mat
 
 Rep uploads go through a separate admin upload path (`/api/study-admin/upload/*`) and are auto-approved. Student uploads go to the queue.
 
+### Food / Meal Ordering
+
+`hooks/useMealBuilder.ts` + `types/meal-builder.ts` implement the food ordering UI. `lib/meal-builder.ts` contains pure builder logic. The meal builder supports stepped ordering (required_single, required_single_qty, required_multi_qty, optional_single, optional_multi) driven by `MenuCategoryInfo` step types. The app/food route and vendor menu API (`/api/vendor/menu`) feed into this flow.
+
 ### AI Integration
 
 `lib/gemini.ts` wraps Gemini 2.5 Flash-Lite via direct REST calls (no SDK). **Server-only** — never import in client components. Exports `gemini(prompt)` and `geminiJson<T>(prompt)`.
@@ -107,11 +112,16 @@ Two parallel notification systems:
 
 `lib/studyAdmin/notifyUploader.ts` — helpers for notifying uploaders on material approval/rejection.
 
+### PWA
+
+The app is a full PWA. `public/sw.js` is the service worker (registered by `components/ServiceWorkerRegister.tsx`). `public/manifest.json` defines the install metadata. `components/PWAInstallProvider.tsx` captures the `beforeinstallprompt` event (also captured early in `app/layout.tsx` via an inline script before React hydrates) and exposes it via context. `components/PWAInstallBanner.tsx` renders the install prompt. SW update detection fires a custom `sw-update-available` event handled in `AppChrome`.
+
 ### Cron Jobs
 
-`app/api/cron/streak-reminder/route.ts` — streak reminder via WhatsApp (authenticated with `CRON_SECRET` Bearer token, supports both GET and POST for Vercel Cron compatibility).
+`app/api/cron/streak-reminder/route.ts` — streak reminder via WhatsApp (19:00 UTC daily).
+`app/api/cron/stale-listings/route.ts` — marks old marketplace listings as stale (10:00 UTC daily).
 
-`app/api/cron/stale-listings/route.ts` — marks old marketplace listings as stale.
+Both are configured in `vercel.json` and authenticated with `CRON_SECRET` Bearer token (support GET and POST).
 
 ### API Response Convention
 
@@ -119,9 +129,10 @@ Route Handlers return `{ ok: true, ...data }` on success and `{ ok: false, code,
 
 ### UI Components & Utilities
 
-- shadcn/ui components in `components/ui/` (Tailwind CSS v4 + `tw-animate-css`)
-- `lib/utils.ts` — `cn()`, `msToClock()`, `timeAgo()`, `formatNaira()`, `buildHref()`, `safeSearchTerm()`, `safePushRecent()`, `currentAcademicSessionFallback()`
-- `lib/types.ts` — all shared types: `ListingRow`, `VendorRow`, `QuizSet`, `QuizQuestion`, `QuizOption`, `ReviewTab`, `CourierRow`, etc.
+- shadcn/ui components in `components/ui/` (Tailwind CSS v4 + `tw-animate-css`). Style: `new-york`, base color: `neutral`, CSS variables enabled.
+- `lib/utils.ts` — `cn()`, `normalizeStr()`, `safeSearchTerm()`, `buildHref()`, `timeAgo()` / `formatWhen()`, `msToClock()`, `formatNaira()`, `asInt()`, `clamp()`, `pctToColor()`, `pctToBg()`, `formatDuration()`, `fmtPct()`, `safePushRecent()`, `currentAcademicSessionFallback()`
+- `lib/types.ts` — shared Marketplace/Vendor/Quiz types
+- `types/meal-builder.ts` — food ordering step/menu types
 
 ### WAT Timezone
 

@@ -312,7 +312,7 @@ export default async function ExplorePage({
               const open = isOpenNow(v);
               const hours = v.opens_at && v.closes_at ? `${formatHour(v.opens_at)} – ${formatHour(v.closes_at)}` : null;
               return {
-                id: v.id, name: v.name, description: v.description,
+                id: v.id, user_id: (v as any).user_id ?? null, name: v.name, description: v.description,
                 avatar_url: v.avatar_url, opens_at: v.opens_at, closes_at: v.closes_at,
                 open, hours, rating: rating ?? null, menuItems,
                 day_schedule: (v as any).day_schedule ?? null,

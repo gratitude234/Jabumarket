@@ -5,12 +5,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Clock, CheckCircle2, Circle, Star, ShoppingBag, X } from 'lucide-react';
+import { Clock, CheckCircle2, Circle, Star, ShoppingBag, X, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MealBuilder from '@/components/chat/MealBuilder';
 
 export type FoodVendorData = {
   id: string;
+  user_id: string | null;
   name: string | null;
   description: string | null;
   avatar_url: string | null;
@@ -24,7 +25,7 @@ export type FoodVendorData = {
   accepts_delivery?: boolean | null;
 };
 
-export default function FoodVendorGrid({ vendors }: { vendors: FoodVendorData[] }) {
+export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: FoodVendorData[]; currentUserId?: string | null }) {
   const router = useRouter();
   // Track which vendor's MealBuilder is open (only one at a time)
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null);
@@ -184,9 +185,18 @@ export default function FoodVendorGrid({ vendors }: { vendors: FoodVendorData[] 
                     Order
                   </button>
                 ) : v.menuItems.length === 0 ? (
-                  <div className="flex-1 inline-flex items-center justify-center rounded-2xl border border-dashed px-3 py-2.5 text-sm text-zinc-400">
-                    Menu coming soon
-                  </div>
+                  v.user_id && currentUserId === v.user_id ? (
+                    <Link
+                      href="/vendor/menu"
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-3 py-2.5 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10"
+                    >
+                      <Plus className="h-4 w-4" /> Add your menu
+                    </Link>
+                  ) : (
+                    <div className="flex-1 inline-flex items-center justify-center rounded-2xl border border-dashed px-3 py-2.5 text-sm text-zinc-400">
+                      Menu coming soon
+                    </div>
+                  )
                 ) : (
                   <div className="flex-1 inline-flex items-center justify-center rounded-2xl border border-dashed px-3 py-2.5 text-sm text-zinc-400">
                     Closed

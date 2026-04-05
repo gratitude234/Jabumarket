@@ -20,7 +20,13 @@
       "Bash(grep -E \"^C:\\\\Users\\\\hp\\\\jabumarket-frontend\\\\\\\\\\(app\\\\study|app\\\\study\\\\_components|lib\\\\studyPractice\\)\")",
       "mcp__ide__getDiagnostics",
       "Bash(ls:*)",
-      "Bash(node_modules/.bin/next build:*)"
+      "Bash(node_modules/.bin/next build:*)",
+      "Bash(cat /c/Users/hp/jabumarket-frontend/types/*.ts)",
+      "Bash(xargs wc:*)",
+      "Bash(grep -v \"className\\\\|aria\\\\|pointer\\\\|overflow\\\\|transition\\\\|focus\\\\|//.*hidden\")",
+      "Bash(git -C /c/Users/hp/jabumarket-frontend status)",
+      "Bash(git -C /c/Users/hp/jabumarket-frontend diff HEAD -- components/layout/MobileTopBar.tsx)",
+      "Bash(cat /c/Users/hp/jabumarket-frontend/supabase/migrations/*.sql)"
     ]
   }
 }
