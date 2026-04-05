@@ -3,6 +3,8 @@
 // Generates a personalised study plan based on courses, GPA goals, and exam timeline.
 // Not cached — fully personalised per request.
 
+export const maxDuration = 60
+
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { geminiJson } from "@/lib/gemini";
