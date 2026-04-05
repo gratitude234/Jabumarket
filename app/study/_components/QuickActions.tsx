@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import {
-  BarChart2,
   BookOpen,
+  BrainCircuit,
   MessageCircle,
   Zap,
 } from "lucide-react";
@@ -32,10 +32,10 @@ const TILES = [
     primary: false,
   },
   {
-    href: "/study/gpa",
-    label: "GPA Calc",
-    sub: "Track grades",
-    icon: BarChart2,
+    href: "/study/ai-plan",
+    label: "AI Plan",
+    sub: "Get a study schedule",
+    icon: BrainCircuit,
     primary: false,
   },
 ] as const;

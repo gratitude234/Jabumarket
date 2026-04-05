@@ -1,43 +1,28 @@
-# Fix: Streaming Study Plan Parse Error
+# Fix — Practice tab false active state
 
-## Context
+**File:** `app/study/_components/StudyTabs.tsx`
 
-The Gemini `streamGenerateContent` API sends **cumulative** text in each chunk, not deltas.
-So each chunk already contains the full generated text up to that point.
+In the mobile tabs render loop, the inactive style has a special branch for the Practice tab that gives it a tinted indigo background and indigo text when it isn't the active page. This makes Practice look permanently active even when Q&A or another tab is selected.
 
-The frontend is currently doing `accumulated += chunk`, which concatenates all the
-cumulative snapshots together — producing invalid JSON that fails to parse.
+Find this ternary (around line 491):
 
-## Phase 1: Read & Confirm
-
-Read the frontend study plan component. Confirm the exact line where chunks are
-accumulated (the `accumulated += chunk` pattern or equivalent). Report the full file
-path from project root.
-
-## Phase 2: Implement
-
-**Fix 1 — Frontend (primary fix)**
-
-Change the accumulation line from:
-```ts
-accumulated += chunk
-```
-to:
-```ts
-accumulated = chunk
+```tsx
+active
+  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
+  : tab.href === "/study/practice"
+    ? "border-[#5B35D5]/25 bg-[#EEEDFE]/60 text-[#5B35D5] hover:bg-[#EEEDFE]"
+    : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
 ```
 
-This means the state always holds the latest cumulative snapshot, which is already
-the complete text so far — and the final chunk is the complete valid JSON.
+Replace with:
 
-**Fix 2 — Backend (secondary fix)**
+```tsx
+active
+  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
+  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+```
 
-In the API route streaming loop, after `if (done) break`, flush any remaining content
-in the `buffer` variable before calling `controller.close()`. Ensure the last SSE
-line is not silently dropped if it arrives without a trailing newline.
-
-## Verification Checklist
-- [ ] `accumulated = chunk` (not `+=`) in the frontend reader loop
-- [ ] Backend flushes remaining buffer before closing the stream
-- [ ] Study plan generates successfully on production without parse error
-- [ ] All modified file paths listed from project root
+## Verification
+- [ ] Navigating to `/study/questions` — only Q&A tab is highlighted, Practice is neutral
+- [ ] Navigating to `/study/practice` — only Practice tab is highlighted
+- [ ] No `tab.href === "/study/practice"` conditional remaining in the mobile tabs render

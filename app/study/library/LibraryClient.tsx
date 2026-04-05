@@ -22,6 +22,7 @@ import {
 import { toggleSaved, getAuthedUserId } from "@/lib/studySaved";
 
 import StudyTabs from "../_components/StudyTabs";
+import { HistorySavedTabs } from "../_components/HistorySavedTabs";
 
 type SavedRow = {
   id: string;
@@ -696,6 +697,7 @@ export default function LibraryClient() {
   return (
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs />
+      <HistorySavedTabs active="saved" />
 
       {/* Top bar (matches StudyHome style, no max-width shrink) */}
       <div className="flex items-center justify-between gap-3">

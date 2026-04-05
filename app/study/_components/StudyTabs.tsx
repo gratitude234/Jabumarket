@@ -6,20 +6,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  BookMarked,
   BookOpen,
   Calculator,
-  GraduationCap,
   History,
   Home,
   MessageCircleQuestion,
   MoreHorizontal,
   Trophy,
-  UploadCloud,
-  UserCheck,
   X,
   Zap,
-  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StudyPrefsProvider, useStudyPrefs } from "./StudyPrefsContext";
@@ -60,11 +55,7 @@ const OVERFLOW_PREFIXES = [
   "/study/history",
   "/study/library",
   "/study/gpa",
-  "/study/tutors",
   "/study/leaderboard",
-  "/study/apply-rep",
-  "/study/materials/upload",
-  "/study/ai-plan",
 ];
 
 function isOverflowActive(pathname: string) {
@@ -386,18 +377,10 @@ export default function StudyTabs({
     {
       href: "/study/history",
       label: "History",
-      description: "Review your recent study activity",
+      description: "Practice history & saved items",
       icon: History,
       color:
         "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400",
-    },
-    {
-      href: "/study/library",
-      label: "Bookmarks",
-      description: "Your saved materials, sets and questions",
-      icon: BookMarked,
-      color:
-        "bg-[#EEEDFE] text-[#5B35D5]",
     },
     {
       href: "/study/gpa",
@@ -414,50 +397,6 @@ export default function StudyTabs({
       icon: Trophy,
       color:
         "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
-    },
-    {
-      href: "/study/ai-plan",
-      label: "AI Study Plan",
-      description: "Generate a personalised study schedule with Gemini",
-      icon: BrainCircuit,
-      color:
-        "bg-[#EEEDFE] text-[#5B35D5]",
-      badge: "AI",
-    },
-    {
-      href: "/study/materials/upload",
-      label: "Upload Materials",
-      description: "Share past questions, notes, and slides",
-      icon: UploadCloud,
-      color:
-        "bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400",
-      badge: contributorStatus === "approved" ? "Rep" : undefined,
-    },
-    ...(contributorStatus !== "approved"
-      ? [
-          {
-            href: "/study/apply-rep",
-            label: "Apply as Course Rep",
-            description: "Get elevated upload permissions",
-            icon: UserCheck,
-            color:
-              "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400",
-            badge:
-              contributorStatus === "pending"
-                ? "Pending"
-                : contributorStatus === "rejected"
-                ? "Reapply"
-                : undefined,
-          } as OverflowItem,
-        ]
-      : []),
-    {
-      href: "/study/tutors",
-      label: "Tutors",
-      description: "Find verified tutors for your courses",
-      icon: GraduationCap,
-      color:
-        "bg-purple-50 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
     },
   ];
 
@@ -489,9 +428,7 @@ export default function StudyTabs({
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                       active
                         ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
-                        : tab.href === "/study/practice"
-                          ? "border-[#5B35D5]/25 bg-[#EEEDFE]/60 text-[#5B35D5] hover:bg-[#EEEDFE]"
-                          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                        : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     )}
                   >
                     {tab.icon}

@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import StudyTabs from "../_components/StudyTabs";
+import { HistorySavedTabs } from "../_components/HistorySavedTabs";
 import { Card, EmptyState, SkeletonCard } from "../_components/StudyUI";
 import {
   ArrowLeft,
@@ -1008,6 +1009,7 @@ export default function HistoryClient() {
   return (
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs />
+      <HistorySavedTabs active="history" />
 
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3">
