@@ -384,9 +384,11 @@ export default function AiStudyPlanPage() {
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
 
   // ── Generation state
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-  const [plan,    setPlan]    = useState<StudyPlan | null>(null);
+  const [loading,       setLoading]       = useState(false);
+  const [streaming,     setStreaming]     = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [error,         setError]         = useState<string | null>(null);
+  const [plan,          setPlan]          = useState<StudyPlan | null>(null);
 
   // ── Persistence
   const [userId,   setUserId]   = useState<string | null>(null);
@@ -488,8 +490,11 @@ export default function AiStudyPlanPage() {
       return;
     }
     setLoading(true);
+    setStreaming(false);
+    setStreamingText("");
     setError(null);
     setPlan(null);
+
     try {
       const res = await fetch("/api/ai/study-plan", {
         method: "POST",
@@ -503,27 +508,58 @@ export default function AiStudyPlanPage() {
           weakCourses,
         }),
       });
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        setError(json.error ?? "Failed to generate plan.");
-      } else {
-        setPlan(json.plan);
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError((json as any).error ?? "Failed to generate plan.");
+        return;
+      }
+
+      // Switch to streaming phase
+      setLoading(false);
+      setStreaming(true);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        accumulated += chunk;
+        setStreamingText(accumulated);
+      }
+
+      // Parse accumulated JSON
+      try {
+        const clean = accumulated
+          .replace(/^```json\s*/i, "")
+          .replace(/^```\s*/i, "")
+          .replace(/```\s*$/i, "")
+          .trim();
+        const parsed = JSON.parse(clean) as StudyPlan;
+        setPlan(parsed);
         setSavedAt(null);
         if (userId) {
           localStorage.setItem(
             `jabu_study_plan:${userId}`,
             JSON.stringify({
-              plan: json.plan,
+              plan: parsed,
               generatedAt: new Date().toISOString(),
               courses: validCourses,
             })
           );
         }
+      } catch {
+        setError("The AI response was too long or malformed. Try fewer weeks or fewer courses.");
       }
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
+      setStreaming(false);
+      setStreamingText("");
     }
   }
 
@@ -789,23 +825,43 @@ export default function AiStudyPlanPage() {
       <button
         type="button"
         onClick={generate}
-        disabled={loading}
+        disabled={loading || streaming}
         className={cn(
           "w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-extrabold transition",
           "bg-violet-600 text-white hover:bg-violet-700",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2",
-          loading && "opacity-70 cursor-not-allowed"
+          (loading || streaming) && "opacity-70 cursor-not-allowed"
         )}
       >
-        {loading ? (
+        {loading || streaming ? (
           <><Loader2 className="h-4 w-4 animate-spin" /> Generating your plan…</>
         ) : (
           <><Sparkles className="h-4 w-4" /> Generate Study Plan</>
         )}
       </button>
 
+      {/* ── Streaming indicator */}
+      {streaming && (
+        <div className="rounded-2xl border border-violet-200/70 bg-violet-50/50 p-4 dark:border-violet-700/30 dark:bg-violet-950/20">
+          <div className="flex items-center gap-2 mb-3">
+            <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
+            <p className="text-sm font-extrabold text-violet-700 dark:text-violet-300">
+              Writing your plan…
+            </p>
+            <span className="ml-auto text-[11px] text-violet-400/80">
+              {streamingText.length} chars
+            </span>
+          </div>
+          <pre className="font-mono text-[10px] text-muted-foreground whitespace-pre-wrap max-h-40 overflow-hidden leading-relaxed">
+            {streamingText.length > 600
+              ? "…" + streamingText.slice(-580)
+              : streamingText}
+          </pre>
+        </div>
+      )}
+
       {/* Preview row — what the output contains */}
-      {!plan && !loading && (
+      {!plan && !loading && !streaming && (
         <div className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {[
             { dot: "#7C3AED", label: "Week-by-week schedule" },
@@ -927,11 +983,11 @@ export default function AiStudyPlanPage() {
             <button
               type="button"
               onClick={generate}
-              disabled={loading}
+              disabled={loading || streaming}
               className={cn(
                 "w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-violet-200 py-2.5 text-sm font-extrabold text-violet-600",
                 "hover:bg-violet-50 dark:border-violet-700/40 dark:text-violet-400 dark:hover:bg-violet-950/30 transition",
-                loading && "opacity-60 cursor-not-allowed"
+                (loading || streaming) && "opacity-60 cursor-not-allowed"
               )}
             >
               <Sparkles className="h-4 w-4" /> Regenerate Plan

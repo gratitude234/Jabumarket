@@ -5,38 +5,23 @@
 
 export const maxDuration = 60
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { geminiJson } from "@/lib/gemini";
 
-type StudyDay = {
-  day: string;           // e.g. "Monday"
-  focus: string;         // e.g. "MTH 201 — Integration"
-  tasks: string[];       // 2-4 specific tasks
-  hours: number;         // suggested study hours
-};
+const MODEL = "gemma-4-26b-a4b-it";
 
-type StudyWeek = {
-  week: number;
-  theme: string;         // e.g. "Foundation Review"
-  days: StudyDay[];
-  weeklyGoal: string;
-};
-
-type StudyPlan = {
-  summary: string;
-  totalWeeks: number;
-  weeks: StudyWeek[];
-  generalTips: string[];
-};
+function jsonErr(message: string, status: number) {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 export async function POST(req: NextRequest) {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
-  }
+  if (!user) return jsonErr("Unauthorised", 401);
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let body: {
@@ -50,7 +35,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return jsonErr("Invalid JSON body", 400);
   }
 
   const {
@@ -62,9 +47,7 @@ export async function POST(req: NextRequest) {
     dailyHours = 4,
   } = body;
 
-  if (!courses.length) {
-    return NextResponse.json({ error: "At least one course is required" }, { status: 400 });
-  }
+  if (!courses.length) return jsonErr("At least one course is required", 400);
 
   const weeks = Math.max(1, Math.min(weeksUntilExam, 12));
 
@@ -81,8 +64,6 @@ export async function POST(req: NextRequest) {
       ? `Weak courses needing extra attention: ${weakCourses.join(", ")}`
       : "";
 
-  // To keep the response within token limits, only include weekdays (Mon–Fri)
-  // for multi-week plans. Weekend rest is implied. This cuts output by ~28%.
   const includedDays =
     weeks <= 2
       ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -125,27 +106,81 @@ Schema (follow exactly):
 Include these days per week: ${includedDays.join(", ")}.
 Keep tasks short (under 10 words each). Keep theme and weeklyGoal under 12 words each.`;
 
-  // ── Call Gemini ────────────────────────────────────────────────────────────
-  // Token budget: weeks * days * ~150 tokens/day + overhead. Cap at 6000.
+  // ── Call Gemini streaming ──────────────────────────────────────────────────
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return jsonErr("GEMINI_API_KEY is not configured.", 500);
+
   const tokenBudget = Math.min(6000, weeks * includedDays.length * 150 + 500);
 
-  const result = await geminiJson<StudyPlan>(prompt, {
-    temperature: 0.5,
-    maxOutputTokens: tokenBudget,
-  });
+  const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-  if (!result.ok) {
-    // If geminiJson couldn't parse, surface a helpful message
-    const isJsonError = result.error.includes("not valid JSON");
-    return NextResponse.json(
-      {
-        error: isJsonError
-          ? "The AI response was too long or malformed. Try fewer weeks or fewer courses."
-          : result.error,
-      },
-      { status: 502 }
-    );
+  let geminiRes: Response;
+  try {
+    geminiRes = await fetch(streamUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: tokenBudget,
+        },
+      }),
+      signal: AbortSignal.timeout(55_000),
+    });
+  } catch (e: any) {
+    return jsonErr(e?.message ?? "Network error calling Gemini.", 502);
   }
 
-  return NextResponse.json({ plan: result.data });
+  if (!geminiRes.ok) {
+    const err = await geminiRes.text().catch(() => geminiRes.statusText);
+    return jsonErr(`Gemini API error ${geminiRes.status}: ${err}`, 502);
+  }
+
+  // Pipe SSE chunks → raw text deltas → client
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = geminiRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr || jsonStr === "[DONE]") continue;
+            try {
+              const chunk = JSON.parse(jsonStr);
+              const text: string =
+                chunk?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+              if (text) controller.enqueue(encoder.encode(text));
+            } catch {
+              // skip malformed chunk
+            }
+          }
+        }
+      } catch {
+        // stream aborted or network error — close cleanly
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
