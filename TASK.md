@@ -1,53 +1,43 @@
-# Feature: Streaming Study Plan Generation (Gemma 4)
+# Fix: Streaming Study Plan Parse Error
 
-## Phase 1: Read & Summarise
+## Context
 
-Read the following files and summarise before touching any code:
+The Gemini `streamGenerateContent` API sends **cumulative** text in each chunk, not deltas.
+So each chunk already contains the full generated text up to that point.
 
-1. `app/api/ai/study-plan/route.ts` — full current implementation
-2. The frontend component that calls this endpoint and renders the study plan result (search for where `/api/ai/study-plan` is fetched)
+The frontend is currently doing `accumulated += chunk`, which concatenates all the
+cumulative snapshots together — producing invalid JSON that fails to parse.
 
-Summarise:
-- How the API route currently calls Gemma and returns the response
-- How the frontend currently handles the response (does it wait for full JSON? parse a specific shape?)
-- What the response data structure looks like
+## Phase 1: Read & Confirm
 
-Do not write any code yet.
-
----
+Read the frontend study plan component. Confirm the exact line where chunks are
+accumulated (the `accumulated += chunk` pattern or equivalent). Report the full file
+path from project root.
 
 ## Phase 2: Implement
 
-### Backend — `app/api/ai/study-plan/route.ts`
+**Fix 1 — Frontend (primary fix)**
 
-1. Switch from a standard `Response` to a **streaming response** using the Gemini API's stream endpoint:
-   - Change the API call to use `streamGenerateContent` instead of `generateContent`
-   - Use `TransformStream` or `ReadableStream` to pipe the streamed chunks back to the client
-   - Set response headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`
-   - Keep `maxDuration = 60`
+Change the accumulation line from:
+```ts
+accumulated += chunk
+```
+to:
+```ts
+accumulated = chunk
+```
 
-2. Stream format: send each chunk as a plain text delta (not SSE with `data:` prefix unless the frontend already handles SSE)
+This means the state always holds the latest cumulative snapshot, which is already
+the complete text so far — and the final chunk is the complete valid JSON.
 
-### Frontend — study plan component
+**Fix 2 — Backend (secondary fix)**
 
-1. Replace the current `fetch` + `await response.json()` pattern with a **streaming reader**:
-   ```ts
-   const reader = response.body.getReader()
-   const decoder = new TextDecoder()
-   while (true) {
-     const { done, value } = await reader.read()
-     if (done) break
-     const chunk = decoder.decode(value)
-     // append chunk to state
-   }
-   ```
-2. Show the study plan content progressively as chunks arrive — append to a state variable and render in real time
-3. Show a loading/generating indicator while streaming is in progress
-4. Only mark generation as complete when the stream closes
+In the API route streaming loop, after `if (done) break`, flush any remaining content
+in the `buffer` variable before calling `controller.close()`. Ensure the last SSE
+line is not silently dropped if it arrives without a trailing newline.
 
 ## Verification Checklist
-- [ ] Backend streams chunks instead of buffering full response
-- [ ] Frontend reads stream and renders progressively
-- [ ] No timeout errors on production
-- [ ] Loading state shown during generation
-- [ ] Full paths of all modified files listed from project root
+- [ ] `accumulated = chunk` (not `+=`) in the frontend reader loop
+- [ ] Backend flushes remaining buffer before closing the stream
+- [ ] Study plan generates successfully on production without parse error
+- [ ] All modified file paths listed from project root

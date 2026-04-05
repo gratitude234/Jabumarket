@@ -527,7 +527,7 @@ export default function AiStudyPlanPage() {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
+        accumulated = chunk;
         setStreamingText(accumulated);
       }
 

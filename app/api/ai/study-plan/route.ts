@@ -145,6 +145,22 @@ Keep tasks short (under 10 words each). Keep theme and weeklyGoal under 12 words
       const decoder = new TextDecoder();
       let buffer = "";
 
+      function processLines(lines: string[]) {
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr || jsonStr === "[DONE]") continue;
+          try {
+            const chunk = JSON.parse(jsonStr);
+            const text: string =
+              chunk?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+            if (text) controller.enqueue(encoder.encode(text));
+          } catch {
+            // skip malformed chunk
+          }
+        }
+      }
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -153,21 +169,10 @@ Keep tasks short (under 10 words each). Keep theme and weeklyGoal under 12 words
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr || jsonStr === "[DONE]") continue;
-            try {
-              const chunk = JSON.parse(jsonStr);
-              const text: string =
-                chunk?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-              if (text) controller.enqueue(encoder.encode(text));
-            } catch {
-              // skip malformed chunk
-            }
-          }
+          processLines(lines);
         }
+        // Flush any remaining content in buffer that arrived without trailing newline
+        if (buffer.trim()) processLines([buffer]);
       } catch {
         // stream aborted or network error — close cleanly
       } finally {
