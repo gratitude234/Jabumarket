@@ -1,8 +1,8 @@
 // lib/gemini.ts
-// Shared Gemma 4 client — server-side only.
+// Shared Gemini 2.5 Flash-Lite client — server-side only.
 // Never import this from a "use client" file.
 
-const MODEL = "gemma-4-26b-a4b-it";
+const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export type GeminiConfig = {
