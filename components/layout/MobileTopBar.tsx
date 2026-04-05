@@ -2,7 +2,8 @@
 "use client";
 
 import Link from "next/link";
-import { Search, Plus, X } from "lucide-react";
+import { Search, Plus, X, UploadCloud } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
@@ -34,6 +35,13 @@ export default function MobileTopBar() {
   const sp = useSearchParams();
 
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
+
+  // True for any /study/* route
+  const isStudyRoute = pathname.startsWith("/study");
+
+  // True only when inside an active practice set session — NOT the practice home page.
+  // Pattern: /study/practice/[setId] (has a segment after /practice/)
+  const isPracticeSession = /^\/study\/practice\/[^/]+/.test(pathname);
 
   const showSearch =
     // Home has its own search bar in the hero — don't duplicate it here
@@ -92,20 +100,45 @@ export default function MobileTopBar() {
     <header className="md:hidden sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="font-bold text-lg no-underline">
-            Jabumarket
-          </Link>
+          {isStudyRoute ? (
+            <Link
+              href="/study"
+              className="inline-flex items-center gap-2 no-underline focus-visible:outline-none"
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#5B35D5]" />
+              <span className="font-bold text-lg text-foreground">Study Hub</span>
+            </Link>
+          ) : (
+            <Link href="/" className="font-bold text-lg no-underline">
+              Jabumarket
+            </Link>
+          )}
 
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <Link href="/post" className="btn-primary">
-              <Plus className="h-4 w-4" />
-              Post
-            </Link>
+            {isStudyRoute ? (
+              <Link
+                href="/study/materials/upload"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-[#5B35D5]/20 bg-[#EEEDFE] px-3 py-1.5 no-underline",
+                  "text-sm font-semibold text-[#5B35D5]",
+                  "hover:bg-[#5B35D5]/10",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+                )}
+              >
+                <UploadCloud className="h-4 w-4" />
+                Upload
+              </Link>
+            ) : (
+              <Link href="/post" className="btn-primary">
+                <Plus className="h-4 w-4" />
+                Post
+              </Link>
+            )}
           </div>
         </div>
 
-        {showSearch && (
+        {showSearch && !isPracticeSession && (
           <form onSubmit={onSubmit} className="mt-3">
             <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 shadow-sm">
               <Search className="h-4 w-4 text-muted-foreground" />
