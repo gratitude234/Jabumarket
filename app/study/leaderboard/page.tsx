@@ -6,9 +6,10 @@
 
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, Crown, Medal, MessageSquare, Star, Trophy, User, Users, GraduationCap, Globe } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { PointsBreakdown } from "./PointsBreakdown";
+import { HowPointsWork } from "./HowPointsWork";
 
 // 5-min revalidation — swap for MATERIALIZED VIEW + pg_cron when user base grows.
 export const revalidate = 300;
@@ -92,7 +93,6 @@ async function fetchLeaderboard(scope: Scope): Promise<{
 
   // Scope: filter to users who share the same department_id or level
   if (scope === "dept" && userPrefs?.department_id) {
-    // Get user_ids in the same department from study_preferences
     const { data: deptUsers } = await supabase
       .from("study_preferences")
       .select("user_id")
@@ -106,7 +106,6 @@ async function fetchLeaderboard(scope: Scope): Promise<{
       ? `${userPrefs.department} Dept.`
       : "My Department";
   } else if (scope === "level" && userPrefs?.level) {
-    // Get user_ids at the same level
     const { data: levelUsers } = await supabase
       .from("study_preferences")
       .select("user_id")
@@ -185,24 +184,22 @@ function ScopeTabs({
   scope: Scope;
   userPrefs: UserPrefs | null;
 }) {
-  const tabs: Array<{ key: Scope; label: string; icon: React.ReactNode; disabled?: boolean }> = [
-    { key: "all",   label: "All JABU",     icon: <Globe className="h-4 w-4" /> },
+  const tabs: Array<{ key: Scope; label: string; disabled?: boolean }> = [
+    { key: "all",   label: "All JABU" },
     {
       key: "dept",
-      label: userPrefs?.department ?? "My Dept.",
-      icon: <Users className="h-4 w-4" />,
+      label: userPrefs?.department ?? "My dept",
       disabled: !userPrefs?.department_id,
     },
     {
       key: "level",
-      label: userPrefs?.level ? `${userPrefs.level}L` : "My Level",
-      icon: <GraduationCap className="h-4 w-4" />,
+      label: userPrefs?.level ? `${userPrefs.level}L` : "My level",
       disabled: !userPrefs?.level,
     },
   ];
 
   return (
-    <div className="flex w-full items-center gap-2 overflow-x-auto rounded-3xl border border-border bg-background p-2">
+    <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
       {tabs.map((t) => {
         const active = scope === t.key;
         const href = t.key === "all" ? "/study/leaderboard" : `/study/leaderboard?scope=${t.key}`;
@@ -212,16 +209,15 @@ function ScopeTabs({
             href={t.disabled ? "#" : href}
             aria-disabled={t.disabled}
             className={cn(
-              "inline-flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              "focus-visible:outline-none",
               active
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+                ? "border-white bg-white text-[#3B24A8]"
+                : "border-white/25 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white",
               t.disabled && "pointer-events-none opacity-40"
             )}
           >
-            {t.icon}
-            <span className="max-w-[140px] truncate">{t.label}</span>
+            {t.label}
           </Link>
         );
       })}
@@ -229,109 +225,123 @@ function ScopeTabs({
   );
 }
 
-// ─── Sub-components (unchanged from original) ─────────────────────────────────
+// ─── My Rank Strip ────────────────────────────────────────────────────────────
 
-function YourRankCard({ row, rank, name }: { row: LeaderRow; rank: number; name: string }) {
-  return (
-    <div className="rounded-3xl border-2 border-foreground bg-card p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-muted-foreground">Your rank</p>
-          <p className="mt-1 text-2xl font-extrabold text-foreground">#{rank}</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{name}</p>
-          <p className="mt-1 text-sm font-extrabold text-foreground">
-            {row.points.toLocaleString("en-NG")}{" "}
-            <span className="font-normal text-muted-foreground">pts</span>
-          </p>
-        </div>
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-foreground bg-foreground text-background">
-          <User className="h-6 w-6" />
-        </div>
-      </div>
-      <div className="mt-3">
-        <PointsBreakdown row={row} />
-      </div>
-    </div>
-  );
-}
-
-function PodiumCard({
-  row,
+function MyRankStrip({
   rank,
-  isCurrentUser,
+  points,
   name,
 }: {
-  row: LeaderRow;
-  rank: 1 | 2 | 3;
-  isCurrentUser: boolean;
+  rank: number;
+  points: number;
   name: string;
 }) {
-  const iconBg =
-    rank === 1
-      ? "bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800"
-      : rank === 2
-      ? "bg-muted/50 border-border"
-      : "bg-rose-50 border-rose-200 dark:bg-rose-950/40 dark:border-rose-800";
-
+  const inits = initials(name);
   return (
-    <div
-      id={isCurrentUser ? "my-rank" : undefined}
-      className={cn(
-        "rounded-3xl border bg-card p-4 shadow-sm",
-        isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-muted-foreground">#{rank}</p>
-            {isCurrentUser && (
-              <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
-                You
-              </span>
-            )}
-          </div>
-          <p className="mt-1 truncate text-base font-extrabold text-foreground">{name}</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">
-            {row.points.toLocaleString("en-NG")}{" "}
-            <span className="text-muted-foreground font-normal">pts</span>
-          </p>
+    <div className="flex items-center justify-between border-t border-white/15 px-5 py-3">
+      <div className="flex items-center gap-2.5">
+        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/20 text-[11px] font-semibold text-white">
+          {inits}
         </div>
-        <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl border", iconBg)}>
-          {rank === 1 ? (
-            <Crown className="h-6 w-6 text-amber-600" />
-          ) : (
-            <Medal className={cn("h-6 w-6", rank === 2 ? "text-muted-foreground" : "text-rose-500")} />
-          )}
-        </div>
+        <span className="text-sm font-semibold text-white">{name}</span>
       </div>
-
-      <div className="mt-3 space-y-2">
-        <div className="flex flex-wrap gap-1.5">
-          {[
-            { label: "accepted", value: row.accepted },
-            { label: "answers",  value: row.answers },
-            { label: "questions",value: row.questions },
-            { label: "upvotes",  value: row.question_upvotes },
-          ].map(({ label, value }) => (
-            <span
-              key={label}
-              className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground"
-            >
-              {value} {label}
-            </span>
-          ))}
-          {row.practice_days > 0 && (
-            <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
-              🔥 {row.practice_days}d practice
-            </span>
-          )}
-        </div>
-        <PointsBreakdown row={row} />
+      <div className="text-right">
+        <span className="text-sm font-extrabold text-white">#{rank}</span>
+        <span className="ml-2 text-xs text-white/60">{points.toLocaleString("en-NG")} pts</span>
       </div>
     </div>
   );
 }
+
+// ─── Podium ───────────────────────────────────────────────────────────────────
+
+function Podium({
+  top3,
+  currentUserId,
+  profileMap,
+}: {
+  top3: LeaderRow[];
+  currentUserId: string | null;
+  profileMap: ProfileMap;
+}) {
+  if (top3.length === 0) return null;
+
+  // Podium order: 2nd left, 1st center, 3rd right
+  const order = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const ranks  = [2, 1, 3];
+  const baseHeights = { 1: "h-14", 2: "h-10", 3: "h-7" };
+  const baseColors  = { 1: "bg-[#5B35D5]", 2: "bg-[#888780]", 3: "bg-[#D85A30]" };
+  const avatarSizes = { 1: "h-14 w-14 text-base", 2: "h-11 w-11 text-sm", 3: "h-10 w-10 text-xs" };
+  const medals      = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+  return (
+    <div className="flex items-end justify-center gap-2 px-4 pt-5 pb-0 bg-[#EEEDFE]">
+      {order.map((row, i) => {
+        const rank = ranks[i] as 1 | 2 | 3;
+        const isMe = row.user_id === currentUserId;
+        const name = displayName(row.user_id, row.email, profileMap);
+        const inits = initials(name);
+        const firstName = name.split(" ")[0];
+
+        return (
+          <div
+            key={row.user_id}
+            id={isMe ? "my-rank" : undefined}
+            className="flex flex-1 flex-col items-center gap-1.5"
+          >
+            {/* Avatar */}
+            <div className="relative">
+              <div
+                className={cn(
+                  "grid place-items-center rounded-full font-semibold text-white",
+                  avatarSizes[rank],
+                  isMe ? "bg-[#5B35D5]" : rank === 1 ? "bg-[#5B35D5]" : rank === 2 ? "bg-[#888780]" : "bg-[#D85A30]"
+                )}
+              >
+                {inits}
+              </div>
+              {/* Flame badge for practice streak */}
+              {row.practice_days >= 3 && (
+                <span className="absolute -bottom-1 -right-1 rounded-full border-2 border-[#EEEDFE] bg-[#EF9F27] px-1 py-px text-[8px] font-bold text-[#412402]">
+                  🔥{row.practice_days}d
+                </span>
+              )}
+              {isMe && (
+                <span className="absolute -top-1 -right-1 rounded-full border-2 border-[#EEEDFE] bg-[#5B35D5] px-1 py-px text-[8px] font-bold text-white">
+                  you
+                </span>
+              )}
+            </div>
+
+            {/* Name + pts */}
+            <p className="max-w-[80px] truncate text-center text-xs font-semibold text-foreground">
+              {firstName}
+            </p>
+            <p className={cn(
+              "text-center text-[11px]",
+              rank === 1 ? "font-extrabold text-[#3B24A8]" : "text-muted-foreground"
+            )}>
+              {row.points.toLocaleString("en-NG")} pts
+            </p>
+
+            {/* Podium base */}
+            <div
+              className={cn(
+                "flex w-full items-center justify-center rounded-t-lg text-base",
+                baseHeights[rank],
+                baseColors[rank]
+              )}
+            >
+              {medals[rank]}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Rank Row ─────────────────────────────────────────────────────────────────
 
 function RankRow({
   row,
@@ -344,95 +354,66 @@ function RankRow({
   isCurrentUser: boolean;
   name: string;
 }) {
+  const inits = initials(name);
+  const streakLabel = row.practice_days >= 3 ? `🔥 ${row.practice_days}d` : null;
+
   return (
-    <details
+    <div
       id={isCurrentUser ? "my-rank" : undefined}
       className={cn(
-        "group rounded-2xl border bg-card transition-colors",
-        isCurrentUser ? "border-primary/30 bg-primary/5 ring-2 ring-primary" : "border-border"
+        "overflow-hidden rounded-2xl border transition-colors",
+        isCurrentUser
+          ? "border-[#5B35D5]/30 bg-[#EEEDFE]"
+          : "border-border bg-background hover:bg-secondary/30"
       )}
     >
-      <summary
-        className={cn(
-          "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3",
-          "[&::-webkit-details-marker]:hidden"
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-background text-sm font-extrabold text-foreground">
-            {initials(name)}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold text-foreground">
-                #{rank} · {name}
-              </p>
-              {isCurrentUser && (
-                <span className="shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">
-                  You
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {row.accepted} accepted · {row.answers} answers · {row.questions} Q
-              {row.practice_days > 0 ? ` · 🔥 ${row.practice_days}d practice` : ""}
+      {/* Main row */}
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <span className={cn(
+          "w-6 shrink-0 text-center text-xs font-semibold",
+          isCurrentUser ? "text-[#5B35D5]" : "text-muted-foreground"
+        )}>
+          {rank}
+        </span>
+
+        <div
+          className={cn(
+            "grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white",
+            isCurrentUser ? "bg-[#5B35D5]" : "bg-secondary"
+          )}
+          style={isCurrentUser ? {} : { background: "var(--color-background-tertiary)", color: "var(--color-text-secondary)" }}
+        >
+          {inits}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className={cn(
+              "truncate text-sm font-semibold",
+              isCurrentUser ? "text-[#3B24A8]" : "text-foreground"
+            )}>
+              {name}
             </p>
+            {isCurrentUser && (
+              <span className="shrink-0 rounded-full bg-[#5B35D5] px-1.5 py-px text-[9px] font-bold text-white">
+                you
+              </span>
+            )}
           </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <p className="text-sm font-extrabold text-foreground">
-            {row.points.toLocaleString("en-NG")} pts
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {row.accepted > 0 ? `${row.accepted} accepted · ` : ""}
+            {row.answers} answers
+            {streakLabel ? ` · ${streakLabel}` : ""}
           </p>
-          <Star className="h-3.5 w-3.5 text-muted-foreground group-open:text-foreground transition-colors" />
         </div>
-      </summary>
 
-      <div className="border-t border-border px-4 py-3">
-        <PointsBreakdown row={row} />
+        <p className={cn(
+          "shrink-0 text-sm font-extrabold",
+          isCurrentUser ? "text-[#3B24A8]" : "text-foreground"
+        )}>
+          {row.points.toLocaleString("en-NG")} pts
+        </p>
       </div>
-    </details>
-  );
-}
-
-// ─── Sticky rank anchor bar ───────────────────────────────────────────────────
-// Visible to logged-in users who have earned points. Stays pinned below the
-// top nav while scrolling. Clicking it jumps to #my-rank in the list.
-
-function StickyRankBar({
-  rank,
-  points,
-  name,
-}: {
-  rank: number;
-  points: number;
-  name: string;
-}) {
-  return (
-    <div className="sticky top-16 z-30">
-      <a
-        href="#my-rank"
-        className={cn(
-          "flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-background/90 px-4 py-2.5 shadow-sm backdrop-blur",
-          "text-sm font-semibold text-foreground no-underline hover:bg-secondary/60 transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        )}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-primary/10 text-[11px] font-extrabold text-primary">
-            {initials(name)}
-          </span>
-          <span className="truncate">
-            <span className="text-muted-foreground">You · </span>
-            {name}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-xs">
-          <span className="font-extrabold text-foreground">#{rank}</span>
-          <span className="text-muted-foreground">{points.toLocaleString("en-NG")} pts</span>
-          <span className="text-muted-foreground">↓ Jump</span>
-        </div>
-      </a>
     </div>
   );
 }
@@ -478,7 +459,6 @@ export default async function LeaderboardPage({
     : -1;
   const myRow = myRankIndex >= 0 ? rows[myRankIndex] : null;
   const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
-  const showYourRankCard = myRow !== null && myRank !== null && myRank > 3;
 
   const activeUserRow = myRow ?? outsideTopNRow?.row ?? null;
   const activeUserRank = myRank ?? outsideTopNRow?.rank ?? null;
@@ -494,87 +474,67 @@ export default async function LeaderboardPage({
     (scope === "level" && !userPrefs?.level);
 
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
-      {/* Nav */}
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          href="/study"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-            "text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Link>
-        <Link
-          href="/study/questions"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2",
-            "text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
-          )}
-        >
-          <MessageSquare className="h-4 w-4" /> Q&amp;A
-        </Link>
-      </div>
+    <div className="space-y-3 pb-28 md:pb-6">
 
-      {/* Header */}
-      <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-muted-foreground">Community</p>
-            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">
-              Leaderboard
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Showing: <span className="font-semibold text-foreground">{scopeLabel}</span>
-              {" "}·{" "}
-              <span className="text-xs">
-                Points: accepted (×5) + answer (×2) + question (×1) + upvote (×1) + practice (×1)
-              </span>
-            </p>
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-3xl border border-border bg-[#5B35D5] shadow-sm">
+        <div className="px-5 pt-5 pb-4">
+          {/* Nav row */}
+          <div className="mb-4 flex items-center justify-between">
+            <Link
+              href="/study"
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-white/25"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </Link>
+            <HowPointsWork />
           </div>
-          <div className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-background">
-            <Trophy className="h-6 w-6 text-foreground" />
+
+          {/* Title */}
+          <h1 className="text-2xl font-extrabold tracking-tight text-white">Leaderboard</h1>
+          <p className="mt-1 text-xs text-white/60">
+            Top contributors · {scopeLabel}
+          </p>
+
+          {/* Scope chips */}
+          <div className="mt-4">
+            <ScopeTabs scope={scope} userPrefs={userPrefs} />
           </div>
         </div>
 
-        {fetchError ? (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+        {/* Error / viewMissing banners */}
+        {fetchError && (
+          <div className="mx-4 mb-4 rounded-2xl border border-rose-300/40 bg-rose-100/20 p-3 text-sm text-white">
             {fetchError}
           </div>
-        ) : null}
-
-        {viewMissing ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            <p className="font-semibold">Leaderboard view not set up yet.</p>
-            <p className="mt-1 text-amber-700 dark:text-amber-400">
+        )}
+        {viewMissing && (
+          <div className="mx-4 mb-4 rounded-2xl border border-amber-300/40 bg-amber-100/20 p-3 text-xs text-white/80">
+            <p className="font-semibold text-white">Leaderboard view not set up yet.</p>
+            <p className="mt-0.5">
               Run migration{" "}
-              <code className="rounded bg-amber-100 px-1 dark:bg-amber-900">
-                003_add_practice_points_to_leaderboard.sql
-              </code>{" "}
+              <code className="rounded bg-white/20 px-1">003_add_practice_points_to_leaderboard.sql</code>{" "}
               in your Supabase SQL editor.
             </p>
           </div>
-        ) : null}
+        )}
+
+        {/* My rank strip — shown only when user has a rank */}
+        {showStickyBar && myName && activeUserRank && activeUserRow && (
+          <MyRankStrip
+            rank={activeUserRank}
+            points={activeUserRow.points}
+            name={myName}
+          />
+        )}
+        {currentUserId && !fetchError && !viewMissing && !activeUserRow && (
+          <div className="border-t border-white/15 px-5 py-3 text-xs text-white/60">
+            Answer a question to earn your first points and appear here.
+          </div>
+        )}
       </div>
 
-      {/* Scope tab bar */}
-      <ScopeTabs scope={scope} userPrefs={userPrefs} />
-
-      {/* Sticky rank anchor bar */}
-      {showStickyBar && myName && activeUserRank && activeUserRow ? (
-        <StickyRankBar
-          rank={activeUserRank}
-          points={activeUserRow.points}
-          name={myName}
-        />
-      ) : currentUserId && !fetchError && !viewMissing && !activeUserRow ? (
-        <p className="text-sm text-muted-foreground">
-          You haven&apos;t earned any points yet — answer a question to get started.
-        </p>
-      ) : null}
-
-      {/* No prefs hint for dept/level scope */}
+      {/* No prefs hint */}
       {noPrefsForScope && (
         <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 px-4 py-3 text-sm dark:border-amber-800/40 dark:bg-amber-950/30">
           <p className="font-semibold text-amber-900 dark:text-amber-200">
@@ -590,107 +550,80 @@ export default async function LeaderboardPage({
         </div>
       )}
 
-      {/* Your rank card */}
-      {showYourRankCard && myRow && myRank ? (
-        <YourRankCard row={myRow} rank={myRank} name={myName ?? ""} />
-      ) : null}
-
-      {myRow && myRank && myRank <= 3 ? (
-        <div className="rounded-2xl border border-foreground/30 bg-card px-4 py-3 text-sm font-semibold text-foreground">
-          🏆 You&apos;re in the top 3! Your card is highlighted in the podium below.
+      {/* Top 3 in top badge for current user */}
+      {myRow && myRank && myRank <= 3 && (
+        <div className="rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8]">
+          You are in the top 3 — your entry is highlighted in the podium below.
         </div>
-      ) : null}
+      )}
 
       {/* Empty state */}
-      {!fetchError && rows.length === 0 && !viewMissing ? (
+      {!fetchError && rows.length === 0 && !viewMissing && (
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <p className="text-sm font-semibold text-foreground">
             {scopeEmpty ? "No activity in this scope yet" : "No activity yet"}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {scopeEmpty
-              ? "Be the first to earn points in this scope — ask questions, answer peers, and practice."
+              ? "Be the first to earn points here — ask questions, answer peers, and practice."
               : "Once people start asking and answering questions, top helpers will appear here."}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href="/study/questions/ask"
-              className={cn(
-                "inline-flex items-center justify-center rounded-2xl bg-secondary px-4 py-3",
-                "text-sm font-semibold text-foreground no-underline hover:opacity-90"
-              )}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#5B35D5] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#3B24A8]"
             >
               Ask a question
             </Link>
             {scopeEmpty && (
               <Link
                 href="/study/leaderboard"
-                className={cn(
-                  "inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-3",
-                  "text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
-                )}
+                className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
               >
                 View all of JABU
               </Link>
             )}
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Podium — top 3 */}
-      {top3.length > 0 ? (
-        <div className="grid gap-3 md:grid-cols-3">
-          {top3.map((r, i) => (
-            <PodiumCard
+      {/* ── Podium ─────────────────────────────────────────────────────── */}
+      {top3.length > 0 && (
+        <Podium top3={top3} currentUserId={currentUserId} profileMap={profileMap} />
+      )}
+
+      {/* ── Rank list ──────────────────────────────────────────────────── */}
+      {(rest.length > 0 || outsideTopNRow) && (
+        <div className="space-y-1.5">
+          <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Rankings 4 – {rows.length}
+          </p>
+
+          {rest.map((r, i) => (
+            <RankRow
               key={r.user_id}
               row={r}
-              rank={(i + 1) as 1 | 2 | 3}
+              rank={i + 4}
               isCurrentUser={r.user_id === currentUserId}
               name={displayName(r.user_id, r.email, profileMap)}
             />
           ))}
-        </div>
-      ) : null}
 
-      {/* Rest of top 50 */}
-      {rest.length > 0 ? (
-        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-          <h2 className="text-base font-extrabold text-foreground">Top 50</h2>
-          <div className="mt-4 space-y-2">
-            {rest.map((r, i) => (
-              <RankRow
-                key={r.user_id}
-                row={r}
-                rank={i + 4}
-                isCurrentUser={r.user_id === currentUserId}
-                name={displayName(r.user_id, r.email, profileMap)}
-              />
-            ))}
-          </div>
-          {/* Pinned user row — shown when user is outside the top 50 */}
+          {/* Pinned user row — shown when user is outside the visible list */}
           {outsideTopNRow && (
-            <div className="mt-2 border-t-2 border-dashed border-border pt-3">
+            <>
+              <div className="border-t-2 border-dashed border-border pt-1" />
               <RankRow
                 row={outsideTopNRow.row}
                 rank={outsideTopNRow.rank}
                 isCurrentUser
                 name={displayName(outsideTopNRow.row.user_id, outsideTopNRow.row.email, profileMap)}
               />
-            </div>
+            </>
           )}
         </div>
-      ) : outsideTopNRow ? (
-        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-          <div className="border-t-2 border-dashed border-border pt-3">
-            <RankRow
-              row={outsideTopNRow.row}
-              rank={outsideTopNRow.rank}
-              isCurrentUser
-              name={displayName(outsideTopNRow.row.user_id, outsideTopNRow.row.email, profileMap)}
-            />
-          </div>
-        </div>
-      ) : null}
+      )}
+
     </div>
   );
 }

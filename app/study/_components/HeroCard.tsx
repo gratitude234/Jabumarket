@@ -116,29 +116,33 @@ export function HeroCard({
           </Link>
         </div>
 
-        {/* Stat tiles */}
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-            <p className={cn("text-xl font-extrabold leading-none", streakLoading ? "text-muted-foreground" : streakColor)}>
-              {streakLoading ? "—" : streak}
-            </p>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              day{streak !== 1 ? "s" : ""} streak 🔥
-            </p>
-          </div>
+        {/* Stat tiles — only shown once prefs are configured */}
+        {hasPrefs ? (
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
+              <p className={cn("text-xl font-extrabold leading-none", streakLoading ? "text-muted-foreground" : streakColor)}>
+                {streakLoading ? "0" : streak}
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                day{streak !== 1 ? "s" : ""} streak 🔥
+              </p>
+            </div>
 
-          <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-            <p className="text-xl font-extrabold leading-none text-[#5B35D5]">—</p>
-            <p className="mt-1 text-[10px] text-muted-foreground">mastery this wk</p>
-          </div>
+            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
+              <p className="text-xl font-extrabold leading-none text-[#5B35D5]">—</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">mastery this wk</p>
+            </div>
 
-          <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-            <p className="text-xl font-extrabold leading-none text-foreground">
-              {hasPrefs ? "●●●" : "0"}
-            </p>
-            <p className="mt-1 text-[10px] text-muted-foreground">courses active</p>
+            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
+              <p className="text-xl font-extrabold leading-none text-foreground">●●●</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">courses active</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
+            Set up your study profile to track your streak, mastery, and active courses.
+          </p>
+        )}
 
         {/* Due today */}
         {dueCount !== null && dueCount > 0 ? (
@@ -157,7 +161,7 @@ export function HeroCard({
               Review now →
             </span>
           </Link>
-        ) : dueCount === 0 ? (
+        ) : dueCount === 0 && hasPrefs ? (
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
             All caught up today

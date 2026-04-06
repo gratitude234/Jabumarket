@@ -35,6 +35,18 @@ import { supabase } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type GeneratedQuestion = {
+  question: string;
+  options: { A: string; B: string; C: string; D: string };
+  answer: "A" | "B" | "C" | "D";
+  explanation: string;
+};
+
+type ChatMessage = {
+  role: "user" | "model";
+  text: string;
+};
+
 type Course = {
   id: string;
   course_code: string;
@@ -561,6 +573,20 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [relatedMaterials, setRelatedMaterials] = useState<any[]>([]);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [genQsLoading, setGenQsLoading] = useState(false);
+  const [genQsError, setGenQsError] = useState<string | null>(null);
+  const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[] | null>(null);
+  const [genQsSheetOpen, setGenQsSheetOpen] = useState(false);
+  const [savingQs, setSavingQs] = useState(false);
+  const [savedSetId, setSavedSetId] = useState<string | null>(null);
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   function showToast(msg: string) {
     setToast(msg);
     if (toastRef.current) clearTimeout(toastRef.current);
@@ -667,6 +693,103 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       showToast("Link copied to clipboard");
     } catch {
       showToast("Could not copy link");
+    }
+  }
+
+  async function handleGenerateQuestions() {
+    setGenQsLoading(true);
+    setGenQsError(null);
+    try {
+      const res = await fetch("/api/ai/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialId: m.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to generate questions.");
+      setGeneratedQuestions(data.questions);
+      setGenQsSheetOpen(true);
+    } catch (e: unknown) {
+      setGenQsError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setGenQsLoading(false);
+    }
+  }
+
+  async function handleSaveQuestions() {
+    if (!generatedQuestions || !m.study_courses?.id) return;
+    setSavingQs(true);
+    try {
+      const res = await fetch("/api/ai/save-generated-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materialId: m.id,
+          courseId: m.study_courses.id,
+          questions: generatedQuestions,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSavedSetId(data.setId);
+    } finally {
+      setSavingQs(false);
+    }
+  }
+
+  async function handleChatSend() {
+    const message = chatInput.trim();
+    if (!message || chatLoading) return;
+
+    const userMsg: ChatMessage = { role: "user", text: message };
+    const updatedHistory = [...chatHistory, userMsg];
+    setChatHistory(updatedHistory);
+    setChatInput("");
+    setChatLoading(true);
+    setChatError(null);
+
+    try {
+      const res = await fetch("/api/ai/material-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materialId: m.id,
+          message,
+          history: chatHistory, // send history before the new message
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Chat failed.");
+      }
+
+      // Stream the response token by token
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let modelText = "";
+
+      // Add an empty model message to update progressively
+      setChatHistory([...updatedHistory, { role: "model", text: "" }]);
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          modelText += decoder.decode(value, { stream: true });
+          setChatHistory([
+            ...updatedHistory,
+            { role: "model", text: modelText },
+          ]);
+        }
+      }
+    } catch (e: unknown) {
+      setChatError(e instanceof Error ? e.message : "Something went wrong.");
+      // Remove the optimistically added user message on error
+      setChatHistory(chatHistory);
+    } finally {
+      setChatLoading(false);
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }
 
@@ -800,6 +923,26 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
           </button>
         </div>
 
+        {/* Generate Practice Questions button */}
+        {kind === "pdf" && (
+          <button
+            type="button"
+            onClick={handleGenerateQuestions}
+            disabled={genQsLoading}
+            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] transition hover:bg-[#5B35D5]/20 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5]"
+          >
+            {genQsLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {genQsLoading ? "Generating questions…" : "Generate Practice Questions"}
+          </button>
+        )}
+        {genQsError && (
+          <p className="mt-1.5 text-center text-xs text-red-500">{genQsError}</p>
+        )}
+
         {/* Download + upvote stat line */}
         <p className="mt-2.5 text-xs text-muted-foreground">
           {downloads.toLocaleString("en-NG")} downloads
@@ -836,6 +979,87 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
             courseCode={course?.course_code}
             materialType={m.material_type}
           />
+        </div>
+      )}
+
+      {/* ── Ask AI about this material (chat) ── */}
+      {kind === "pdf" && (
+        <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
+          {/* Header / toggle */}
+          <button
+            type="button"
+            onClick={() => setChatOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-foreground hover:bg-secondary/20 transition"
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-[#5B35D5]" />
+              Ask AI about this material
+            </span>
+            {chatOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+
+          {chatOpen && (
+            <div className="border-t border-border/60">
+              {/* Message list */}
+              <div className="flex flex-col gap-3 max-h-72 overflow-y-auto px-4 py-3">
+                {chatHistory.length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground py-4">
+                    Ask anything about this document. AI answers only from its content.
+                  </p>
+                )}
+                {chatHistory.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed max-w-[88%]",
+                      msg.role === "user"
+                        ? "ml-auto bg-[#5B35D5] text-white"
+                        : "mr-auto bg-[#EEEDFE] text-[#3B24A8]"
+                    )}
+                  >
+                    {msg.text || (
+                      <span className="flex items-center gap-1.5 text-[#5B35D5]/60">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Thinking…
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {chatError && (
+                  <p className="text-center text-xs text-red-500">{chatError}</p>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input row */}
+              <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2.5">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleChatSend(); }}
+                  placeholder="Ask a question…"
+                  disabled={chatLoading}
+                  className="flex-1 rounded-xl border border-border/60 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#5B35D5] disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={handleChatSend}
+                  disabled={chatLoading || !chatInput.trim()}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#5B35D5] text-white transition hover:bg-[#3B24A8] disabled:opacity-50"
+                >
+                  {chatLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowRight className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -946,6 +1170,94 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
           </div>
         </div>
       ) : null}
+
+      {/* Generated Questions Bottom Sheet */}
+      {genQsSheetOpen && generatedQuestions && (
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 z-40 bg-black/50"
+            onClick={() => setGenQsSheetOpen(false)}
+          />
+          {/* Sheet */}
+          <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col rounded-t-3xl bg-card shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border px-4 py-4">
+              <div>
+                <p className="text-sm font-extrabold text-foreground">Practice Questions</p>
+                <p className="text-xs text-muted-foreground">{generatedQuestions.length} questions generated by AI</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGenQsSheetOpen(false)}
+                className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background text-muted-foreground hover:bg-secondary/50 focus-visible:outline-none"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Scrollable question list */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-36">
+              {generatedQuestions.map((q, idx) => (
+                <div key={idx} className="rounded-2xl border border-border bg-background p-4">
+                  <p className="text-sm font-bold text-foreground mb-3">
+                    {idx + 1}. {q.question}
+                  </p>
+                  <div className="space-y-2">
+                    {(["A", "B", "C", "D"] as const).map((key) => {
+                      const isCorrect = q.answer === key;
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            "flex items-start gap-2 rounded-xl px-3 py-2 text-sm",
+                            isCorrect
+                              ? "border-l-4 border-[#5B35D5] bg-[#EEEDFE] font-semibold text-[#3B24A8]"
+                              : "border border-border/60 text-foreground"
+                          )}
+                        >
+                          <span className="shrink-0 font-bold">{key}.</span>
+                          <span>{q.options[key]}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+                    <span className="font-semibold text-[#5B35D5]">Explanation: </span>
+                    {q.explanation}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Sticky footer */}
+            <div className="absolute inset-x-0 bottom-0 border-t border-border bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              {savedSetId ? (
+                <Link
+                  href={`/study/practice/${savedSetId}`}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4526B8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5]"
+                >
+                  Start Practicing →
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveQuestions}
+                  disabled={savingQs}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4526B8] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5]"
+                >
+                  {savingQs ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {savingQs ? "Saving…" : "Save to Practice"}
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

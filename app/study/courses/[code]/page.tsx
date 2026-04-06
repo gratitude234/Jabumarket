@@ -6,23 +6,15 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getWhatsAppLink } from "@/lib/whatsapp";
-import { Card, EmptyState, SkeletonCard } from "../../_components/StudyUI";
+import { EmptyState } from "../../_components/StudyUI";
 import {
   ArrowLeft,
   ArrowRight,
-  BookOpen,
-  Clock,
   FileText,
-  GraduationCap,
   Loader2,
   MessageCircle,
-  Phone,
-  ShieldCheck,
   Sparkles,
-  Star,
   UploadCloud,
-  LayoutGrid,
 } from "lucide-react";
 
 type MaterialType =
@@ -85,13 +77,6 @@ function normalize(v: string) {
   return v.trim().replace(/\s+/g, " ");
 }
 
-function formatWhen(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-NG", { year: "numeric", month: "short", day: "numeric" });
-}
-
 function formatWhenShort(iso?: string | null) {
   if (!iso) return "";
   const t = new Date(iso).getTime();
@@ -118,81 +103,6 @@ function labelType(t: string) {
   return m[t] ?? "Materials";
 }
 
-function typeIcon(t: string) {
-  if (t === "past_question") return <Sparkles className="h-4 w-4" />;
-  if (t === "slides") return <LayoutGrid className="h-4 w-4" />;
-  return <FileText className="h-4 w-4" />;
-}
-
-function Pill({
-  children,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  tone?: "neutral" | "good" | "bad" | "soft";
-}) {
-  const cls =
-    tone === "good"
-      ? "border-emerald-300/40 bg-emerald-100/30 dark:bg-emerald-950/20"
-      : tone === "bad"
-      ? "border-rose-300/40 bg-rose-100/30 dark:bg-rose-950/20"
-      : tone === "soft"
-      ? "border-border/60 bg-secondary/50"
-      : "border-border bg-background";
-  return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-extrabold", cls)}>
-      {children}
-    </span>
-  );
-}
-
-function PrimaryCta({
-  href,
-  children,
-  icon,
-}: {
-  href: string;
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-extrabold text-foreground no-underline",
-        "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      )}
-    >
-      {icon}
-      {children}
-      <ArrowRight className="h-4 w-4" />
-    </Link>
-  );
-}
-
-function GhostCta({
-  href,
-  children,
-  icon,
-}: {
-  href: string;
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-extrabold text-foreground no-underline",
-        "hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      )}
-    >
-      {icon}
-      {children}
-    </Link>
-  );
-}
-
 function MaterialRow({
   m,
   onOpen,
@@ -202,137 +112,44 @@ function MaterialRow({
 }) {
   const title = normalize(String(m.title ?? "Untitled material")) || "Untitled material";
   const href = m.file_url || "#";
-  const badge = (m.file_url ?? "").toLowerCase().includes(".pdf")
-    ? "PDF"
-    : m.material_type
-    ? labelType(m.material_type)
-    : "FILE";
+  const unavailable = href === "#";
 
-  const meta = [m.level ? `${m.level}L` : "", m.semester ? `${m.semester} sem` : "", m.session ? String(m.session) : ""].filter(
-    Boolean
-  );
+  const typeColor: Record<string, string> = {
+    past_question: "bg-[#EEEDFE] text-[#3B24A8]",
+    note: "bg-[#EAF3DE] text-[#3B6D11]",
+    handout: "bg-[#EAF3DE] text-[#3B6D11]",
+    slides: "bg-[#E6F1FB] text-[#0C447C]",
+    timetable: "bg-[#FAEEDA] text-[#633806]",
+    other: "bg-secondary text-muted-foreground",
+  };
+
+  const iconColor = typeColor[String(m.material_type ?? "other")] ?? typeColor.other;
+  const meta = [m.level ? `${m.level}L` : "", m.semester ? `${m.semester} sem` : ""].filter(Boolean).join(" · ");
 
   return (
-    <Card className="rounded-3xl bg-card">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-extrabold text-foreground">{title}</p>
-          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{m.description || " "}</p>
-
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Pill tone="soft">{badge}</Pill>
-            {meta.map((b) => (
-              <Pill key={b}>{b}</Pill>
-            ))}
-            {m.created_at ? (
-              <Pill>
-                <Clock className="h-3.5 w-3.5" />
-                {formatWhen(m.created_at)}
-              </Pill>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border bg-background">
-          <FileText className="h-5 w-5 text-foreground" />
-        </div>
+    <button
+      type="button"
+      onClick={() => !unavailable && onOpen(m)}
+      disabled={unavailable}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl border border-border bg-background px-3 py-3 text-left transition",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        unavailable
+          ? "cursor-not-allowed opacity-60"
+          : "hover:bg-secondary/40 active:scale-[0.99]"
+      )}
+    >
+      <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm", iconColor)}>
+        <FileText className="h-4 w-4" />
       </div>
-
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onOpen(m)}
-          className={cn(
-            "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-extrabold transition",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            href === "#"
-              ? "cursor-not-allowed border border-border/60 bg-background text-muted-foreground opacity-70"
-              : "bg-secondary text-foreground hover:opacity-90"
-          )}
-          disabled={href === "#"}
-        >
-          <BookOpen className="h-4 w-4" />
-          Open
-        </button>
-
-        <Link
-          href={`/study/report?material=${encodeURIComponent(String(m.id))}`}
-          className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-3 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-        >
-          Report
-        </Link>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+        {meta ? <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p> : null}
       </div>
-
-      {typeof m.downloads === "number" ? (
-        <p className="mt-2 text-xs font-semibold text-muted-foreground">
-          {m.downloads.toLocaleString("en-NG")} downloads
-        </p>
+      {typeof m.downloads === "number" && m.downloads > 0 ? (
+        <p className="shrink-0 text-xs text-muted-foreground">↓ {m.downloads.toLocaleString("en-NG")}</p>
       ) : null}
-    </Card>
-  );
-}
-
-function TutorMiniCard({ t, courseCode }: { t: any; courseCode: string }) {
-  const name = normalize(String(t?.name ?? t?.full_name ?? t?.display_name ?? "Tutor"));
-  const verified = Boolean(t?.verified);
-  const phone = normalize(String(t?.phone ?? t?.whatsapp ?? t?.contact ?? ""));
-  const location = normalize(String(t?.location ?? t?.campus ?? ""));
-  const headline = normalize(String(t?.headline ?? t?.bio_headline ?? ""));
-
-  const wa = getWhatsAppLink(
-    phone,
-    `Hi ${name}, I found you on Jabu Study. I need help with ${courseCode}.\n\nLevel: \nTopic: \nPreferred time: \nMode (online/physical): \n\nThanks!`
-  );
-
-  return (
-    <Card className="rounded-3xl bg-card">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-base font-extrabold text-foreground">{name}</p>
-            {verified ? (
-              <Pill tone="good">
-                <ShieldCheck className="h-3.5 w-3.5" /> Verified
-              </Pill>
-            ) : null}
-            {typeof t?.rating === "number" ? (
-              <Pill>
-                <Star className="h-3.5 w-3.5" /> {Number(t.rating).toFixed(1)}
-              </Pill>
-            ) : null}
-          </div>
-
-          {headline ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{headline}</p> : null}
-          {location ? <p className="mt-2 text-xs font-semibold text-muted-foreground">{location}</p> : null}
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <a
-          href={wa}
-          target="_blank"
-          rel="noreferrer"
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-3 text-sm font-extrabold text-foreground no-underline",
-            "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <MessageCircle className="h-4 w-4" /> WhatsApp
-        </a>
-
-        <a
-          href={phone ? `tel:${phone.replace(/\s+/g, "")}` : "#"}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-extrabold no-underline",
-            phone
-              ? "border-border bg-background text-foreground hover:bg-secondary/50"
-              : "cursor-not-allowed border-border/60 bg-background text-muted-foreground opacity-70"
-          )}
-        >
-          <Phone className="h-4 w-4" /> Call
-        </a>
-      </div>
-    </Card>
+    </button>
   );
 }
 
@@ -347,16 +164,14 @@ export default function CourseHubPage() {
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [practiceSets, setPracticeSets] = useState<PracticeSet[]>([]);
-  const [tutors, setTutors] = useState<any[]>([]);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Simple, mobile-first filters (no clutter)
   const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [semesterFilter, setSemesterFilter] = useState<string>("all");
   const [sort, setSort] = useState<"top" | "new">("top");
+  const [activeTab, setActiveTab] = useState<"materials" | "practice" | "qa">("materials");
 
   useEffect(() => {
     let mounted = true;
@@ -395,7 +210,6 @@ export default function CourseHubPage() {
         setCourse(null);
         setMaterials([]);
         setPracticeSets([]);
-        setTutors([]);
         setQuestions([]);
         setLoading(false);
         return;
@@ -405,7 +219,7 @@ export default function CourseHubPage() {
       setCourse(courseRow);
 
       // 2) Load everything else in parallel (faster)
-      const [mRes, pRes, qRes, tRes] = await Promise.all([
+      const [mRes, pRes, qRes] = await Promise.all([
         supabase
           .from("study_materials")
           .select("id,title,description,file_url,level,session,semester,created_at,downloads,material_type")
@@ -429,11 +243,6 @@ export default function CourseHubPage() {
           .ilike("course_code", `${code}%`)
           .order("created_at", { ascending: false })
           .limit(6),
-
-        // NOTE: schema seems to store tutor courses in an array/text field,
-        // so we still pull a larger set then filter client-side.
-        // Later improvement: normalize tutor_courses into a join table.
-        supabase.from("study_tutors").select("*").limit(400),
       ]);
 
       if (!mounted) return;
@@ -449,33 +258,6 @@ export default function CourseHubPage() {
 
       if (qRes.error) setQuestions([]);
       else setQuestions((((qRes.data as any[]) ?? []).filter(Boolean)) as QuestionRow[]);
-
-      if (tRes.error) {
-        setTutors([]);
-      } else {
-        const list = ((tRes.data as any[]) ?? []).filter(Boolean);
-        const codeN = code.toLowerCase();
-        const filtered = list.filter((t) => {
-          if (t?.active === false) return false;
-          const c = t?.courses ?? t?.course_codes ?? t?.subjects ?? "";
-          const hay = (Array.isArray(c) ? c.join(" ") : String(c)).toLowerCase();
-          return hay.includes(codeN);
-        });
-
-        filtered.sort((a, b) => {
-          const va = Boolean(a?.verified);
-          const vb = Boolean(b?.verified);
-          if (va !== vb) return vb ? 1 : -1;
-          const ra = Number(a?.rating ?? 0);
-          const rb = Number(b?.rating ?? 0);
-          if (ra !== rb) return rb - ra;
-          const da = new Date(a?.created_at ?? 0).getTime();
-          const db = new Date(b?.created_at ?? 0).getTime();
-          return db - da;
-        });
-
-        setTutors(filtered.slice(0, 12));
-      }
 
       setLoading(false);
     }
@@ -499,19 +281,9 @@ export default function CourseHubPage() {
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [materials]);
 
-  const availableSemesters = useMemo(() => {
-    const set = new Set<string>();
-    materials.forEach((m) => {
-      const s = normalize(String(m.semester ?? ""));
-      if (s) set.add(s);
-    });
-    return Array.from(set);
-  }, [materials]);
-
   const filteredMaterials = useMemo(() => {
     const lvlOk = (m: Material) => levelFilter === "all" || normalize(String(m.level ?? "")) === levelFilter;
-    const semOk = (m: Material) => semesterFilter === "all" || normalize(String(m.semester ?? "")) === semesterFilter;
-    const list = materials.filter((m) => lvlOk(m) && semOk(m));
+    const list = materials.filter((m) => lvlOk(m));
 
     if (sort === "new") {
       return list.slice().sort((a, b) => {
@@ -530,7 +302,7 @@ export default function CourseHubPage() {
       const tb = new Date(b.created_at ?? 0).getTime();
       return tb - ta;
     });
-  }, [materials, levelFilter, semesterFilter, sort]);
+  }, [materials, levelFilter, sort]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Material[]>();
@@ -572,190 +344,181 @@ export default function CourseHubPage() {
   const pageTitle = code || "Course";
 
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
-      {/* Top nav */}
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground",
-            "hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
-
-        <Link
-          href="/study/materials"
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-        >
-          Browse library
-        </Link>
-      </div>
-
-      {/* Hero */}
-      <div className="mt-4">
-        <Card className="rounded-3xl bg-card">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-extrabold text-muted-foreground">Course Hub</p>
-              <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight text-foreground">{pageTitle}</h1>
-              {course?.course_title ? <p className="mt-1 text-sm text-muted-foreground">{normalize(course.course_title)}</p> : null}
-              {dept || faculty ? (
-                <p className="mt-2 text-xs font-semibold text-muted-foreground">
-                  {dept}
-                  {dept && faculty ? " • " : ""}
-                  {faculty}
-                </p>
-              ) : null}
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Pill tone="soft">{materials.length.toLocaleString("en-NG")} materials</Pill>
-                <Pill tone="soft">{practiceSets.length.toLocaleString("en-NG")} CBT set(s)</Pill>
-                <Pill tone="soft">{questions.length.toLocaleString("en-NG")} Q&amp;A</Pill>
-              </div>
-            </div>
-
-            <div className="flex w-full flex-col gap-2 sm:w-auto">
-              <PrimaryCta href={topPractice} icon={<GraduationCap className="h-4 w-4" />}>
-                Start Practice
-              </PrimaryCta>
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
-                <GhostCta
-                  href={`/study/materials/upload?course_code=${encodeURIComponent(code)}`}
-                  icon={<UploadCloud className="h-4 w-4" />}
-                >
-                  Upload
-                </GhostCta>
-                <GhostCta
-                  href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
-                  icon={<MessageCircle className="h-4 w-4" />}
-                >
-                  Ask
-                </GhostCta>
-              </div>
-            </div>
+    <div className="space-y-0 pb-28 md:pb-6">
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+        {/* Indigo header */}
+        <div className="bg-[#5B35D5] px-5 pt-5 pb-5">
+          {/* Top row: back + upload */}
+          <div className="mb-4 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </button>
+            <Link
+              href={`/study/materials/upload?course_code=${encodeURIComponent(code)}`}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-white/25"
+            >
+              <UploadCloud className="h-3.5 w-3.5" /> Upload
+            </Link>
           </div>
 
-          {error ? (
-            <div className="mt-4 rounded-2xl border border-rose-300/40 bg-rose-100/30 p-4 text-sm font-semibold text-foreground dark:bg-rose-950/20">
-              {error}
-            </div>
+          {/* Course identity */}
+          <h1 className="text-3xl font-extrabold tracking-tight text-white leading-none">
+            {pageTitle}
+          </h1>
+          {course?.course_title ? (
+            <p className="mt-1.5 text-sm text-white/70 leading-snug">
+              {normalize(course.course_title)}
+            </p>
+          ) : null}
+          {(dept || faculty) ? (
+            <p className="mt-1 text-xs text-white/50">
+              {[dept, faculty].filter(Boolean).join(" · ")}
+            </p>
           ) : null}
 
-          {loading ? (
-            <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading course hub…
+          {/* Stat tiles */}
+          {!loading && (
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-2xl bg-white/10 px-3 py-2.5 text-center">
+                <p className="font-mono text-lg font-extrabold leading-none text-white">
+                  {materials.length}
+                </p>
+                <p className="mt-1 text-[10px] text-white/55">materials</p>
+              </div>
+              <div className="rounded-2xl bg-white/10 px-3 py-2.5 text-center">
+                <p className="font-mono text-lg font-extrabold leading-none text-white">
+                  {practiceSets.length}
+                </p>
+                <p className="mt-1 text-[10px] text-white/55">practice sets</p>
+              </div>
+              <div className="rounded-2xl bg-white/10 px-3 py-2.5 text-center">
+                <p className="font-mono text-lg font-extrabold leading-none text-white">
+                  {questions.length}
+                </p>
+                <p className="mt-1 text-[10px] text-white/55">Q&amp;A</p>
+              </div>
             </div>
-          ) : null}
+          )}
+        </div>
 
-          {!loading && !error && !course ? (
-            <div className="mt-4">
-              <EmptyState
-                title="Course not found"
-                description={`No course matches “${code}”. Try searching the library.`}
-                action={
-                  <Link
-                    href={`/study/materials?q=${encodeURIComponent(code)}`}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-                  >
-                    Search library <ArrowRight className="h-4 w-4" />
-                  </Link>
-                }
-              />
-            </div>
-          ) : null}
-        </Card>
+        {/* Error */}
+        {error ? (
+          <div className="m-4 rounded-2xl border border-rose-300/40 bg-rose-100/30 p-4 text-sm font-semibold text-foreground dark:bg-rose-950/20">
+            {error}
+          </div>
+        ) : null}
+
+        {/* Loading */}
+        {loading ? (
+          <div className="flex items-center gap-2 px-5 py-4 text-sm font-semibold text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading course hub…
+          </div>
+        ) : null}
+
+        {/* Course not found */}
+        {!loading && !error && !course ? (
+          <div className="p-5">
+            <EmptyState
+              title="Course not found"
+              description={`No course matches "${code}". Try searching the library.`}
+              action={
+                <Link
+                  href={`/study/materials?q=${encodeURIComponent(code)}`}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
+                >
+                  Search library <ArrowRight className="h-4 w-4" />
+                </Link>
+              }
+            />
+          </div>
+        ) : null}
+
+        {/* ── Two primary CTAs ── */}
+        {!loading && course && (
+          <div className="grid grid-cols-2 gap-2 border-t border-border px-4 py-3">
+            <Link
+              href={topPractice}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-extrabold text-white no-underline hover:bg-[#4526B8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Sparkles className="h-4 w-4" /> Start practice
+            </Link>
+            <Link
+              href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <MessageCircle className="h-4 w-4" /> Ask a question
+            </Link>
+          </div>
+        )}
+
+        {/* ── Section tabs ── */}
+        {!loading && course && (
+          <div className="flex gap-0 border-t border-border px-4">
+            {(["materials", "practice", "qa"] as const).map((tab) => {
+              const labels = { materials: "Materials", practice: "Practice", qa: "Q&A" };
+              const active = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    "px-3 py-3 text-sm font-semibold transition-all border-b-2 focus-visible:outline-none",
+                    active
+                      ? "border-[#5B35D5] text-[#5B35D5]"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {labels[tab]}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Loading skeletons */}
-      {loading ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
-      ) : null}
+      {/* ── Tab content ───────────────────────────────────────────────────── */}
+      {!loading && course && (
+        <div className="mt-3 space-y-3">
 
-      {!loading && course ? (
-        <>
-          {/* Materials */}
-          <section className="mt-6">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-foreground">Materials</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Past questions, notes, slides and more for {code}.</p>
-              </div>
-
-              <Link
-                href={`/study/materials?q=${encodeURIComponent(code)}`}
-                className="text-sm font-extrabold text-muted-foreground no-underline hover:text-foreground"
-              >
-                Search this course in library →
-              </Link>
-            </div>
-
-            {/* Filters (compact, mobile-first) */}
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              <label className="block">
-                <span className="text-xs font-extrabold text-muted-foreground">Level</span>
-                <select
-                  value={levelFilter}
-                  onChange={(e) => setLevelFilter(e.target.value)}
-                  className={cn(
-                    "mt-1 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-semibold text-foreground outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  )}
-                >
-                  <option value="all">All levels</option>
-                  {availableLevels.map((lv) => (
-                    <option key={lv} value={lv}>
-                      {lv}L
-                    </option>
+          {/* MATERIALS TAB */}
+          {activeTab === "materials" && (
+            <div className="space-y-3">
+              {/* Level chips + sort */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
+                  {(["all", ...availableLevels] as string[]).map((lv) => (
+                    <button
+                      key={lv}
+                      type="button"
+                      onClick={() => setLevelFilter(lv)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all",
+                        levelFilter === lv
+                          ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#3B24A8]"
+                          : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50"
+                      )}
+                    >
+                      {lv === "all" ? "All levels" : `${lv}L`}
+                    </button>
                   ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-extrabold text-muted-foreground">Semester</span>
-                <select
-                  value={semesterFilter}
-                  onChange={(e) => setSemesterFilter(e.target.value)}
-                  className={cn(
-                    "mt-1 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-semibold text-foreground outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  )}
-                >
-                  <option value="all">All semesters</option>
-                  {availableSemesters.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-extrabold text-muted-foreground">Sort</span>
+                </div>
                 <select
                   value={sort}
-                  onChange={(e) => setSort(e.target.value as any)}
-                  className={cn(
-                    "mt-1 w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm font-semibold text-foreground outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  )}
+                  onChange={(e) => setSort(e.target.value as "top" | "new")}
+                  className="shrink-0 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground outline-none"
                 >
-                  <option value="top">Top downloads</option>
-                  <option value="new">Newest</option>
+                  <option value="top">Top</option>
+                  <option value="new">New</option>
                 </select>
-              </label>
-            </div>
+              </div>
 
-            {filteredMaterials.length === 0 ? (
-              <div className="mt-3">
+              {filteredMaterials.length === 0 ? (
                 <EmptyState
                   title="No materials yet"
                   description={`Be the first to upload past questions, notes or slides for ${code}.`}
@@ -768,257 +531,171 @@ export default function CourseHubPage() {
                     </Link>
                   }
                 />
-              </div>
-            ) : (
-              <div className="mt-3 space-y-4">
-                {grouped.map(([t, list]) => (
-                  <Card key={t} className="rounded-3xl bg-card">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="grid h-9 w-9 place-items-center rounded-2xl border border-border bg-background text-foreground">
-                          {typeIcon(t)}
-                        </span>
-                        <div>
-                          <p className="text-sm font-extrabold text-foreground">{labelType(t)}</p>
-                          <p className="text-xs font-semibold text-muted-foreground">{list.length.toLocaleString("en-NG")} item(s)</p>
-                        </div>
+              ) : (
+                <div className="space-y-4">
+                  {grouped.map(([type, list]) => (
+                    <div key={type}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          {labelType(type)}
+                        </p>
+                        {list.length > 5 && (
+                          <Link
+                            href={`/study/materials?type=${encodeURIComponent(type)}&q=${encodeURIComponent(code)}`}
+                            className="text-xs font-semibold text-[#5B35D5] no-underline"
+                          >
+                            View all {list.length} →
+                          </Link>
+                        )}
                       </div>
-
-                      <Link
-                        href={`/study/materials?type=${encodeURIComponent(t)}&q=${encodeURIComponent(code)}`}
-                        className="text-sm font-extrabold text-muted-foreground no-underline hover:text-foreground"
-                      >
-                        View in library →
-                      </Link>
-                    </div>
-
-                    <div className="mt-4 grid gap-3">
-                      {list.slice(0, 6).map((m) => (
-                        <MaterialRow key={m.id} m={m} onOpen={onOpenMaterial} />
-                      ))}
-                    </div>
-
-                    {list.length > 6 ? (
-                      <div className="mt-4">
-                        <Link
-                          href={`/study/materials?type=${encodeURIComponent(t)}&q=${encodeURIComponent(code)}`}
-                          className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-3 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-                        >
-                          See more ({list.length - 6})
-                        </Link>
+                      <div className="space-y-2">
+                        {list.slice(0, 5).map((m) => (
+                          <MaterialRow key={m.id} m={m} onOpen={onOpenMaterial} />
+                        ))}
                       </div>
-                    ) : null}
-                  </Card>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Practice */}
-          <section className="mt-8">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-foreground">Practice (CBT)</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Timed practice sets for {code}. Great for revision.</p>
-              </div>
-              <Link
-                href={`/study/practice?course=${encodeURIComponent(code)}`}
-                className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-              >
-                View all
-              </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          )}
 
-            {practiceSets.length === 0 ? (
-              <div className="mt-3">
+          {/* PRACTICE TAB */}
+          {activeTab === "practice" && (
+            <div className="space-y-3">
+              {practiceSets.length === 0 ? (
                 <EmptyState
                   title="No practice sets yet"
-                  description={`You can still use Materials for revision. Admin/department can publish CBT sets for ${code}.`}
+                  description={`Admin or course reps can publish CBT sets for ${code}. Use Materials for revision in the meantime.`}
                   action={
                     <Link
                       href={`/study/practice?course=${encodeURIComponent(code)}`}
                       className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
                     >
-                      Go to Practice Mode <ArrowRight className="h-4 w-4" />
+                      Browse all practice <ArrowRight className="h-4 w-4" />
                     </Link>
                   }
                 />
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-3">
-                {practiceSets.map((s) => (
-                  <Link
-                    key={String(s.id)}
-                    href={`/study/practice/${encodeURIComponent(String(s.id))}`}
-                    className="block rounded-3xl border border-border bg-card p-4 shadow-sm no-underline transition hover:bg-secondary/20"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-extrabold text-foreground">{normalize(String(s.title ?? "Practice set"))}</p>
-                        {s.description ? (
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{normalize(String(s.description))}</p>
-                        ) : null}
-
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {typeof s.questions_count === "number" ? (
-                            <Pill tone="soft">{Number(s.questions_count).toLocaleString("en-NG")} questions</Pill>
-                          ) : null}
-                          {typeof s.time_limit_minutes === "number" ? <Pill tone="soft">{Number(s.time_limit_minutes)} mins</Pill> : null}
-                          {s.level ? <Pill>{String(s.level)}L</Pill> : null}
+              ) : (
+                <>
+                  {practiceSets.map((s) => (
+                    <Link
+                      key={String(s.id)}
+                      href={`/study/practice/${encodeURIComponent(String(s.id))}`}
+                      className="block rounded-2xl border border-border bg-background px-4 py-3 no-underline transition hover:bg-secondary/30 active:scale-[0.99]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {normalize(String(s.title ?? "Practice set"))}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {typeof s.questions_count === "number" && (
+                              <span className="rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+                                {Number(s.questions_count)} questions
+                              </span>
+                            )}
+                            {typeof s.time_limit_minutes === "number" && (
+                              <span className="rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+                                {Number(s.time_limit_minutes)} mins
+                              </span>
+                            )}
+                            {s.level && (
+                              <span className="rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+                                {String(s.level)}L
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#EEEDFE]">
+                          <Sparkles className="h-4 w-4 text-[#5B35D5]" />
                         </div>
                       </div>
-
-                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border bg-background">
-                        <Sparkles className="h-5 w-5 text-foreground" />
-                      </div>
-                    </div>
+                    </Link>
+                  ))}
+                  <Link
+                    href={`/study/practice?course=${encodeURIComponent(code)}`}
+                    className="block text-center text-sm font-semibold text-[#5B35D5] no-underline py-2"
+                  >
+                    View all practice sets →
                   </Link>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Q&A */}
-          <section className="mt-8">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-foreground">Q&amp;A for {code}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Ask questions, get answers, and learn faster.</p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/study/questions?course=${encodeURIComponent(code)}`}
-                  className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:bg-secondary/50"
-                >
-                  View all
-                </Link>
-                <Link
-                  href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
-                  className="inline-flex items-center justify-center rounded-2xl bg-secondary px-3 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-                >
-                  Ask
-                </Link>
-              </div>
+                </>
+              )}
             </div>
+          )}
 
-            {questions.length === 0 ? (
-              <div className="mt-3">
+          {/* Q&A TAB */}
+          {activeTab === "qa" && (
+            <div className="space-y-2">
+              <Link
+                href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border px-4 py-3 text-sm font-semibold text-muted-foreground no-underline transition hover:border-[#5B35D5]/40 hover:bg-[#EEEDFE] hover:text-[#3B24A8]"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Ask a question about {code}
+              </Link>
+
+              {questions.length === 0 ? (
                 <EmptyState
                   title="No questions yet"
                   description={`Be the first to ask a question about ${code}.`}
-                  action={
-                    <Link
-                      href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-                    >
-                      <MessageCircle className="h-4 w-4" /> Ask a question <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  }
                 />
-              </div>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {questions.map((q) => (
+              ) : (
+                <>
+                  <div className="overflow-hidden rounded-2xl border border-border bg-background">
+                    {questions.map((q, i) => {
+                      const solved = q.solved === true;
+                      const unanswered = (q.answers_count ?? 0) === 0 && !solved;
+                      return (
+                        <Link
+                          key={q.id}
+                          href={`/study/questions/${encodeURIComponent(String(q.id))}`}
+                          className={cn(
+                            "flex items-start gap-3 px-4 py-3 no-underline transition hover:bg-secondary/30",
+                            i > 0 && "border-t border-border/60"
+                          )}
+                        >
+                          <div
+                            className="mt-1 h-full w-1 shrink-0 self-stretch rounded-full"
+                            style={{
+                              minHeight: 32,
+                              backgroundColor: solved
+                                ? "#1D9E75"
+                                : unanswered
+                                ? "#EF9F27"
+                                : "var(--color-border-secondary)",
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-foreground leading-snug">
+                              {normalize(String(q.title ?? "Question"))}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {solved
+                                ? "Solved"
+                                : unanswered
+                                ? "Unanswered"
+                                : `${q.answers_count ?? 0} answer${(q.answers_count ?? 0) !== 1 ? "s" : ""}`}
+                              {q.created_at ? ` · ${formatWhenShort(q.created_at)}` : ""}
+                            </p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
                   <Link
-                    key={q.id}
-                    href={`/study/questions/${encodeURIComponent(String(q.id))}`}
-                    className="block rounded-3xl border border-border bg-card p-4 shadow-sm no-underline transition hover:bg-secondary/20"
+                    href={`/study/questions?course=${encodeURIComponent(code)}`}
+                    className="block text-center text-sm font-semibold text-[#5B35D5] no-underline py-2"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-extrabold text-foreground">{normalize(String(q.title ?? "Question"))}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {q.solved ? <Pill tone="good">Solved</Pill> : <Pill>Unsolved</Pill>}
-                          {q.level ? <Pill>{String(q.level)}L</Pill> : null}
-                          <Pill tone="soft">{Number(q.answers_count ?? 0).toLocaleString("en-NG")} answers</Pill>
-                          <Pill tone="soft">{Number(q.upvotes_count ?? 0).toLocaleString("en-NG")} upvotes</Pill>
-                          {q.created_at ? (
-                            <Pill>
-                              <Clock className="h-3.5 w-3.5" /> {formatWhenShort(q.created_at)}
-                            </Pill>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border bg-background">
-                        <MessageCircle className="h-5 w-5 text-foreground" />
-                      </div>
-                    </div>
+                    View all {questions.length} questions →
                   </Link>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Tutors */}
-          <section className="mt-8">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-foreground">Tutors for {code}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Connect with tutors who teach this course.</p>
-              </div>
-              <Link
-                href={`/study/tutors?course=${encodeURIComponent(code)}`}
-                className="text-sm font-extrabold text-muted-foreground no-underline hover:text-foreground"
-              >
-                Browse tutors →
-              </Link>
+                </>
+              )}
             </div>
+          )}
 
-            {tutors.length === 0 ? (
-              <div className="mt-3">
-                <EmptyState
-                  title="No tutors listed yet"
-                  description={`If you can tutor ${code}, list yourself on the Tutors page.`}
-                  action={
-                    <Link
-                      href="/study/tutors"
-                      className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-                    >
-                      Go to Tutors <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  }
-                />
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-3">
-                {tutors.map((t) => (
-                  <TutorMiniCard key={String(t.id ?? t.user_id ?? Math.random())} t={t} courseCode={code} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Bottom mini CTA */}
-          <div className="mt-10">
-            <Card className="rounded-3xl bg-card">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-base font-extrabold text-foreground">Help your classmates</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Upload a past question / note for {code} or ask a question if you’re stuck.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <GhostCta
-                    href={`/study/materials/upload?course_code=${encodeURIComponent(code)}`}
-                    icon={<UploadCloud className="h-4 w-4" />}
-                  >
-                    Upload
-                  </GhostCta>
-                  <GhostCta
-                    href={`/study/questions/ask?course=${encodeURIComponent(code)}`}
-                    icon={<MessageCircle className="h-4 w-4" />}
-                  >
-                    Ask
-                  </GhostCta>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </>
-      ) : null}
+        </div>
+      )}
     </div>
   );
 }

@@ -1199,7 +1199,7 @@ export default function GpaPage() {
               </p>
               <div className="mt-1 flex items-baseline gap-1.5">
                 <span className="font-mono text-5xl font-extrabold leading-none tracking-tight text-white">
-                  {canCalculate ? format2(totals.cgpa) : "—"}
+                  {canCalculate ? format2(totals.cgpa) : "0.00"}
                 </span>
                 <span className="text-lg font-semibold text-white/50">
                   / {scaleMax}
@@ -1221,7 +1221,7 @@ export default function GpaPage() {
                 </div>
               )}
               <p className="text-right text-sm font-semibold text-white/70">
-                {canCalculate ? cgpaTone.label : "No data yet"}
+                {canCalculate ? cgpaTone.label : "Add a course below to get started"}
               </p>
             </div>
           </div>
