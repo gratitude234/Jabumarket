@@ -46,6 +46,9 @@ type GeminiStreamChunk = {
     };
   }>;
 };
+type RateLimitRow = {
+  last_called_at: string;
+};
 
 async function uploadPdfToGemini(
   apiKey: string,
@@ -104,6 +107,57 @@ async function uploadPdfToGemini(
   return fileUri;
 }
 
+async function enforceRateLimit(
+  admin: ReturnType<typeof adminClient>,
+  userId: string,
+  endpoint: string,
+  cooldownMs: number
+): Promise<
+  | { allowed: true }
+  | { allowed: false; retryAfterSeconds: number }
+  | { allowed: false; error: string }
+> {
+  const { data, error } = await admin
+    .from("ai_rate_limits")
+    .select("last_called_at")
+    .eq("user_id", userId)
+    .eq("endpoint", endpoint)
+    .maybeSingle();
+
+  if (error) {
+    return { allowed: false, error: error.message };
+  }
+
+  const row = data as RateLimitRow | null;
+  const now = Date.now();
+  if (row?.last_called_at) {
+    const nextAllowedAt = new Date(row.last_called_at).getTime() + cooldownMs;
+    if (Number.isFinite(nextAllowedAt) && nextAllowedAt > now) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.ceil((nextAllowedAt - now) / 1000),
+      };
+    }
+  }
+
+  const { error: upsertError } = await admin
+    .from("ai_rate_limits")
+    .upsert(
+      {
+        user_id: userId,
+        endpoint,
+        last_called_at: new Date(now).toISOString(),
+      },
+      { onConflict: "user_id,endpoint" }
+    );
+
+  if (upsertError) {
+    return { allowed: false, error: upsertError.message };
+  }
+
+  return { allowed: true };
+}
+
 export async function POST(req: NextRequest) {
   // Auth
   const supabase = await createSupabaseServerClient();
@@ -155,8 +209,9 @@ export async function POST(req: NextRequest) {
   }
 
   let fileUri = material.gemini_file_uri?.trim() ?? "";
+  let downloadUrl: string | null = null;
   if (!fileUri) {
-    let downloadUrl: string | null = fileUrl;
+    downloadUrl = fileUrl;
     if (!downloadUrl && filePath) {
       const { data: signed } = await admin.storage
         .from("study-materials")
@@ -167,10 +222,34 @@ export async function POST(req: NextRequest) {
     if (!downloadUrl) {
       return NextResponse.json({ error: "File URL not available." }, { status: 404 });
     }
+  }
+
+  const rateLimit = await enforceRateLimit(admin, user.id, "material-chat", 60_000);
+  if ("error" in rateLimit) {
+    console.error("[material-chat] rate limit error:", rateLimit.error);
+    return NextResponse.json({ error: "Failed to check rate limit." }, { status: 500 });
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: `Please wait ${rateLimit.retryAfterSeconds} seconds before sending another chat message.`,
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+      }
+    );
+  }
+
+  if (!fileUri) {
+    const pdfDownloadUrl = downloadUrl;
+    if (!pdfDownloadUrl) {
+      return NextResponse.json({ error: "File URL not available." }, { status: 404 });
+    }
 
     let pdfBuffer: ArrayBuffer;
     try {
-      const fetchRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+      const fetchRes = await fetch(pdfDownloadUrl, { signal: AbortSignal.timeout(30_000) });
       if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
       pdfBuffer = await fetchRes.arrayBuffer();
     } catch {

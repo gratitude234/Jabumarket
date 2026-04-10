@@ -13,6 +13,20 @@ type MCQ = {
   explanation: string;
 };
 
+type MaterialTitleRow = {
+  id: string;
+  title: string | null;
+};
+
+type QuizSetRow = {
+  id: string;
+};
+
+type InsertedQuestionRow = {
+  id: string;
+  position: number | null;
+};
+
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,14 +35,14 @@ function adminClient() {
 }
 
 export async function POST(req: NextRequest) {
-  // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
   let body: { materialId?: string; courseId?: string; questions?: MCQ[] };
   try {
     body = await req.json();
@@ -41,7 +55,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
-  // ── Fetch material title ───────────────────────────────────────────────────
   const admin = adminClient();
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
@@ -53,9 +66,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Material not found." }, { status: 404 });
   }
 
-  const title = `AI Generated — ${(mat as any).title}`;
+  const material = mat as MaterialTitleRow;
+  const title = `AI Generated - ${material.title ?? "Practice Set"}`;
 
-  // ── Insert quiz set ────────────────────────────────────────────────────────
   const { data: set, error: setErr } = await admin
     .from("study_quiz_sets")
     .insert({
@@ -73,39 +86,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
   }
 
-  const setId = (set as any).id as string;
+  const quizSet = set as QuizSetRow;
 
-  // ── Insert questions and options ───────────────────────────────────────────
-  for (const q of questions) {
-    const { data: qRow, error: qErr } = await admin
-      .from("study_quiz_questions")
-      .insert({ set_id: setId, prompt: q.question })
-      .select("id")
-      .single();
+  const questionPayload = questions.map((question, index) => ({
+    set_id: quizSet.id,
+    prompt: question.question,
+    position: index,
+  }));
 
-    if (qErr || !qRow) {
-      console.error("[save-generated-questions] question insert error:", qErr);
-      return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
-    }
+  const { data: insertedQuestions, error: questionsError } = await admin
+    .from("study_quiz_questions")
+    .insert(questionPayload)
+    .select("id, position");
 
-    const questionId = (qRow as any).id as string;
-    const optionKeys = ["A", "B", "C", "D"] as const;
-    const options = optionKeys.map((key, idx) => ({
-      question_id: questionId,
-      text: q.options[key],
-      is_correct: q.answer === key,
-      position: idx,
-    }));
-
-    const { error: optErr } = await admin
-      .from("study_quiz_options")
-      .insert(options);
-
-    if (optErr) {
-      console.error("[save-generated-questions] options insert error:", optErr);
-      return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
-    }
+  if (questionsError || !insertedQuestions) {
+    console.error("[save-generated-questions] question insert error:", questionsError);
+    return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
   }
 
-  return NextResponse.json({ setId });
+  const orderedQuestions = [...(insertedQuestions as InsertedQuestionRow[])].sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0)
+  );
+
+  const optionPayload = orderedQuestions.flatMap((questionRow) => {
+    if (typeof questionRow.position !== "number") {
+      return [];
+    }
+
+    const question = questions[questionRow.position];
+    if (!question) {
+      return [];
+    }
+
+    return (["A", "B", "C", "D"] as const).map((key, index) => ({
+      question_id: questionRow.id,
+      text: question.options[key],
+      is_correct: question.answer === key,
+      position: index,
+    }));
+  });
+
+  if (optionPayload.length !== questions.length * 4) {
+    console.error("[save-generated-questions] option payload build error");
+    return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
+  }
+
+  const { error: optionsError } = await admin
+    .from("study_quiz_options")
+    .insert(optionPayload);
+
+  if (optionsError) {
+    console.error("[save-generated-questions] options insert error:", optionsError);
+    return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
+  }
+
+  return NextResponse.json({ setId: quizSet.id });
 }

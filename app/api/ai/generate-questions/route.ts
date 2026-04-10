@@ -16,12 +16,66 @@ type StudyMaterialRow = {
   file_path: string | null;
   material_type: string | null;
 };
+type RateLimitRow = {
+  last_called_at: string;
+};
 
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+}
+
+async function enforceRateLimit(
+  admin: ReturnType<typeof adminClient>,
+  userId: string,
+  endpoint: string,
+  cooldownMs: number
+): Promise<
+  | { allowed: true }
+  | { allowed: false; retryAfterSeconds: number }
+  | { allowed: false; error: string }
+> {
+  const { data, error } = await admin
+    .from("ai_rate_limits")
+    .select("last_called_at")
+    .eq("user_id", userId)
+    .eq("endpoint", endpoint)
+    .maybeSingle();
+
+  if (error) {
+    return { allowed: false, error: error.message };
+  }
+
+  const row = data as RateLimitRow | null;
+  const now = Date.now();
+  if (row?.last_called_at) {
+    const nextAllowedAt = new Date(row.last_called_at).getTime() + cooldownMs;
+    if (Number.isFinite(nextAllowedAt) && nextAllowedAt > now) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.ceil((nextAllowedAt - now) / 1000),
+      };
+    }
+  }
+
+  const { error: upsertError } = await admin
+    .from("ai_rate_limits")
+    .upsert(
+      {
+        user_id: userId,
+        endpoint,
+        last_called_at: new Date(now).toISOString(),
+      },
+      { onConflict: "user_id,endpoint" }
+    );
+
+  if (upsertError) {
+    return { allowed: false, error: upsertError.message };
+  }
+
+  return { allowed: true };
 }
 
 export async function POST(req: NextRequest) {
@@ -81,6 +135,28 @@ export async function POST(req: NextRequest) {
 
   if (!downloadUrl) {
     return NextResponse.json({ error: "File URL not available." }, { status: 404 });
+  }
+
+  const rateLimit = await enforceRateLimit(
+    admin,
+    user.id,
+    "generate-questions",
+    5 * 60 * 1000
+  );
+  if ("error" in rateLimit) {
+    console.error("[generate-questions] rate limit error:", rateLimit.error);
+    return NextResponse.json({ error: "Failed to check rate limit." }, { status: 500 });
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: `Please wait ${rateLimit.retryAfterSeconds} seconds before generating more questions.`,
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+      }
+    );
   }
 
   // Fetch PDF bytes

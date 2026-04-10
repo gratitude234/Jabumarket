@@ -579,6 +579,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [genQsSheetOpen, setGenQsSheetOpen] = useState(false);
   const [savingQs, setSavingQs] = useState(false);
   const [savedSetId, setSavedSetId] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -699,6 +700,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   async function handleGenerateQuestions() {
     setGenQsLoading(true);
     setGenQsError(null);
+    setSavedSetId(null);
     try {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
@@ -708,6 +710,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to generate questions.");
       setGeneratedQuestions(data.questions);
+      setRevealed({});
       setGenQsSheetOpen(true);
     } catch (e: unknown) {
       setGenQsError(e instanceof Error ? e.message : "Something went wrong.");
@@ -1205,13 +1208,14 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
                   </p>
                   <div className="space-y-2">
                     {(["A", "B", "C", "D"] as const).map((key) => {
+                      const isRevealed = revealed[idx] === true;
                       const isCorrect = q.answer === key;
                       return (
                         <div
                           key={key}
                           className={cn(
                             "flex items-start gap-2 rounded-xl px-3 py-2 text-sm",
-                            isCorrect
+                            isRevealed && isCorrect
                               ? "border-l-4 border-[#5B35D5] bg-[#EEEDFE] font-semibold text-[#3B24A8]"
                               : "border border-border/60 text-foreground"
                           )}
@@ -1222,10 +1226,24 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
                       );
                     })}
                   </div>
-                  <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
-                    <span className="font-semibold text-[#5B35D5]">Explanation: </span>
-                    {q.explanation}
-                  </p>
+                  <div className="mt-3">
+                    {revealed[idx] ? (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        <span className="font-semibold text-[#5B35D5]">Explanation: </span>
+                        {q.explanation}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRevealed((prev) => ({ ...prev, [idx]: true }))
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-[#5B35D5]/30 bg-[#EEEDFE] px-3 py-2 text-xs font-semibold text-[#3B24A8] transition hover:bg-[#E5E2FF]"
+                      >
+                        Reveal answer
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
