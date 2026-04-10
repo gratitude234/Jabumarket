@@ -7,6 +7,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const MODEL = "gemini-2.5-flash-lite";
+const FILE_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
 
 function adminClient() {
@@ -17,16 +18,103 @@ function adminClient() {
 }
 
 type HistoryEntry = { role: "user" | "model"; text: string };
+type StudyMaterialRow = {
+  id: string;
+  title: string | null;
+  file_url: string | null;
+  file_path: string | null;
+  gemini_file_uri: string | null;
+};
+type GeminiFileUploadResponse = {
+  file?: {
+    uri?: string | null;
+  } | null;
+};
+type GeminiPart =
+  | { text: string }
+  | { file_data: { mime_type: string; file_uri: string } };
+type GeminiContent = {
+  role: "user" | "model";
+  parts: GeminiPart[];
+};
+type GeminiStreamChunk = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+};
+
+async function uploadPdfToGemini(
+  apiKey: string,
+  pdfBuffer: ArrayBuffer,
+  displayName: string
+): Promise<string> {
+  const startRes = await fetch(`${FILE_UPLOAD_URL}?key=${apiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(pdfBuffer.byteLength),
+      "X-Goog-Upload-Header-Content-Type": "application/pdf",
+    },
+    body: JSON.stringify({
+      file: {
+        display_name: displayName,
+      },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!startRes.ok) {
+    const errText = await startRes.text().catch(() => startRes.statusText);
+    throw new Error(`Gemini upload init failed: ${errText}`);
+  }
+
+  const uploadUrl = startRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    throw new Error("Gemini upload URL missing.");
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(pdfBuffer.byteLength),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: Buffer.from(pdfBuffer),
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => uploadRes.statusText);
+    throw new Error(`Gemini upload failed: ${errText}`);
+  }
+
+  const uploadData = (await uploadRes.json()) as GeminiFileUploadResponse;
+  const fileUri = uploadData.file?.uri?.trim();
+  if (!fileUri) {
+    throw new Error("Gemini file URI missing.");
+  }
+
+  return fileUri;
+}
 
 export async function POST(req: NextRequest) {
-  // ── Auth ───────────────────────────────────────────────────────────────────
+  // Auth
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
+  // Parse body
   let body: { materialId?: string; message?: string; history?: HistoryEntry[] };
   try {
     body = await req.json();
@@ -39,11 +127,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
-  // ── Fetch material ─────────────────────────────────────────────────────────
+  // Fetch material
   const admin = adminClient();
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
-    .select("id, title, file_url, file_path")
+    .select("id, title, file_url, file_path, gemini_file_uri")
     .eq("id", materialId)
     .maybeSingle();
 
@@ -51,59 +139,66 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Material not found." }, { status: 404 });
   }
 
-  const fileUrl = (mat as any).file_url as string | null;
-  const filePath = (mat as any).file_path as string | null;
+  const material = mat as StudyMaterialRow;
+  const fileUrl = material.file_url;
+  const filePath = material.file_path;
 
-  // ── PDF check ──────────────────────────────────────────────────────────────
-  const urlStr = ((fileUrl ?? "") + " " + (filePath ?? "")).toLowerCase();
+  // PDF check
+  const urlStr = `${fileUrl ?? ""} ${filePath ?? ""}`.toLowerCase();
   if (!urlStr.includes(".pdf")) {
     return NextResponse.json({ error: "Only PDF materials are supported." }, { status: 400 });
   }
 
-  // ── Resolve download URL ───────────────────────────────────────────────────
-  let downloadUrl: string | null = fileUrl;
-  if (!downloadUrl && filePath) {
-    const { data: signed } = await admin.storage
-      .from("study-materials")
-      .createSignedUrl(filePath, 300);
-    downloadUrl = (signed as any)?.signedUrl ?? null;
-  }
-
-  if (!downloadUrl) {
-    return NextResponse.json({ error: "File URL not available." }, { status: 404 });
-  }
-
-  // ── Fetch PDF bytes ────────────────────────────────────────────────────────
-  let pdfBuffer: ArrayBuffer;
-  try {
-    const fetchRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
-    if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
-    pdfBuffer = await fetchRes.arrayBuffer();
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch PDF file." }, { status: 502 });
-  }
-
-  // ── Word count guard ───────────────────────────────────────────────────────
-  try {
-    const rawText = new TextDecoder("utf-8", { fatal: false }).decode(pdfBuffer);
-    const wordCount = rawText.split(/\s+/).filter((w) => w.length > 1).length;
-    if (wordCount > 20_000) {
-      return NextResponse.json(
-        { error: "This document is too large for chat. Try a shorter material." },
-        { status: 400 }
-      );
-    }
-  } catch {
-    // Non-critical — proceed
-  }
-
-  // ── Build Gemini request ───────────────────────────────────────────────────
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
   }
 
-  const base64Pdf = Buffer.from(pdfBuffer).toString("base64");
+  let fileUri = material.gemini_file_uri?.trim() ?? "";
+  if (!fileUri) {
+    let downloadUrl: string | null = fileUrl;
+    if (!downloadUrl && filePath) {
+      const { data: signed } = await admin.storage
+        .from("study-materials")
+        .createSignedUrl(filePath, 300);
+      downloadUrl = signed?.signedUrl ?? null;
+    }
+
+    if (!downloadUrl) {
+      return NextResponse.json({ error: "File URL not available." }, { status: 404 });
+    }
+
+    let pdfBuffer: ArrayBuffer;
+    try {
+      const fetchRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
+      pdfBuffer = await fetchRes.arrayBuffer();
+    } catch {
+      return NextResponse.json({ error: "Failed to fetch PDF file." }, { status: 502 });
+    }
+
+    try {
+      fileUri = await uploadPdfToGemini(
+        apiKey,
+        pdfBuffer,
+        material.title ?? `material-${material.id}`
+      );
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      console.error("[material-chat] Gemini file upload error:", message);
+      return NextResponse.json({ error: "Chat failed." }, { status: 500 });
+    }
+
+    const { error: updateError } = await admin
+      .from("study_materials")
+      .update({ gemini_file_uri: fileUri })
+      .eq("id", material.id);
+
+    if (updateError) {
+      console.error("[material-chat] Failed to persist gemini_file_uri:", updateError.message);
+      return NextResponse.json({ error: "Chat failed." }, { status: 500 });
+    }
+  }
 
   const systemInstruction = `You are a study assistant for Nigerian university students.
 Answer questions strictly based on the provided document.
@@ -111,34 +206,24 @@ If the answer cannot be found in the document, say: "I couldn't find that in thi
 Keep answers concise and student-friendly.
 Do not invent information outside the document.`;
 
-  // Build contents: PDF context pair → history → current message
-  type GeminiPart =
-    | { text: string }
-    | { inline_data: { mime_type: string; data: string } };
-
-  type GeminiContent = {
-    role: "user" | "model";
-    parts: GeminiPart[];
-  };
-
   const contents: GeminiContent[] = [
     {
       role: "user",
       parts: [
-        { inline_data: { mime_type: "application/pdf", data: base64Pdf } },
         { text: "I'm sharing this document with you. Please use it to answer my questions." },
+        { file_data: { mime_type: "application/pdf", file_uri: fileUri } },
       ],
     },
     {
       role: "model",
       parts: [{ text: "I've received the document. I'll answer your questions based on its contents." }],
     },
-    ...history.map((h) => ({
-      role: h.role,
-      parts: [{ text: h.text }] as GeminiPart[],
+    ...history.map((entry) => ({
+      role: entry.role,
+      parts: [{ text: entry.text }],
     })),
     {
-      role: "user" as const,
+      role: "user",
       parts: [{ text: message.trim() }],
     },
   ];
@@ -152,7 +237,6 @@ Do not invent information outside the document.`;
     },
   };
 
-  // ── Call Gemini streaming endpoint ─────────────────────────────────────────
   let geminiRes: Response;
   try {
     geminiRes = await fetch(`${STREAM_URL}&key=${apiKey}`, {
@@ -161,8 +245,9 @@ Do not invent information outside the document.`;
       body: JSON.stringify(geminiBody),
       signal: AbortSignal.timeout(60_000),
     });
-  } catch (e: any) {
-    console.error("[material-chat] Gemini fetch error:", e?.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    console.error("[material-chat] Gemini fetch error:", message);
     return NextResponse.json({ error: "Chat failed." }, { status: 500 });
   }
 
@@ -172,18 +257,17 @@ Do not invent information outside the document.`;
     return NextResponse.json({ error: "Chat failed." }, { status: 500 });
   }
 
-  // ── Stream SSE → plain text stream to client ───────────────────────────────
   const encoder = new TextEncoder();
-  const geminiBody2 = geminiRes.body;
+  const geminiStream = geminiRes.body;
 
   const stream = new ReadableStream({
     async start(controller) {
-      if (!geminiBody2) {
+      if (!geminiStream) {
         controller.close();
         return;
       }
 
-      const reader = geminiBody2.getReader();
+      const reader = geminiStream.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
@@ -194,27 +278,27 @@ Do not invent information outside the document.`;
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
-          // Keep the last (possibly incomplete) line in the buffer
           buffer = lines.pop() ?? "";
 
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const json = line.slice(6).trim();
             if (!json || json === "[DONE]") continue;
+
             try {
-              const chunk = JSON.parse(json);
-              const text: string =
-                chunk?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+              const chunk = JSON.parse(json) as GeminiStreamChunk;
+              const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
               if (text) {
                 controller.enqueue(encoder.encode(text));
               }
             } catch {
-              // Malformed JSON chunk — skip
+              // Ignore malformed chunks and continue streaming.
             }
           }
         }
-      } catch (e: any) {
-        console.error("[material-chat] stream read error:", e?.message);
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        console.error("[material-chat] stream read error:", message);
       } finally {
         controller.close();
       }

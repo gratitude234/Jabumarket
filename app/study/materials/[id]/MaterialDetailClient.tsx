@@ -611,24 +611,24 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     return () => { cancelled = true; };
   }, [m.id]);
 
-  // Fetch related materials (same course code, max 4)
+  // Fetch related materials (same course, max 4)
   useEffect(() => {
     let cancelled = false;
-    const code = m.study_courses?.course_code;
-    if (!code) return;
+    const courseId = m.study_courses?.id;
+    if (!courseId) return;
     (async () => {
       const { data: related } = await supabase
         .from("study_materials")
         .select("id,title,material_type,downloads,up_votes,file_path,created_at,study_courses:course_id(course_code)")
         .eq("approved", true)
-        .eq("course_code", code)
+        .eq("course_id", courseId)
         .neq("id", m.id)
         .order("downloads", { ascending: false })
         .limit(4);
       if (!cancelled && related?.length) setRelatedMaterials(related as any[]);
     })();
     return () => { cancelled = true; };
-  }, [m.id, m.study_courses?.course_code]);
+  }, [m.id, m.study_courses?.id]);
 
   async function handleToggleSave() {
     setSaving(true);

@@ -9,6 +9,14 @@ import { createClient } from "@supabase/supabase-js";
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
+type StudyMaterialRow = {
+  id: string;
+  title: string | null;
+  file_url: string | null;
+  file_path: string | null;
+  material_type: string | null;
+};
+
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,14 +25,16 @@ function adminClient() {
 }
 
 export async function POST(req: NextRequest) {
-  // ── Auth ───────────────────────────────────────────────────────────────────
+  // Auth
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
+  // Parse body
   let body: { materialId?: string };
   try {
     body = await req.json();
@@ -37,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
   }
 
-  // ── Fetch material ─────────────────────────────────────────────────────────
+  // Fetch material
   const admin = adminClient();
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
@@ -49,55 +59,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Material not found." }, { status: 404 });
   }
 
-  const fileUrl = (mat as any).file_url as string | null;
-  const filePath = (mat as any).file_path as string | null;
+  const material = mat as StudyMaterialRow;
+  const fileUrl = material.file_url;
+  const filePath = material.file_path;
 
-  // ── PDF check ──────────────────────────────────────────────────────────────
+  // PDF check
   const urlStr = ((fileUrl ?? "") + " " + (filePath ?? "")).toLowerCase();
   if (!urlStr.includes(".pdf")) {
     return NextResponse.json({ error: "Only PDF materials are supported." }, { status: 400 });
   }
 
-  // ── Resolve download URL ───────────────────────────────────────────────────
+  // Resolve download URL
   let downloadUrl: string | null = fileUrl;
 
-  // If no direct public URL, generate a signed URL from file_path
   if (!downloadUrl && filePath) {
     const { data: signed } = await admin.storage
       .from("study-materials")
       .createSignedUrl(filePath, 300);
-    downloadUrl = (signed as any)?.signedUrl ?? null;
+    downloadUrl = signed?.signedUrl ?? null;
   }
 
   if (!downloadUrl) {
     return NextResponse.json({ error: "File URL not available." }, { status: 404 });
   }
 
-  // ── Fetch PDF bytes ────────────────────────────────────────────────────────
+  // Fetch PDF bytes
   let pdfBuffer: ArrayBuffer;
   try {
     const fetchRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
     if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
     pdfBuffer = await fetchRes.arrayBuffer();
-  } catch (e: any) {
+  } catch {
     return NextResponse.json({ error: "Failed to fetch PDF file." }, { status: 502 });
   }
 
-  // ── Approximate word count check ───────────────────────────────────────────
-  try {
-    const rawText = new TextDecoder("utf-8", { fatal: false }).decode(pdfBuffer);
-    const wordCount = rawText.split(/\s+/).filter((w) => w.length > 1).length;
-    if (wordCount > 15_000) {
-      return NextResponse.json(
-        { error: "PDF too large. Try uploading a specific chapter instead." },
-        { status: 400 }
-      );
-    }
-  } catch {
-    // Non-critical — proceed even if extraction fails
-  }
-
-  // ── Call Gemini with PDF inline data ───────────────────────────────────────
+  // Call Gemini with PDF inline data
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
@@ -109,7 +105,7 @@ export async function POST(req: NextRequest) {
 Generate exactly 15 multiple choice questions strictly from the provided PDF content.
 Do not add any knowledge from outside the document.
 Each question must have 4 options (A, B, C, D) with exactly one correct answer.
-Include a short explanation (1–2 sentences) for each correct answer, citing the part of the document it came from.
+Include a short explanation (1-2 sentences) for each correct answer, citing the part of the document it came from.
 
 Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
 {
@@ -153,17 +149,26 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }
 
-    const geminiData = await geminiRes.json();
-    rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const geminiData = (await geminiRes.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+          }>;
+        };
+      }>;
+    };
+    rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     if (!rawText.trim()) {
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }
-  } catch (e: any) {
-    console.error("[generate-questions] Gemini fetch error:", e?.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    console.error("[generate-questions] Gemini fetch error:", message);
     return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
   }
 
-  // ── Parse JSON response ────────────────────────────────────────────────────
+  // Parse JSON response
   try {
     const clean = rawText
       .replace(/^```json\s*/i, "")
@@ -172,8 +177,9 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       .trim();
     const parsed = JSON.parse(clean) as { questions: unknown[] };
     return NextResponse.json({ questions: parsed.questions });
-  } catch (e: any) {
-    console.error("[generate-questions] JSON parse error:", e?.message, rawText.slice(0, 200));
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    console.error("[generate-questions] JSON parse error:", message, rawText.slice(0, 200));
     return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
   }
 }
