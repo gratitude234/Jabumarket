@@ -12,16 +12,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
 import { gemini } from "@/lib/gemini";
-
-// Admin client for cache writes (bypasses RLS)
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+import { adminSupabase } from "@/lib/supabase/admin";
 
 type ExplainCache = {
   correct?: string;
@@ -70,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Check cache ────────────────────────────────────────────────────────────
-  const admin = adminClient();
+  const admin = adminSupabase;
   const { data: row } = await admin
     .from("study_quiz_questions")
     .select("ai_explanation")

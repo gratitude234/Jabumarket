@@ -570,7 +570,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [upvoteCount] = useState(m.up_votes ?? 0);
+  const upvoteCount = m.up_votes ?? 0;
   const [relatedMaterials, setRelatedMaterials] = useState<any[]>([]);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
+import { adminSupabase } from "@/lib/supabase/admin";
 
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -20,15 +20,8 @@ type RateLimitRow = {
   last_called_at: string;
 };
 
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
-
 async function enforceRateLimit(
-  admin: ReturnType<typeof adminClient>,
+  admin: typeof adminSupabase,
   userId: string,
   endpoint: string,
   cooldownMs: number
@@ -102,7 +95,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Fetch material
-  const admin = adminClient();
+  const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
     .select("id, title, file_url, file_path, material_type, study_courses(id, course_code)")

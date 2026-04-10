@@ -4,18 +4,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
+import { adminSupabase } from "@/lib/supabase/admin";
 
 const MODEL = "gemini-2.5-flash-lite";
 const FILE_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
-
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
 
 type HistoryEntry = { role: "user" | "model"; text: string };
 type StudyMaterialRow = {
@@ -108,7 +101,7 @@ async function uploadPdfToGemini(
 }
 
 async function enforceRateLimit(
-  admin: ReturnType<typeof adminClient>,
+  admin: typeof adminSupabase,
   userId: string,
   endpoint: string,
   cooldownMs: number
@@ -182,7 +175,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Fetch material
-  const admin = adminClient();
+  const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
     .select("id, title, file_url, file_path, gemini_file_uri")

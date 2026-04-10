@@ -5,15 +5,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
 import { geminiJson } from "@/lib/gemini";
-
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+import { adminSupabase } from "@/lib/supabase/admin";
 
 type MaterialSummary = {
   overview: string;
@@ -57,7 +50,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const admin = adminClient();
+  const admin = adminSupabase;
 
   // ── Check cache ────────────────────────────────────────────────────────────
   const { data: cached } = await admin

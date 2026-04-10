@@ -6,15 +6,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
 import { gemini } from "@/lib/gemini";
-
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+import { adminSupabase } from "@/lib/supabase/admin";
 
 export async function POST(req: NextRequest) {
   // ── Auth ───────────────────────────────────────────────────────────────────
@@ -44,7 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const admin = adminClient();
+  const admin = adminSupabase;
 
   // ── Check if AI answer already exists ─────────────────────────────────────
   const { data: existing } = await admin

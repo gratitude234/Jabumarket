@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createClient } from "@supabase/supabase-js";
+import { adminSupabase } from "@/lib/supabase/admin";
 
 type MCQ = {
   question: string;
@@ -27,13 +27,6 @@ type InsertedQuestionRow = {
   position: number | null;
 };
 
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
-
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -55,7 +48,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
-  const admin = adminClient();
+  const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
     .select("id, title")
@@ -92,6 +85,7 @@ export async function POST(req: NextRequest) {
     set_id: quizSet.id,
     prompt: question.question,
     position: index,
+    explanation: question.explanation,
   }));
 
   const { data: insertedQuestions, error: questionsError } = await admin

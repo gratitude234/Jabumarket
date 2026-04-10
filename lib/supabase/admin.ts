@@ -13,6 +13,14 @@ if (!serviceRoleKey) {
   // The caller will see a clear error if they try to use the admin client without the key.
 }
 
+function buildAdminClient(key: string) {
+  return createClient(supabaseUrl, key, {
+    auth: { persistSession: false },
+  });
+}
+
+export const adminSupabase = buildAdminClient(serviceRoleKey || "missing-service-role-key");
+
 /**
  * Admin (service-role) Supabase client for SERVER-ONLY usage.
  * Bypasses RLS. Never import this in client components.
@@ -23,7 +31,5 @@ export function createSupabaseAdminClient() {
       "Missing SUPABASE_SERVICE_ROLE_KEY. Set it in your .env.local / Vercel env vars."
     );
   }
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+  return adminSupabase;
 }
