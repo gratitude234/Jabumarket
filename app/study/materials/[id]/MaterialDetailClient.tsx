@@ -43,6 +43,7 @@ type GeneratedQuestion = {
 };
 
 type ChatMessage = {
+  id: string;
   role: "user" | "model";
   text: string;
 };
@@ -587,6 +588,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -630,6 +632,15 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     })();
     return () => { cancelled = true; };
   }, [m.id, m.study_courses?.id]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    chatInputRef.current?.focus();
+  }, [chatOpen]);
 
   async function handleToggleSave() {
     setSaving(true);
@@ -744,7 +755,12 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     const message = chatInput.trim();
     if (!message || chatLoading) return;
 
-    const userMsg: ChatMessage = { role: "user", text: message };
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: message,
+    };
+    const modelMessageId = crypto.randomUUID();
     const updatedHistory = [...chatHistory, userMsg];
     setChatHistory(updatedHistory);
     setChatInput("");
@@ -773,7 +789,10 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       let modelText = "";
 
       // Add an empty model message to update progressively
-      setChatHistory([...updatedHistory, { role: "model", text: "" }]);
+      setChatHistory([
+        ...updatedHistory,
+        { id: modelMessageId, role: "model", text: "" },
+      ]);
 
       if (reader) {
         while (true) {
@@ -782,7 +801,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
           modelText += decoder.decode(value, { stream: true });
           setChatHistory([
             ...updatedHistory,
-            { role: "model", text: modelText },
+            { id: modelMessageId, role: "model", text: modelText },
           ]);
         }
       }
@@ -792,8 +811,12 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       setChatHistory(chatHistory);
     } finally {
       setChatLoading(false);
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
+  }
+
+  function handleClearChat() {
+    setChatHistory([]);
+    setChatError(null);
   }
 
   return (
@@ -989,21 +1012,33 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
       {kind === "pdf" && (
         <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
           {/* Header / toggle */}
-          <button
-            type="button"
-            onClick={() => setChatOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-foreground hover:bg-secondary/20 transition"
-          >
-            <span className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-[#5B35D5]" />
-              Ask AI about this material
-            </span>
-            {chatOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setChatOpen((v) => !v)}
+              className="flex flex-1 items-center justify-between text-sm font-semibold text-foreground transition hover:text-[#5B35D5]"
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[#5B35D5]" />
+                Ask AI about this material
+              </span>
+              {chatOpen ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+            {chatOpen && (
+              <button
+                type="button"
+                onClick={handleClearChat}
+                disabled={chatHistory.length === 0 && !chatError}
+                className="rounded-xl border border-border/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-secondary/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Clear chat
+              </button>
             )}
-          </button>
+          </div>
 
           {chatOpen && (
             <div className="border-t border-border/60">
@@ -1014,9 +1049,9 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
                     Ask anything about this document. AI answers only from its content.
                   </p>
                 )}
-                {chatHistory.map((msg, i) => (
+                {chatHistory.map((msg) => (
                   <div
-                    key={i}
+                    key={msg.id}
                     className={cn(
                       "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed max-w-[88%]",
                       msg.role === "user"
@@ -1040,6 +1075,7 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
               {/* Input row */}
               <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2.5">
                 <input
+                  ref={chatInputRef}
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}

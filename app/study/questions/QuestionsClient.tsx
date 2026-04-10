@@ -56,14 +56,12 @@ function QuestionCard({ q, saved, saving, onToggleSave }: {
       className={cn(
         "group flex items-start gap-2 rounded-2xl border bg-background px-3 py-3 no-underline transition",
         "hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        solved     ? "border-l-[3px]" : unanswered ? "border-l-[3px]" : ""
+        solved
+          ? "border-l-4 border-l-emerald-500"
+          : unanswered
+          ? "border-l-4 border-l-[#5B35D5]"
+          : ""
       )}
-      style={solved
-        ? { borderLeftColor: "#1D9E75" }
-        : unanswered
-        ? { borderLeftColor: "#EF9F27" }
-        : undefined
-      }
     >
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium leading-snug text-foreground">{title}</p>
