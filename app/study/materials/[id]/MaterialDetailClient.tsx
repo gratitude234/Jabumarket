@@ -473,6 +473,16 @@ export default function MaterialDetailClient({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
   useEffect(() => { if (!chatOpen) return; chatInputRef.current?.focus(); }, [chatOpen]);
 
+  // Hide bottom nav while quiz sheet is open
+  useEffect(() => {
+    if (quizState !== "idle") {
+      document.body.setAttribute("data-hide-nav", "true");
+    } else {
+      document.body.removeAttribute("data-hide-nav");
+    }
+    return () => { document.body.removeAttribute("data-hide-nav"); };
+  }, [quizState]);
+
   // Proactive rate-limit check on mount
   useEffect(() => {
     if (kind !== "pdf") return;

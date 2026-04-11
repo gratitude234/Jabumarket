@@ -220,7 +220,7 @@ export default function BottomNav() {
   return (
     <>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background [[data-hide-nav=true]_&]:hidden">
         <div className="mx-auto max-w-6xl px-2">
           <div className={`grid ${items.length === 6 ? 'grid-cols-6' : 'grid-cols-5'} h-14`}>
             {items.map((item) => {
