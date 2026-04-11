@@ -872,12 +872,7 @@ export default function MaterialsClient() {
       mine: "1",
     });
 
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", href);
-    } else {
-      // Fallback (should be rare in client component)
-      router.replace(href);
-    }
+    router.replace(href, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefsLoaded]);
 
@@ -945,6 +940,7 @@ export default function MaterialsClient() {
     const filtered = courses.filter((c) => {
       if (draftFaculty && c.faculty !== draftFaculty) return false;
       if (draftDept && c.department !== draftDept) return false;
+      if (draftLevel && String(c.level) !== String(draftLevel)) return false;
       return true;
     });
 

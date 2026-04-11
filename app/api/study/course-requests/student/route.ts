@@ -21,6 +21,11 @@ export async function POST(req: Request) {
     const rawTitle = typeof body?.course_title === "string" ? body.course_title : "";
     const note = typeof body?.note === "string" ? body.note.trim().slice(0, 400) : null;
 
+    // Optional context fields — students may not know their UUIDs, so all nullable
+    const faculty_id = typeof body?.faculty_id === "string" && body.faculty_id.trim() ? body.faculty_id.trim() : null;
+    const department_id = typeof body?.department_id === "string" && body.department_id.trim() ? body.department_id.trim() : null;
+    const level = typeof body?.level === "number" && body.level > 0 ? Math.trunc(body.level) : null;
+
     const course_code = normCode(rawCode);
     const course_title = rawTitle.trim().slice(0, 120) || null;
 
@@ -53,6 +58,9 @@ export async function POST(req: Request) {
         course_title,
         note,
         status: "pending",
+        ...(faculty_id ? { faculty_id } : {}),
+        ...(department_id ? { department_id } : {}),
+        ...(level ? { level } : {}),
       })
       .select("id, created_at")
       .maybeSingle();

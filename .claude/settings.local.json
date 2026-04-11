@@ -32,7 +32,11 @@
       "Bash(mv /tmp/page_truncated.tsx \"C:/Users/hp/jabumarket-frontend/app/study/courses/[code]/page.tsx\")",
       "Bash(xargs grep:*)",
       "Bash(grep:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npx.cmd tsc:*)",
+      "Bash(cmd /c \"npx tsc --noEmit 2>&1\")",
+      "Bash(cmd /c \"npx tsc --noEmit 2>&1 && echo SUCCESS\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\hp\\\\jabumarket-frontend && npx tsc --noEmit 2>&1\")"
     ]
   }
 }

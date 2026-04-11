@@ -13,6 +13,7 @@ import {
   Clock,
   BadgeCheck,
   Ban,
+  PlusCircle,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
@@ -35,6 +36,15 @@ type CourseRequest = {
 };
 
 type ApiResponse = { ok: boolean; items: CourseRequest[]; error?: string };
+
+type ApproveCreateState = {
+  busy: boolean;
+  showForm: boolean;
+  level: number;
+  semester: "first" | "second" | "summer";
+  error: string | null;
+  success: string | null;
+};
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -72,6 +82,7 @@ export default function StudyAdminRequestsPage() {
   const [items, setItems] = useState<CourseRequest[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [approveCreateMap, setApproveCreateMap] = useState<Record<string, ApproveCreateState>>({});
 
   async function getTokenOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -140,6 +151,87 @@ export default function StudyAdminRequestsPage() {
       setErr(e?.message || "Approve failed");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  function getAcState(id: string): ApproveCreateState {
+    return approveCreateMap[id] ?? {
+      busy: false,
+      showForm: false,
+      level: 0,
+      semester: "first",
+      error: null,
+      success: null,
+    };
+  }
+
+  function setAcState(id: string, updates: Partial<ApproveCreateState>) {
+    setApproveCreateMap((prev) => ({
+      ...prev,
+      [id]: { ...getAcState(id), ...prev[id], ...updates },
+    }));
+  }
+
+  async function approveAndCreate(r: CourseRequest) {
+    const ac = getAcState(r.id);
+
+    // Need department scope to create a course
+    if (!r.department_id) {
+      setAcState(r.id, { error: "Request is missing department info — cannot auto-create course." });
+      return;
+    }
+
+    const level = ac.level || r.level || 0;
+    const semester = ac.semester || (r.semester as "first" | "second" | "summer") || "first";
+
+    // If missing required fields, show inline form
+    if (!level || !semester) {
+      setAcState(r.id, { showForm: true });
+      return;
+    }
+
+    setAcState(r.id, { busy: true, error: null, success: null });
+    try {
+      // Step 1: create the course
+      const courseRes = await fetch("/api/study/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_code:  r.course_code,
+          course_title: r.course_title,
+          level,
+          semester,
+        }),
+      });
+      const courseJson = await courseRes.json();
+
+      if (!courseRes.ok && courseJson?.code !== "COURSE_EXISTS") {
+        throw new Error(courseJson?.error || courseJson?.message || "Failed to create course.");
+      }
+
+      // Step 2: approve the request
+      const token = await getTokenOrRedirect();
+      if (!token) return;
+      const approveRes = await fetch(`/api/study-admin/course-requests/${r.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ note: "Auto-approved via approve & create." }),
+      });
+      const approveJson = await approveRes.json();
+      if (!approveRes.ok || !approveJson.ok) {
+        throw new Error(approveJson?.error || "Approved course but failed to close request.");
+      }
+
+      setAcState(r.id, {
+        busy: false,
+        showForm: false,
+        success: courseJson?.code === "COURSE_EXISTS"
+          ? "Course already exists — request approved."
+          : "Course created and request approved.",
+      });
+      await load();
+    } catch (e: any) {
+      setAcState(r.id, { busy: false, error: e?.message || "Failed." });
     }
   }
 
@@ -247,30 +339,104 @@ export default function StudyAdminRequestsPage() {
                 </div>
 
                 {r.status === "pending" ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      disabled={busyId === r.id}
-                      onClick={() => approve(r.id)}
-                      className={cn(
-                        "inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-3 text-sm font-medium text-white",
-                        busyId === r.id ? "opacity-60" : "hover:bg-emerald-700"
-                      )}
-                    >
-                      {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      Approve
-                    </button>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Approve & create — one-click course creation + approval */}
+                      <button
+                        disabled={busyId === r.id || getAcState(r.id).busy}
+                        onClick={() => {
+                          const ac = getAcState(r.id);
+                          const level = r.level || 0;
+                          const semester = (r.semester as "first" | "second" | "summer") || "first";
+                          if (!level || !semester) {
+                            setAcState(r.id, {
+                              showForm: !ac.showForm,
+                              level: ac.level || level,
+                              semester: ac.semester || semester,
+                            });
+                          } else {
+                            setAcState(r.id, { level, semester });
+                            approveAndCreate(r);
+                          }
+                        }}
+                        className={cn(
+                          "inline-flex h-10 items-center gap-2 rounded-2xl bg-violet-600 px-3 text-sm font-medium text-white",
+                          (busyId === r.id || getAcState(r.id).busy) ? "opacity-60" : "hover:bg-violet-700"
+                        )}
+                      >
+                        {getAcState(r.id).busy
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <PlusCircle className="h-4 w-4" />
+                        }
+                        Approve &amp; create
+                      </button>
 
-                    <button
-                      disabled={busyId === r.id}
-                      onClick={() => reject(r.id)}
-                      className={cn(
-                        "inline-flex h-10 items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700",
-                        busyId === r.id ? "opacity-60" : "hover:bg-red-100"
-                      )}
-                    >
-                      {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                      Reject
-                    </button>
+                      <button
+                        disabled={busyId === r.id}
+                        onClick={() => approve(r.id)}
+                        className={cn(
+                          "inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-3 text-sm font-medium text-white",
+                          busyId === r.id ? "opacity-60" : "hover:bg-emerald-700"
+                        )}
+                      >
+                        {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                        Approve
+                      </button>
+
+                      <button
+                        disabled={busyId === r.id}
+                        onClick={() => reject(r.id)}
+                        className={cn(
+                          "inline-flex h-10 items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700",
+                          busyId === r.id ? "opacity-60" : "hover:bg-red-100"
+                        )}
+                      >
+                        {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                        Reject
+                      </button>
+                    </div>
+
+                    {/* Inline form for missing level/semester */}
+                    {getAcState(r.id).showForm && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 p-3">
+                        <p className="w-full text-xs font-medium text-violet-900">Fill in missing info to create course:</p>
+                        <select
+                          value={getAcState(r.id).level || ""}
+                          onChange={(e) => setAcState(r.id, { level: Number(e.target.value) })}
+                          className="h-8 rounded-xl border border-violet-200 bg-white px-2 text-xs text-zinc-800"
+                        >
+                          <option value="" disabled>Select level</option>
+                          {[100, 200, 300, 400, 500, 600, 700, 800, 900].map((l) => (
+                            <option key={l} value={l}>{l}L</option>
+                          ))}
+                        </select>
+                        <select
+                          value={getAcState(r.id).semester}
+                          onChange={(e) => setAcState(r.id, { semester: e.target.value as "first" | "second" | "summer" })}
+                          className="h-8 rounded-xl border border-violet-200 bg-white px-2 text-xs text-zinc-800"
+                        >
+                          <option value="first">First</option>
+                          <option value="second">Second</option>
+                          <option value="summer">Summer</option>
+                        </select>
+                        <button
+                          onClick={() => approveAndCreate(r)}
+                          disabled={!getAcState(r.id).level || getAcState(r.id).busy}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-60 hover:bg-violet-700"
+                        >
+                          {getAcState(r.id).busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          Confirm
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Inline feedback */}
+                    {getAcState(r.id).error && (
+                      <p className="text-xs text-red-700">{getAcState(r.id).error}</p>
+                    )}
+                    {getAcState(r.id).success && (
+                      <p className="text-xs text-emerald-700">{getAcState(r.id).success}</p>
+                    )}
                   </div>
                 ) : null}
               </div>

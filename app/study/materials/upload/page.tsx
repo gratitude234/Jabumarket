@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft,
+  ArrowRight,
   UploadCloud,
   Loader2,
   CheckCircle2,
@@ -24,17 +25,23 @@ import {
   Plus,
   Search,
   ChevronDown,
+  ChevronUp,
   Users,
   FileQuestion,
   Calendar,
   Paperclip,
+  RefreshCw,
+  Flag,
+  File as FileIcon,
 } from "lucide-react";
-import { Card, EmptyState, PageHeader } from "../../_components/StudyUI";
+import { Card, EmptyState } from "../../_components/StudyUI";
 
 // ─── Brand accent ─────────────────────────────────────────────────────────────
 const ACCENT      = "#5B35D5";
 const ACCENT_BG   = "#EEEDFE";
 const ACCENT_TEXT = "#3C3489";
+
+const DRAFT_KEY = "jabuStudy_uploadDraft";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,13 +77,59 @@ type RepMeResponse = {
   } | null;
 };
 
+type UploadInitPayload = {
+  bucket: string;
+  path: string;
+  token: string;
+  material_id: string;
+  auto_approved: boolean;
+};
+
 type UploadInitResponse =
-  | { ok: true; material_id: string; bucket: string; path: string; token: string; auto_approved: boolean }
+  | ({ ok: true } & UploadInitPayload)
   | { ok: false; code?: string; message?: string; duplicate_of?: { id: string; title?: string; created_at?: string } | null };
 
 type CreateCourseResponse =
   | { ok: true; course: CourseRow }
   | { ok: false; code?: string; error?: string };
+
+type ParsedMeta = {
+  courseCode?: string;
+  materialType?: MaterialType;
+  year?: number;
+};
+
+type FileEntry = {
+  id: string;
+  file: File;
+  hash: string | null;
+  hashing: boolean;
+  parsed: ParsedMeta | null;
+  title: string;
+  materialType: MaterialType;
+  pqYear: number | "";
+  pqSession: string;
+  expanded: boolean;
+};
+
+type QueueStatus = "queued" | "uploading" | "done" | "failed";
+
+type QueueEntry = {
+  id: string;
+  file: File;
+  status: QueueStatus;
+  progress: number;
+  error?: string;
+  retryPayload?: UploadInitPayload;
+  courseId: string;
+  title: string;
+  materialType: MaterialType;
+  semester: Semester;
+  pqYear: number | "";
+  pqSession: string;
+  description: string;
+  hash: string | null;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -96,6 +149,17 @@ const MATERIAL_TYPES: Array<{
 ];
 
 const LEVEL_LABEL = (n: number) => `${n}L`;
+
+const ACCEPT_STR = [
+  "application/pdf",
+  "image/*",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+].join(",");
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -128,10 +192,68 @@ function fmtBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+// ─── Smart filename parser (Change 5) ─────────────────────────────────────────
+
+function parseFilename(filename: string): ParsedMeta {
+  const result: ParsedMeta = {};
+
+  // Course code: e.g. CSC201, CSC 201, BIO301
+  const courseMatch = filename.match(/\b([A-Za-z]{2,6})\s*([0-9]{2,4}[A-Za-z]?)\b/);
+  if (courseMatch) {
+    result.courseCode = `${courseMatch[1].toUpperCase()} ${courseMatch[2].toUpperCase()}`;
+  }
+
+  // Material type keyword map
+  if (/\b(pq|past[_. ]?q(uestion)?|pastq|exam|test)\b/i.test(filename)) {
+    result.materialType = "past_question";
+  } else if (/\b(note|notes|lec|lecture)\b/i.test(filename)) {
+    result.materialType = "note";
+  } else if (/\b(slide|slides|ppt)\b/i.test(filename)) {
+    result.materialType = "slides";
+  } else if (/\b(handout|hand[_.]?out)\b/i.test(filename)) {
+    result.materialType = "handout";
+  } else if (/\b(timetable|tt)\b/i.test(filename)) {
+    result.materialType = "timetable";
+  }
+
+  // Year: 20XX
+  const yearMatch = filename.match(/\b(20\d{2})\b/);
+  if (yearMatch) {
+    result.year = parseInt(yearMatch[1], 10);
+  }
+
+  return result;
+}
+
+function getFileIcon(mime: string) {
+  if (mime.includes("pdf")) return <FileText className="h-5 w-5 text-rose-500" />;
+  if (mime.startsWith("image/")) return <ImageIcon className="h-5 w-5 text-sky-500" />;
+  if (mime.includes("presentation") || mime.includes("powerpoint")) return <Presentation className="h-5 w-5 text-orange-500" />;
+  if (mime.includes("word") || mime.includes("document")) return <FileText className="h-5 w-5 text-blue-500" />;
+  return <FileIcon className="h-5 w-5 text-zinc-500" />;
+}
+
+// Concurrency-limited runner (cap = 3)
+async function runConcurrent<T>(tasks: Array<() => Promise<T>>, cap: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(cap, tasks.length) }, () => worker()));
+  return results;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function UploadMaterialsPage() {
   const router = useRouter();
+
+  // Wizard: 1=files, 2=course, 3=details, "queue"=queue view
+  const [step, setStep] = useState<1 | 2 | 3 | "queue">(1);
 
   // Auth + rep status
   const [loading,  setLoading]  = useState(true);
@@ -158,38 +280,26 @@ export default function UploadMaterialsPage() {
   const [reqSemester, setReqSemester] = useState<Semester>("first");
   const [reqLoading,  setReqLoading]  = useState(false);
 
-  // Material form
-  const [materialType, setMaterialType] = useState<MaterialType>("past_question");
-  const [title,        setTitle]        = useState("");
-  const [semester,     setSemester]     = useState<Semester>("first");
-  const [description,  setDescription]  = useState("");
+  // Global fields
+  const [semester,    setSemester]    = useState<Semester>("first");
+  const [description, setDescription] = useState("");
 
-  // Past question extras
-  const [pqYear,    setPqYear]    = useState<number | "">("");
-  const [pqSession, setPqSession] = useState("");
-
-  // File + upload
+  // Multi-file state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [file,           setFile]           = useState<File | null>(null);
-  const [fileHash,       setFileHash]       = useState<string | null>(null);
-  const [hashing,        setHashing]        = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [isDragging,     setIsDragging]     = useState(false);
+  const [files,      setFiles]      = useState<FileEntry[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [autoFillBanner, setAutoFillBanner] = useState(false);
 
-  // Submit + banners
-  const [submitting,     setSubmitting]     = useState(false);
-  const [banner,         setBanner]         = useState<{ type: "error" | "success" | "info" | "warning"; text: string } | null>(null);
-  const [duplicateNote,  setDuplicateNote]  = useState<string | null>(null);
+  // Upload queue
+  const [queue, setQueue] = useState<QueueEntry[]>([]);
+
+  // Banner
+  const [banner, setBanner] = useState<{ type: "error" | "success" | "info" | "warning"; text: string } | null>(null);
 
   const selectedCourse = useMemo(
     () => courses.find((c) => c.id === selectedCourseId) || null,
     [courses, selectedCourseId]
   );
-
-  const acceptStr = useMemo(() => {
-    const cfg = MATERIAL_TYPES.find((x) => x.key === materialType);
-    return cfg ? cfg.accept.join(",") : "application/pdf,image/*";
-  }, [materialType]);
 
   const scopeBadge = useMemo(() => {
     if (!isRep) return null;
@@ -199,7 +309,7 @@ export default function UploadMaterialsPage() {
     return `Dept scoped · ${lvls}`;
   }, [isRep, role, allowedLevels]);
 
-  // ── Load auth + rep status ────────────────────────────────────────────────
+  // ── Load auth + rep status ─────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -216,6 +326,18 @@ export default function UploadMaterialsPage() {
         const meRes: RepMeResponse = await fetch("/api/study/rep-applications/me").then((r) => r.json());
         if (!mounted) return;
         setMe(meRes);
+
+        // Restore draft
+        try {
+          const raw = window.localStorage.getItem(DRAFT_KEY);
+          if (raw) {
+            const draft = JSON.parse(raw);
+            if (draft.courseId) setSelectedCourseId(draft.courseId);
+            if (draft.q) setQ(draft.q);
+            if (draft.semester) setSemester(draft.semester);
+            if (draft.description) setDescription(draft.description);
+          }
+        } catch {}
       } catch (e: any) {
         if (!mounted) return;
         setBanner({ type: "error", text: e?.message || "Failed to load." });
@@ -226,7 +348,7 @@ export default function UploadMaterialsPage() {
     return () => { mounted = false; };
   }, [router]);
 
-  // ── Load recent courses from localStorage ────────────────────────────────
+  // ── Load recent courses ────────────────────────────────────────────────────
 
   useEffect(() => {
     try {
@@ -240,7 +362,7 @@ export default function UploadMaterialsPage() {
     } catch {}
   }, []);
 
-  // ── Load courses ──────────────────────────────────────────────────────────
+  // ── Load courses ───────────────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -276,26 +398,24 @@ export default function UploadMaterialsPage() {
     return () => { mounted = false; };
   }, [userId, isRep, departmentId, role, allowedLevels]);
 
-  // ── Hash file when chosen ─────────────────────────────────────────────────
+  // ── Save draft ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setDuplicateNote(null);
-      setFileHash(null);
-      if (!file) return;
-      setHashing(true);
-      try {
-        const h = await sha256(file);
-        if (!cancelled) setFileHash(h);
-      } catch {
-        if (!cancelled) setFileHash(null);
-      } finally {
-        if (!cancelled) setHashing(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [file]);
+    if (!userId) return;
+    try {
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        courseId: selectedCourseId, q, semester, description,
+      }));
+    } catch {}
+  }, [userId, selectedCourseId, q, semester, description]);
+
+  // ── Clear draft when all uploads complete ─────────────────────────────────
+
+  useEffect(() => {
+    if (queue.length > 0 && queue.every((e) => e.status === "done")) {
+      try { window.localStorage.removeItem(DRAFT_KEY); } catch {}
+    }
+  }, [queue]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -316,31 +436,19 @@ export default function UploadMaterialsPage() {
     });
   }, [courses, q, recentCourseIds]);
 
-  const canSubmit = useMemo(() => {
-    if (!userId || !selectedCourse || !materialType || !file) return false;
-    if (materialType === "past_question") {
-      if (!pqYear || typeof pqYear !== "number") return false;
-      if (!pqSession || !pqSession.includes("/")) return false;
-    }
-    return true;
-  }, [userId, selectedCourse, materialType, file, pqYear, pqSession]);
+  const filesWithErrors = useMemo(() =>
+    files.filter((f) => {
+      if (f.materialType === "past_question") {
+        if (!f.pqYear || typeof f.pqYear !== "number") return true;
+        if (!f.pqSession || !f.pqSession.includes("/")) return true;
+      }
+      return false;
+    }),
+  [files]);
 
-  const submitLabel = useMemo(() => {
-    if (!selectedCourse) return "Select a course to continue";
-    if (!file)           return "Choose a file to continue";
-    if (materialType === "past_question" && (!pqYear || !pqSession)) return "Fill year and session to continue";
-    return null; // ready — show "Submit upload"
-  }, [selectedCourse, file, materialType, pqYear, pqSession]);
+  const canSubmitStep3 = files.length > 0 && filesWithErrors.length === 0;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
-
-  function resetFile() {
-    setFile(null);
-    setFileHash(null);
-    setDuplicateNote(null);
-    setUploadProgress(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
 
   function materialTitleSuggestion(course: CourseRow | null, type: MaterialType) {
     if (!course) return "";
@@ -368,16 +476,105 @@ export default function UploadMaterialsPage() {
     });
   }
 
-  function handleFileChange(f: File | null) {
-    if (!f) return;
-    setFile(f);
+  function updateFile(id: string, updates: Partial<FileEntry>) {
+    setFiles((prev) => prev.map((f) => f.id === id ? { ...f, ...updates } : f));
+  }
+
+  function removeFile(id: string) {
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  function addFiles(newFiles: File[]) {
+    const entries: FileEntry[] = newFiles.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file: f,
+      hash: null,
+      hashing: true,
+      parsed: null,
+      title: "",
+      materialType: "other" as MaterialType,
+      pqYear: "" as const,
+      pqSession: "",
+      expanded: false,
+    }));
+
+    setFiles((prev) => [...prev, ...entries]);
+
+    const tasks = entries.map((entry) => async (): Promise<ParsedMeta> => {
+      const parsed = parseFilename(entry.file.name);
+      let hash: string | null = null;
+      try { hash = await sha256(entry.file); } catch {}
+
+      const typeLabel = parsed.materialType
+        ? MATERIAL_TYPES.find((x) => x.key === parsed.materialType)?.label ?? ""
+        : "";
+      const suggestedTitle = parsed.courseCode
+        ? `${parsed.courseCode}${typeLabel ? ` (${typeLabel})` : ""}`
+        : entry.file.name.replace(/\.[^.]+$/, "");
+
+      setFiles((prev) => prev.map((fe) => {
+        if (fe.id !== entry.id) return fe;
+        return {
+          ...fe,
+          hash,
+          hashing: false,
+          parsed,
+          title: suggestedTitle,
+          materialType: parsed.materialType ?? "other",
+          pqYear: (parsed.materialType === "past_question" && parsed.year) ? parsed.year : "",
+        };
+      }));
+
+      return parsed;
+    });
+
+    runConcurrent(tasks, 3).then((results) => {
+      const anyFilled = results.some((r) => r.courseCode || r.materialType || r.year);
+      if (anyFilled) setAutoFillBanner(true);
+
+      const firstWithCode = results.find((r) => r.courseCode);
+      if (firstWithCode?.courseCode) {
+        const code = firstWithCode.courseCode;
+        setQ(code);
+        const matched = courses.filter(
+          (c) => c.course_code.replace(/\s+/g, " ").toUpperCase() === code.toUpperCase()
+        );
+        if (matched.length === 1) {
+          setSelectedCourseId(matched[0].id);
+          saveRecentCourse(matched[0].id);
+        }
+      }
+    });
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    const f = e.dataTransfer.files?.[0] ?? null;
-    if (f) handleFileChange(f);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length) addFiles(dropped);
+  }
+
+  async function flagCourse() {
+    if (!q.trim()) return;
+    const code = normalizeCourseCode(q.trim());
+    setBanner(null);
+    try {
+      const res = await fetch("/api/study/course-requests/student", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ course_code: code, course_title: null, note: null }),
+      });
+      const data = await res.json();
+      if (data?.already_pending) {
+        setBanner({ type: "info", text: "Already flagged — check back soon." });
+      } else if (data?.ok) {
+        setBanner({ type: "success", text: "Flagged — your rep has been notified." });
+      } else {
+        setBanner({ type: "error", text: data?.error || "Failed to flag course." });
+      }
+    } catch (e: any) {
+      setBanner({ type: "error", text: e?.message || "Failed to flag." });
+    }
   }
 
   async function submitCreateCourse() {
@@ -419,7 +616,6 @@ export default function UploadMaterialsPage() {
         setSelectedCourseId(created.id);
         setQ(created.course_code);
         saveRecentCourse(created.id);
-        if (!title.trim()) setTitle(materialTitleSuggestion(created, materialType));
       }
       setBanner({ type: "success", text: "Course created — continue your upload below." });
       setShowCreateCourse(false);
@@ -432,79 +628,67 @@ export default function UploadMaterialsPage() {
     }
   }
 
-  async function onSubmit() {
-    setBanner(null);
-    setDuplicateNote(null);
-    if (!userId)        { setBanner({ type: "error", text: "You don't have upload access yet." }); return; }
-    if (!selectedCourse){ setBanner({ type: "error", text: "Select a course first." }); return; }
-    if (!file)          { setBanner({ type: "error", text: "Choose a file to upload." }); return; }
-    if (materialType === "past_question") {
-      if (!pqYear || typeof pqYear !== "number") { setBanner({ type: "error", text: "Enter the past question year." }); return; }
-      if (!pqSession || !pqSession.includes("/")) { setBanner({ type: "error", text: "Enter session like 2022/2023." }); return; }
-    }
-    const finalTitle = (title || "").trim() || materialTitleSuggestion(selectedCourse, materialType);
-    setSubmitting(true);
-    setUploadProgress(null);
-    try {
-      const initRes = await fetch("/api/study/materials/upload", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          course_id:          selectedCourse.id,
-          department_id:      selectedCourse.department_id,
-          faculty_id:         selectedCourse.faculty_id,
-          level:              selectedCourse.level,
-          semester:           selectedCourse.semester,
-          material_type:      materialType,
-          title:              finalTitle,
-          description:        description.trim() || null,
-          past_question_year: materialType === "past_question" ? pqYear : null,
-          session:            materialType === "past_question" ? pqSession.trim() : null,
-          file_name:          file.name,
-          file_size:          file.size,
-          mime_type:          file.type,
-          file_hash:          fileHash,
-        }),
-      }).then((r) => r.json() as Promise<UploadInitResponse>);
+  // ── Upload single file (used in queue) ─────────────────────────────────────
 
-      if (!initRes.ok) {
-        if (initRes.code === "DUPLICATE_FOUND") {
-          setDuplicateNote(
-            initRes.duplicate_of?.title
-              ? `Matches "${initRes.duplicate_of.title}".`
-              : "This file matches an existing upload."
-          );
-          setBanner({ type: "error", text: "Duplicate detected. Verify before uploading again." });
-          return;
+  async function uploadSingleFile(qEntry: QueueEntry, initPayloadOverride?: UploadInitPayload) {
+    const updateQ = (updates: Partial<QueueEntry>) =>
+      setQueue((prev) => prev.map((e) => e.id === qEntry.id ? { ...e, ...updates } : e));
+
+    try {
+      updateQ({ status: "uploading", progress: 0 });
+      let payload = initPayloadOverride;
+
+      if (!payload) {
+        const initRes = await fetch("/api/study/materials/upload", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            course_id:          qEntry.courseId,
+            material_type:      qEntry.materialType,
+            title:              qEntry.title,
+            description:        qEntry.description.trim() || null,
+            past_question_year: qEntry.materialType === "past_question" ? qEntry.pqYear : null,
+            session:            qEntry.materialType === "past_question" ? qEntry.pqSession.trim() : null,
+            file_name:          qEntry.file.name,
+            file_size:          qEntry.file.size,
+            mime_type:          qEntry.file.type,
+            file_hash:          qEntry.hash,
+          }),
+        }).then((r) => r.json() as Promise<UploadInitResponse>);
+
+        if (!initRes.ok) {
+          throw new Error(friendlyError(initRes.code, initRes.message));
         }
-        throw new Error(friendlyError(initRes.code, initRes.message));
+
+        payload = {
+          bucket:        initRes.bucket,
+          path:          initRes.path,
+          token:         initRes.token,
+          material_id:   initRes.material_id,
+          auto_approved: initRes.auto_approved,
+        };
+        // Store payload immediately for retry
+        updateQ({ retryPayload: payload });
       }
 
-      const { bucket, path, token, material_id, auto_approved } = initRes;
-      setUploadProgress(0);
+      const { bucket, path, token, material_id } = payload;
+
       const { error: uploadErr } = await (supabase.storage.from(bucket) as any).uploadToSignedUrl(
-        path, token, file,
+        path, token, qEntry.file,
         {
           onUploadProgress: (progress: { loaded: number; total: number }) => {
             if (progress.total > 0)
-              setUploadProgress(Math.round((progress.loaded / progress.total) * 100));
+              updateQ({ progress: Math.round((progress.loaded / progress.total) * 100) });
           },
         }
       );
       if (uploadErr) throw new Error((uploadErr as any).message || "File upload failed.");
-      setUploadProgress(100);
 
-      setBanner({
-        type: "success",
-        text: auto_approved
-          ? "Uploaded and live — visible to students now."
-          : "Uploaded — in the review queue. You'll be notified when approved.",
-      });
-
+      // Complete
       try {
-        const { data } = await supabase.auth.getSession();
-        const bearer   = data.session?.access_token;
-        const res = await fetch("/api/study/materials/upload/complete", {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const bearer = sessionData.session?.access_token;
+        await fetch("/api/study/materials/upload/complete", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -512,27 +696,46 @@ export default function UploadMaterialsPage() {
           },
           body: JSON.stringify({ material_id }),
         });
-        const j = await res.json().catch(() => null);
-        if (j?.ok === true && j?.verified_in_storage === false) {
-          setBanner({
-            type: "warning",
-            text: "Upload recorded but file wasn't found in storage. Please try again.",
-          });
-        }
       } catch {}
 
-      setTitle("");
-      setDescription("");
-      setPqYear("");
-      setPqSession("");
-      resetFile();
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      void material_id;
+      updateQ({ status: "done", progress: 100, retryPayload: undefined });
     } catch (e: any) {
-      setBanner({ type: "error", text: e?.message || "Upload failed." });
-    } finally {
-      setSubmitting(false);
+      updateQ({ status: "failed", error: e?.message || "Upload failed." });
     }
+  }
+
+  async function startUpload() {
+    if (!selectedCourse) return;
+
+    const queueEntries: QueueEntry[] = files.map((f) => ({
+      id: f.id,
+      file: f.file,
+      status: "queued" as QueueStatus,
+      progress: 0,
+      courseId: selectedCourse.id,
+      title: f.title.trim() || materialTitleSuggestion(selectedCourse, f.materialType),
+      materialType: f.materialType,
+      semester: selectedCourse.semester,
+      pqYear: f.pqYear,
+      pqSession: f.pqSession,
+      description,
+      hash: f.hash,
+    }));
+
+    setQueue((prev) => [...prev, ...queueEntries]);
+    setStep("queue");
+
+    // Process serially
+    for (const entry of queueEntries) {
+      await uploadSingleFile(entry);
+    }
+  }
+
+  async function retryQueueEntry(id: string) {
+    const entry = queue.find((e) => e.id === id);
+    if (!entry) return;
+    setQueue((prev) => prev.map((e) => e.id === id ? { ...e, status: "uploading", error: undefined, progress: 0 } : e));
+    await uploadSingleFile(entry, entry.retryPayload);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -557,7 +760,6 @@ export default function UploadMaterialsPage() {
           </Link>
         </div>
 
-        {/* Rep / student badge — desktop only */}
         {isRep ? (
           <div className="hidden items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground sm:flex">
             {role === "dept_librarian" ? <Building2 className="h-4 w-4" /> : <GraduationCap className="h-4 w-4" />}
@@ -580,29 +782,6 @@ export default function UploadMaterialsPage() {
           Anyone can contribute — uploads go to a review queue before going live.
         </p>
       </div>
-
-      {/* Banner */}
-      {banner && (
-        <div
-          className={cn(
-            "rounded-2xl border p-4",
-            banner.type === "success" && "border-emerald-300/40 bg-emerald-100/30 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200",
-            banner.type === "error"   && "border-rose-300/40 bg-rose-100/30 text-rose-900 dark:bg-rose-950/20 dark:text-rose-200",
-            banner.type === "info"    && "border-amber-300/40 bg-amber-100/30 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200",
-            banner.type === "warning" && "border-amber-300/40 bg-amber-100/30 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200"
-          )}
-        >
-          <div className="flex items-start gap-2">
-            {banner.type === "success" && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
-            {banner.type === "error"   && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
-            {(banner.type === "info" || banner.type === "warning") && <Info className="mt-0.5 h-4 w-4 shrink-0" />}
-            <div className="min-w-0 text-sm">
-              <p>{banner.text}</p>
-              {duplicateNote && <p className="mt-1 text-xs opacity-75">{duplicateNote}</p>}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Loading / auth gate */}
       {loading ? (
@@ -630,330 +809,70 @@ export default function UploadMaterialsPage() {
         </Card>
       ) : (
         <>
-          {/* ── Section: Course ─────────────────────────────────────────── */}
-          <section className="space-y-3" id="course-picker">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Course
-            </p>
-
-            {/* Search row */}
-            <div className="flex items-center gap-2">
-              <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
-                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search course code or title…"
-                  className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                />
-                {coursesLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {/* Banner */}
+          {banner && (
+            <div
+              className={cn(
+                "rounded-2xl border p-4",
+                banner.type === "success" && "border-emerald-300/40 bg-emerald-100/30 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200",
+                banner.type === "error"   && "border-rose-300/40 bg-rose-100/30 text-rose-900 dark:bg-rose-950/20 dark:text-rose-200",
+                banner.type === "info"    && "border-amber-300/40 bg-amber-100/30 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200",
+                banner.type === "warning" && "border-amber-300/40 bg-amber-100/30 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200"
+              )}
+            >
+              <div className="flex items-start gap-2">
+                {banner.type === "success" && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+                {banner.type === "error"   && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+                {(banner.type === "info" || banner.type === "warning") && <Info className="mt-0.5 h-4 w-4 shrink-0" />}
+                <p className="min-w-0 text-sm">{banner.text}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => openCreateCourse({ code: q })}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-sm font-medium text-white"
-                style={{ background: ACCENT }}
-              >
-                <Plus className="h-4 w-4" /> Create
-              </button>
             </div>
+          )}
 
-            {/* Selected course chip */}
-            {selectedCourse && (
-              <div
-                className="flex items-center justify-between gap-2 rounded-2xl border px-3 py-2.5"
-                style={{ borderColor: ACCENT, background: ACCENT_BG }}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium" style={{ color: ACCENT_TEXT }}>
-                    {selectedCourse.course_code}
-                  </p>
-                  <p className="truncate text-xs" style={{ color: "#534AB7" }}>
-                    {selectedCourse.course_title ?? "—"} · {LEVEL_LABEL(selectedCourse.level)} · {selectedCourse.semester}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCourseId("")}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-xl border px-2 py-1 text-xs"
-                  style={{ borderColor: "#AFA9EC", color: ACCENT_TEXT, background: "#fff" }}
-                >
-                  Change <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-
-            {/* Course results list */}
-            {!selectedCourse && (
-              <div className="rounded-2xl border border-border bg-background overflow-hidden">
-                {filteredCourses.length === 0 && q.trim() ? (
-                  <div className="p-4">
-                    <p className="text-sm font-medium text-foreground">No matching courses found</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Create the course (within your scope) and upload immediately.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openCreateCourse({ code: q })}
-                        className="rounded-2xl px-3 py-2 text-xs font-medium text-white"
-                        style={{ background: ACCENT }}
-                      >
-                        Create course
-                      </button>
-                      <Link
-                        href="/study/materials"
-                        className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground no-underline hover:bg-secondary/50"
-                      >
-                        Browse materials
-                      </Link>
-                    </div>
-                  </div>
-                ) : filteredCourses.length === 0 ? null : (
-                  <div className="divide-y divide-border max-h-72 overflow-auto">
-                    {filteredCourses.map((c) => {
-                      const active = c.id === selectedCourseId;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCourseId(c.id);
-                            setSemester(c.semester);
-                            saveRecentCourse(c.id);
-                            if (!title.trim()) setTitle(materialTitleSuggestion(c, materialType));
-                          }}
-                          className={cn(
-                            "w-full px-4 py-3 text-left transition hover:bg-secondary/40",
-                            active ? "bg-secondary" : "bg-background"
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-foreground">{c.course_code}</p>
-                              <p className="truncate text-xs text-muted-foreground">{c.course_title ?? "—"}</p>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {LEVEL_LABEL(c.level)} · {c.semester}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* ── Section: Material type ──────────────────────────────────── */}
-          <section className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Material type
-            </p>
-
-            <div className="grid grid-cols-3 gap-2">
-              {MATERIAL_TYPES.map((t) => {
-                const active = t.key === materialType;
-                const Icon   = t.icon;
-                return (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => {
-                      setMaterialType(t.key);
-                      if (selectedCourse && (!title.trim() || title === materialTitleSuggestion(selectedCourse, materialType))) {
-                        setTitle(materialTitleSuggestion(selectedCourse, t.key));
-                      }
-                    }}
+          {/* Wizard step indicator */}
+          {step !== "queue" && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              {([1, 2, 3] as const).map((s, i) => (
+                <span key={s} className="flex items-center gap-1">
+                  {i > 0 && <span className="opacity-30">›</span>}
+                  <span
                     className={cn(
-                      "flex flex-col items-center rounded-2xl border py-3 px-2 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      "rounded-full px-2 py-0.5",
+                      step === s
+                        ? "font-semibold text-foreground"
+                        : "opacity-50"
                     )}
-                    style={
-                      active
-                        ? { borderColor: ACCENT, background: ACCENT_BG }
-                        : { borderColor: "var(--color-border-tertiary)", background: "var(--color-background-primary)" }
-                    }
                   >
-                    <Icon
-                      className="h-4 w-4 mb-1.5"
-                      style={{ color: active ? ACCENT : "var(--color-text-secondary)" }}
-                    />
-                    <span
-                      className="text-[11px] font-medium leading-tight"
-                      style={{ color: active ? ACCENT_TEXT : "var(--color-text-primary)" }}
-                    >
-                      {t.label}
-                    </span>
-                    <span
-                      className="mt-0.5 text-[10px]"
-                      style={{ color: active ? "#534AB7" : "var(--color-text-tertiary)" }}
-                    >
-                      {t.hint}
-                    </span>
-                  </button>
-                );
-              })}
+                    {s === 1 ? "Files" : s === 2 ? "Course" : "Details"}
+                  </span>
+                </span>
+              ))}
             </div>
-          </section>
+          )}
 
-          {/* ── Section: Details ────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Details
-            </p>
+          {/* ── Step 1: Files ─────────────────────────────────────────────── */}
+          {step === 1 && (
+            <section className="space-y-4">
+              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Step 1 — Select files
+              </p>
 
-            {/* Title */}
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Title</span>
+              {/* Hidden file input */}
               <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Auto-filled — you can edit"
-                className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border/80"
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPT_STR}
+                capture="environment"
+                multiple
+                className="sr-only"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  if (picked.length) addFiles(picked);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
               />
-            </label>
 
-            {/* Semester + Level */}
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Semester</span>
-                <select
-                  value={semester}
-                  onChange={(e) => setSemester(e.target.value as Semester)}
-                  className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none"
-                >
-                  <option value="first">First</option>
-                  <option value="second">Second</option>
-                  <option value="summer">Summer</option>
-                </select>
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Level</span>
-                <select
-                  value={selectedCourse?.level ?? ""}
-                  disabled
-                  className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground opacity-60 outline-none"
-                >
-                  {selectedCourse
-                    ? <option value={selectedCourse.level}>{LEVEL_LABEL(selectedCourse.level)}</option>
-                    : <option value="">—</option>
-                  }
-                </select>
-              </label>
-            </div>
-
-            {/* Past question extras — only when type = past_question */}
-            {materialType === "past_question" && (
-              <div className="rounded-2xl bg-secondary/50 p-3 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground">Past question — extra fields</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">Year</span>
-                    <input
-                      inputMode="numeric"
-                      value={pqYear}
-                      onChange={(e) => setPqYear(e.target.value ? Number(e.target.value) : "")}
-                      placeholder="e.g. 2021"
-                      className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">Session</span>
-                    <input
-                      value={pqSession}
-                      onChange={(e) => setPqSession(e.target.value)}
-                      placeholder="2022/2023"
-                      className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* Notes */}
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                Notes <span className="font-normal opacity-60">(optional)</span>
-              </span>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Lecturer name, which section it covers…"
-                rows={2}
-                className="w-full resize-none rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              />
-            </label>
-          </section>
-
-          {/* ── Section: File ───────────────────────────────────────────── */}
-          <section className="space-y-3">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">File</p>
-
-            {/* Hidden actual input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={acceptStr}
-              className="sr-only"
-              onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
-            />
-
-            {file ? (
-              /* File selected state */
-              <div className="rounded-2xl border border-border bg-background p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {fmtBytes(file.size)} · {file.type || "unknown type"}
-                    </p>
-                    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Hash className="h-3.5 w-3.5" />
-                      {hashing
-                        ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Computing hash…</span>
-                        : fileHash
-                        ? <span className="truncate">SHA-256: {fileHash.slice(0, 20)}…</span>
-                        : "Hash unavailable"
-                      }
-                    </p>
-                    {duplicateNote && (
-                      <p className="mt-2 text-xs text-rose-700 dark:text-rose-400">
-                        Duplicate: {duplicateNote}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={resetFile}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-background hover:bg-secondary/50"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Upload progress */}
-                {uploadProgress !== null && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <span>{uploadProgress < 100 ? "Uploading…" : "Complete"}</span>
-                      <span>{uploadProgress}%</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${uploadProgress}%`,
-                          background: uploadProgress === 100 ? "#1D9E75" : ACCENT,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Drop zone */
+              {/* Drop zone */}
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
@@ -969,77 +888,635 @@ export default function UploadMaterialsPage() {
                   className="mx-auto h-8 w-8 mb-3"
                   style={{ color: isDragging ? ACCENT : "var(--color-text-tertiary)" }}
                 />
-                <p className="text-sm font-medium text-foreground">Drop your file here</p>
-                <p className="mt-1 text-xs text-muted-foreground">or tap to browse</p>
+                <p className="text-sm font-medium text-foreground">Drop files here</p>
+                <p className="mt-1 text-xs text-muted-foreground">or tap to browse · multiple files allowed</p>
                 <div className="mt-4 inline-block rounded-2xl border border-border bg-background px-4 py-2 text-xs font-medium text-foreground">
-                  Choose file
+                  Choose files
                 </div>
                 <p className="mt-3 text-[10px] text-muted-foreground">
-                  {acceptStr.includes("image") ? "PDF or image · Max 20 MB" : "PDF preferred · Max 20 MB"}
+                  PDF, images, Office docs · Max 50 MB each
                 </p>
               </div>
-            )}
 
-            {/* Review queue notice */}
-            <div
-              className="flex items-start gap-2.5 rounded-2xl p-3"
-              style={{ background: ACCENT_BG }}
-            >
-              <div
-                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                style={{ background: ACCENT }}
-              >
-                i
+              {/* Auto-fill banner */}
+              {autoFillBanner && (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-2xl border px-3 py-2"
+                  style={{ borderColor: "#AFA9EC", background: ACCENT_BG }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Info className="h-4 w-4 shrink-0" style={{ color: ACCENT }} />
+                    <p className="text-xs" style={{ color: ACCENT_TEXT }}>Auto-filled from filename</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAutoFillBanner(false)}
+                    className="rounded-lg p-1 hover:bg-black/5"
+                  >
+                    <X className="h-3.5 w-3.5" style={{ color: ACCENT_TEXT }} />
+                  </button>
+                </div>
+              )}
+
+              {/* File list */}
+              {files.length > 0 && (
+                <div className="space-y-2">
+                  {files.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-3 rounded-2xl border border-border bg-background px-3 py-2.5"
+                    >
+                      <div className="shrink-0">{getFileIcon(f.file.type)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{f.file.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {fmtBytes(f.file.size)}
+                          {f.hashing
+                            ? " · Computing hash…"
+                            : f.hash
+                            ? ` · SHA-256: ${f.hash.slice(0, 12)}…`
+                            : ""}
+                        </p>
+                      </div>
+                      {f.hashing && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+                      <button
+                        type="button"
+                        onClick={() => removeFile(f.id)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-border bg-background hover:bg-secondary/50"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Desktop continue */}
+              <div className="hidden justify-end sm:flex">
+                <button
+                  type="button"
+                  disabled={files.length === 0}
+                  onClick={() => setStep(2)}
+                  className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-medium transition"
+                  style={{
+                    background: files.length > 0 ? ACCENT : "var(--color-background-secondary)",
+                    color: files.length > 0 ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  Continue <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
-              <p className="text-xs leading-relaxed" style={{ color: ACCENT_TEXT }}>
-                Your upload goes to a review queue.{" "}
-                {isRep
-                  ? "As a rep your uploads are auto-approved."
-                  : "You'll be notified when it's approved or if there's an issue."
-                }
+
+              {/* Sticky (mobile) */}
+              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pb-4 pt-3 backdrop-blur sm:hidden">
+                <button
+                  type="button"
+                  disabled={files.length === 0}
+                  onClick={() => setStep(2)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-medium transition"
+                  style={{
+                    background: files.length > 0 ? ACCENT : "var(--color-background-secondary)",
+                    color: files.length > 0 ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  {files.length === 0
+                    ? "Add files to continue"
+                    : `Continue with ${files.length} file${files.length === 1 ? "" : "s"} →`
+                  }
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ── Step 2: Course ─────────────────────────────────────────────── */}
+          {step === 2 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Step 2 — Select course
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  ← Back
+                </button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                This course applies to all {files.length} file{files.length === 1 ? "" : "s"}. You can override per file on the next step.
               </p>
-            </div>
-          </section>
 
-          {/* ── Sticky submit bar ───────────────────────────────────────── */}
-          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pb-4 pt-3 backdrop-blur sm:hidden">
-            <button
-              type="button"
-              disabled={!canSubmit || submitting}
-              onClick={onSubmit}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-medium text-white transition"
-              style={{
-                background: canSubmit && !submitting ? ACCENT : "var(--color-background-secondary)",
-                color: canSubmit && !submitting ? "#fff" : "var(--color-text-tertiary)",
-              }}
-            >
-              {submitting
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
-                : <><UploadCloud className="h-4 w-4" /> {submitLabel ?? "Submit upload"}</>
-              }
-            </button>
-          </div>
+              {/* Search row */}
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search course code or title…"
+                    className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  {coursesLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                </div>
+                {isRep && (
+                  <button
+                    type="button"
+                    onClick={() => openCreateCourse({ code: q })}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-sm font-medium text-white"
+                    style={{ background: ACCENT }}
+                  >
+                    <Plus className="h-4 w-4" /> Create
+                  </button>
+                )}
+              </div>
 
-          {/* Desktop submit */}
-          <div className="hidden justify-end sm:flex">
-            <button
-              type="button"
-              disabled={!canSubmit || submitting}
-              onClick={onSubmit}
-              className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-medium text-white transition"
-              style={{
-                background: canSubmit && !submitting ? ACCENT : "var(--color-background-secondary)",
-                color: canSubmit && !submitting ? "#fff" : "var(--color-text-tertiary)",
-              }}
-            >
-              {submitting
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
-                : <><UploadCloud className="h-4 w-4" /> Submit upload</>
-              }
-            </button>
-          </div>
+              {/* Selected course chip */}
+              {selectedCourse && (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-2xl border px-3 py-2.5"
+                  style={{ borderColor: ACCENT, background: ACCENT_BG }}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium" style={{ color: ACCENT_TEXT }}>
+                      {selectedCourse.course_code}
+                    </p>
+                    <p className="truncate text-xs" style={{ color: "#534AB7" }}>
+                      {selectedCourse.course_title ?? "—"} · {LEVEL_LABEL(selectedCourse.level)} · {selectedCourse.semester}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCourseId("")}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border px-2 py-1 text-xs"
+                    style={{ borderColor: "#AFA9EC", color: ACCENT_TEXT, background: "#fff" }}
+                  >
+                    Change <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
 
-          {/* ── Create course modal ──────────────────────────────────────── */}
+              {/* Course list */}
+              {!selectedCourse && (
+                <div className="rounded-2xl border border-border bg-background overflow-hidden">
+                  {filteredCourses.length === 0 && q.trim() ? (
+                    <div className="p-4">
+                      {isRep ? (
+                        <>
+                          <p className="text-sm font-medium text-foreground">No matching courses found</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Create the course (within your scope) and upload immediately.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openCreateCourse({ code: q })}
+                              className="rounded-2xl px-3 py-2 text-xs font-medium text-white"
+                              style={{ background: ACCENT }}
+                            >
+                              Create course
+                            </button>
+                            <Link
+                              href="/study/materials"
+                              className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground no-underline hover:bg-secondary/50"
+                            >
+                              Browse materials
+                            </Link>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-foreground">
+                            {normalizeCourseCode(q)} isn't in the catalog yet.
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Your course rep can add it — tap below to flag it.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={flagCourse}
+                              className="inline-flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-medium text-white"
+                              style={{ background: ACCENT }}
+                            >
+                              <Flag className="h-3.5 w-3.5" /> Flag this course →
+                            </button>
+                            <Link
+                              href="/study/materials"
+                              className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground no-underline hover:bg-secondary/50"
+                            >
+                              Browse materials
+                            </Link>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : filteredCourses.length === 0 ? null : (
+                    <div className="divide-y divide-border max-h-72 overflow-auto">
+                      {filteredCourses.map((c) => {
+                        const active = c.id === selectedCourseId;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCourseId(c.id);
+                              setSemester(c.semester);
+                              saveRecentCourse(c.id);
+                              setFiles((prev) => prev.map((f) => ({
+                                ...f,
+                                title: f.title || materialTitleSuggestion(c, f.materialType),
+                              })));
+                            }}
+                            className={cn(
+                              "w-full px-4 py-3 text-left transition hover:bg-secondary/40",
+                              active ? "bg-secondary" : "bg-background"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">{c.course_code}</p>
+                                <p className="truncate text-xs text-muted-foreground">{c.course_title ?? "—"}</p>
+                              </div>
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {LEVEL_LABEL(c.level)} · {c.semester}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Desktop continue */}
+              <div className="hidden justify-end sm:flex">
+                <button
+                  type="button"
+                  disabled={!selectedCourse}
+                  onClick={() => setStep(3)}
+                  className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-medium transition"
+                  style={{
+                    background: selectedCourse ? ACCENT : "var(--color-background-secondary)",
+                    color: selectedCourse ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  Continue <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Sticky (mobile) */}
+              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pb-4 pt-3 backdrop-blur sm:hidden">
+                <button
+                  type="button"
+                  disabled={!selectedCourse}
+                  onClick={() => setStep(3)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-medium transition"
+                  style={{
+                    background: selectedCourse ? ACCENT : "var(--color-background-secondary)",
+                    color: selectedCourse ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  {!selectedCourse ? "Select a course to continue" : "Continue →"}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ── Step 3: Details ───────────────────────────────────────────── */}
+          {step === 3 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Step 3 — File details
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  ← Back
+                </button>
+              </div>
+
+              {/* Global notes */}
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Notes <span className="font-normal opacity-60">(optional — applies to all files)</span>
+                </span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Lecturer name, which section it covers…"
+                  rows={2}
+                  className="w-full resize-none rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                />
+              </label>
+
+              {/* Per-file rows */}
+              <div className="space-y-2">
+                {files.map((f) => {
+                  const hasError = f.materialType === "past_question" && (
+                    !f.pqYear || typeof f.pqYear !== "number" ||
+                    !f.pqSession || !f.pqSession.includes("/")
+                  );
+                  return (
+                    <div
+                      key={f.id}
+                      className={cn(
+                        "rounded-2xl border overflow-hidden",
+                        hasError ? "border-amber-400" : "border-border"
+                      )}
+                    >
+                      {/* Header row */}
+                      <div className="flex items-center gap-3 px-3 py-2.5 bg-background">
+                        <div className="shrink-0">{getFileIcon(f.file.type)}</div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">{f.file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {MATERIAL_TYPES.find((x) => x.key === f.materialType)?.label ?? f.materialType}
+                            {hasError && (
+                              <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                                Needs info
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateFile(f.id, { expanded: !f.expanded })}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-border bg-background hover:bg-secondary/50"
+                        >
+                          {f.expanded
+                            ? <ChevronUp className="h-3.5 w-3.5" />
+                            : <ChevronDown className="h-3.5 w-3.5" />
+                          }
+                        </button>
+                      </div>
+
+                      {/* Expanded details */}
+                      {f.expanded && (
+                        <div className="border-t border-border bg-secondary/20 p-3 space-y-3">
+                          <label className="block space-y-1.5">
+                            <span className="text-xs font-medium text-muted-foreground">Title</span>
+                            <input
+                              value={f.title}
+                              onChange={(e) => updateFile(f.id, { title: e.target.value })}
+                              placeholder="Auto-filled — you can edit"
+                              className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border/80"
+                            />
+                          </label>
+
+                          <div>
+                            <span className="text-xs font-medium text-muted-foreground">Material type</span>
+                            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                              {MATERIAL_TYPES.map((t) => {
+                                const active = t.key === f.materialType;
+                                const Icon   = t.icon;
+                                return (
+                                  <button
+                                    key={t.key}
+                                    type="button"
+                                    onClick={() => updateFile(f.id, {
+                                      materialType: t.key,
+                                      pqYear: t.key !== "past_question" ? "" : f.pqYear,
+                                    })}
+                                    className="flex flex-col items-center rounded-xl border py-2 px-1 text-center transition"
+                                    style={
+                                      active
+                                        ? { borderColor: ACCENT, background: ACCENT_BG }
+                                        : { borderColor: "var(--color-border-tertiary)", background: "var(--color-background-primary)" }
+                                    }
+                                  >
+                                    <Icon
+                                      className="h-3.5 w-3.5 mb-1"
+                                      style={{ color: active ? ACCENT : "var(--color-text-secondary)" }}
+                                    />
+                                    <span
+                                      className="text-[10px] font-medium leading-tight"
+                                      style={{ color: active ? ACCENT_TEXT : "var(--color-text-primary)" }}
+                                    >
+                                      {t.label}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {f.materialType === "past_question" && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="block space-y-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">Year</span>
+                                <input
+                                  inputMode="numeric"
+                                  value={f.pqYear}
+                                  onChange={(e) => updateFile(f.id, { pqYear: e.target.value ? Number(e.target.value) : "" })}
+                                  placeholder="e.g. 2021"
+                                  className={cn(
+                                    "w-full rounded-2xl border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground",
+                                    !f.pqYear ? "border-amber-400" : "border-border"
+                                  )}
+                                />
+                              </label>
+                              <label className="block space-y-1.5">
+                                <span className="text-xs font-medium text-muted-foreground">Session</span>
+                                <input
+                                  value={f.pqSession}
+                                  onChange={(e) => updateFile(f.id, { pqSession: e.target.value })}
+                                  placeholder="2022/2023"
+                                  className={cn(
+                                    "w-full rounded-2xl border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground",
+                                    !f.pqSession.includes("/") ? "border-amber-400" : "border-border"
+                                  )}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Review queue notice */}
+              <div className="flex items-start gap-2.5 rounded-2xl p-3" style={{ background: ACCENT_BG }}>
+                <div
+                  className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                  style={{ background: ACCENT }}
+                >
+                  i
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: ACCENT_TEXT }}>
+                  Your upload goes to a review queue.{" "}
+                  {isRep
+                    ? "As a rep your uploads are auto-approved."
+                    : "You'll be notified when it's approved or if there's an issue."
+                  }
+                </p>
+              </div>
+
+              {/* Desktop submit */}
+              <div className="hidden justify-end sm:flex">
+                <button
+                  type="button"
+                  disabled={!canSubmitStep3}
+                  onClick={startUpload}
+                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-medium transition"
+                  style={{
+                    background: canSubmitStep3 ? ACCENT : "var(--color-background-secondary)",
+                    color: canSubmitStep3 ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  <UploadCloud className="h-4 w-4" />
+                  Submit {files.length} upload{files.length === 1 ? "" : "s"}
+                </button>
+              </div>
+
+              {/* Sticky (mobile) */}
+              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pb-4 pt-3 backdrop-blur sm:hidden">
+                <button
+                  type="button"
+                  disabled={!canSubmitStep3}
+                  onClick={startUpload}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-medium transition"
+                  style={{
+                    background: canSubmitStep3 ? ACCENT : "var(--color-background-secondary)",
+                    color: canSubmitStep3 ? "#fff" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  <UploadCloud className="h-4 w-4" />
+                  {filesWithErrors.length > 0
+                    ? `Fix ${filesWithErrors.length} file${filesWithErrors.length === 1 ? "" : "s"} to continue`
+                    : `Submit ${files.length} upload${files.length === 1 ? "" : "s"}`
+                  }
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ── Queue view ─────────────────────────────────────────────────── */}
+          {step === "queue" && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Upload queue
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiles([]);
+                    setSelectedCourseId("");
+                    setQ("");
+                    setAutoFillBanner(false);
+                    setStep(1);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/50"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add more files
+                </button>
+              </div>
+
+              {/* Summary metric cards */}
+              {(() => {
+                const done      = queue.filter((e) => e.status === "done").length;
+                const uploading = queue.filter((e) => e.status === "uploading").length;
+                const queued    = queue.filter((e) => e.status === "queued").length;
+                const failed    = queue.filter((e) => e.status === "failed").length;
+                return (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { label: "Done",     value: done,      color: "#1D9E75" },
+                      { label: "Uploading",value: uploading, color: ACCENT    },
+                      { label: "Queued",   value: queued,    color: "#6B7280" },
+                      { label: "Failed",   value: failed,    color: "#DC2626" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="rounded-2xl border border-border bg-background p-3 text-center">
+                        <p className="text-lg font-semibold" style={{ color }}>{value}</p>
+                        <p className="text-[10px] text-muted-foreground">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Queue rows */}
+              <div className="space-y-2">
+                {queue.map((qEntry) => (
+                  <div key={qEntry.id} className="rounded-2xl border border-border bg-background p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">{getFileIcon(qEntry.file.type)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{qEntry.file.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{qEntry.title}</p>
+                      </div>
+                      <div className="shrink-0">
+                        {qEntry.status === "queued" && (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
+                            Queued
+                          </span>
+                        )}
+                        {qEntry.status === "uploading" && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{ background: ACCENT_BG, color: ACCENT_TEXT }}
+                          >
+                            <Loader2 className="h-3 w-3 animate-spin" /> Uploading
+                          </span>
+                        )}
+                        {qEntry.status === "done" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                            <CheckCircle2 className="h-3 w-3" /> Done
+                          </span>
+                        )}
+                        {qEntry.status === "failed" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+                            <AlertTriangle className="h-3 w-3" /> Failed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    {(qEntry.status === "uploading" || qEntry.status === "done") && (
+                      <div className="mt-2">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${qEntry.progress}%`,
+                              background: qEntry.status === "done" ? "#1D9E75" : ACCENT,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error + retry button */}
+                    {qEntry.status === "failed" && (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-xs text-rose-700 dark:text-rose-400">
+                          {qEntry.error}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => retryQueueEntry(qEntry.id)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                        >
+                          <RefreshCw className="h-3 w-3" /> Retry upload
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Create course modal ─────────────────────────────────────────── */}
           {showCreateCourse && (
             <div
               className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center"
