@@ -1,4 +1,5 @@
 // app/study/materials/[id]/page.tsx
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -8,7 +9,7 @@ type Props = { params: Promise<{ id: string }> };
 
 // ─── Server-side data fetch ──────────────────────────────────────────────────
 
-async function getMaterial(id: string) {
+const getMaterial = cache(async (id: string) => {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
@@ -29,7 +30,7 @@ async function getMaterial(id: string) {
 
   if (error || !data) return null;
   return data;
-}
+});
 
 // ─── Dynamic metadata for sharing ────────────────────────────────────────────
 
@@ -68,5 +69,45 @@ export default async function MaterialDetailPage({ params }: Props) {
 
   if (!m) notFound();
 
-  return <MaterialDetailClient material={m as any} />;
+  const supabase = await createSupabaseServerClient();
+
+  // Fetch related materials and saved state in parallel
+  const courseId = (m.study_courses as any)?.id as string | undefined;
+
+  const [relatedResult, userResult] = await Promise.all([
+    courseId
+      ? supabase
+          .from("study_materials")
+          .select("id,title,material_type,downloads,up_votes,file_path,created_at,study_courses:course_id(course_code)")
+          .eq("approved", true)
+          .eq("course_id", courseId)
+          .neq("id", id)
+          .order("downloads", { ascending: false })
+          .limit(4)
+      : Promise.resolve({ data: [] }),
+    supabase.auth.getUser(),
+  ]);
+
+  const relatedMaterials = (relatedResult.data ?? []) as any[];
+
+  let initialSaved = false;
+  const userId = userResult.data?.user?.id;
+  if (userId) {
+    const { data: savedRow } = await supabase
+      .from("study_saved_items")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("item_type", "material")
+      .eq("material_id", id)
+      .maybeSingle();
+    initialSaved = !!savedRow;
+  }
+
+  return (
+    <MaterialDetailClient
+      material={m as any}
+      initialSaved={initialSaved}
+      relatedMaterials={relatedMaterials}
+    />
+  );
 }

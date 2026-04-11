@@ -30,7 +30,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
-import { toggleSaved, getAuthedUserId } from "@/lib/studySaved";
+import { toggleSaved } from "@/lib/studySaved";
 import { supabase } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -557,7 +557,15 @@ function AiSummarizeCard({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MaterialDetailClient({ material: m }: { material: Material }) {
+export default function MaterialDetailClient({
+  material: m,
+  initialSaved = false,
+  relatedMaterials: initialRelatedMaterials = [],
+}: {
+  material: Material;
+  initialSaved?: boolean;
+  relatedMaterials?: any[];
+}) {
   const kind = detectKind(m);
   const badge = fileTypeBadge(kind, m);
   const course = m.study_courses;
@@ -565,13 +573,13 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
   const fileUrl = m.file_url ?? "";
   const hasFile = fileUrl.length > 0;
 
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState(initialSaved);
   const [saving, setSaving] = useState(false);
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const upvoteCount = m.up_votes ?? 0;
-  const [relatedMaterials, setRelatedMaterials] = useState<any[]>([]);
+  const [relatedMaterials, setRelatedMaterials] = useState<any[]>(initialRelatedMaterials);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [genQsLoading, setGenQsLoading] = useState(false);
@@ -595,43 +603,6 @@ export default function MaterialDetailClient({ material: m }: { material: Materi
     if (toastRef.current) clearTimeout(toastRef.current);
     toastRef.current = setTimeout(() => setToast(null), 2600);
   }
-
-  // Check if already saved
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const userId = await getAuthedUserId();
-      if (!userId || cancelled) return;
-      const { data } = await supabase
-        .from("study_saved_items")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("item_type", "material")
-        .eq("material_id", m.id)
-        .maybeSingle();
-      if (!cancelled) setSaved(!!data);
-    })();
-    return () => { cancelled = true; };
-  }, [m.id]);
-
-  // Fetch related materials (same course, max 4)
-  useEffect(() => {
-    let cancelled = false;
-    const courseId = m.study_courses?.id;
-    if (!courseId) return;
-    (async () => {
-      const { data: related } = await supabase
-        .from("study_materials")
-        .select("id,title,material_type,downloads,up_votes,file_path,created_at,study_courses:course_id(course_code)")
-        .eq("approved", true)
-        .eq("course_id", courseId)
-        .neq("id", m.id)
-        .order("downloads", { ascending: false })
-        .limit(4);
-      if (!cancelled && related?.length) setRelatedMaterials(related as any[]);
-    })();
-    return () => { cancelled = true; };
-  }, [m.id, m.study_courses?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

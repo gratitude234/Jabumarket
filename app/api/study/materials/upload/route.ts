@@ -184,7 +184,13 @@ export async function POST(req: Request) {
           course_id,
           title,
           session,
-          approved: false,
+          approved: autoApprove,
+          approved_by: autoApprove ? userId : null,
+          approved_at: autoApprove ? nowIso : null,
+          uploader_id: userId,
+          uploader_email: uploader_email,
+          material_type: material_type || null,
+          downloads: 0,
         } as any)
         .select("id")
         .maybeSingle();
