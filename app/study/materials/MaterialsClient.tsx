@@ -418,7 +418,7 @@ function PreviewModal({
                 <div>
                   <p className="text-sm font-semibold text-foreground">Preview not available</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Tap “Open” to view this file in a new tab.
+                    Tap "Open" to view this file in a new tab.
                   </p>
                 </div>
               </div>
@@ -621,7 +621,7 @@ export default function MaterialsClient() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schemaHint, setSchemaHint] = useState<string | null>(null);
 
-  // Pagination: “Load more” (mobile-first)
+  // Pagination: "Load more" (mobile-first)
   const PAGE_SIZE = 12;
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -1209,8 +1209,8 @@ export default function MaterialsClient() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search course code, title, description…"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              placeholder="Search materials…"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
             {q ? (
               <button type="button" onClick={() => setQ("")}
@@ -1250,120 +1250,72 @@ export default function MaterialsClient() {
           </div>
 
           {hasAnyFilters ? (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              {total > 0 && (
-                <p className="text-xs font-semibold text-muted-foreground">
-                  Showing <span className="text-foreground">{showingFrom}</span>–<span className="text-foreground">{showingTo}</span> of{" "}
-                  <span className="text-foreground">{total}</span>
-                </p>
-              )}
+            <div className="mt-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
+              {/* Clear all — first in the row */}
               <button
                 type="button"
                 onClick={clearAll}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold",
+                  "shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold",
                   "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 )}
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3 w-3" />
                 Clear all
               </button>
+
+              {mineOnly && !mineExplicitOff && scopeDept ? (
+                <button type="button" onClick={() => router.replace(buildHref(pathname, {
+                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null, mine: "0",
+                  }))}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none">
+                  {scopeDept} <span className="text-[#5B4FD9]">×</span>
+                </button>
+              ) : null}
+
+              {typeParam !== "all" ? (
+                <button type="button" onClick={() => router.replace(buildHref(pathname, {
+                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    session: sessionParam || null, type: null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                  }))}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none">
+                  {activeTypeLabel} <span className="text-[#5B4FD9]">×</span>
+                </button>
+              ) : null}
+
+              {levelParam ? (
+                <button type="button" onClick={() => router.replace(buildHref(pathname, {
+                    q: qParam || null, level: null, semester: semesterParam || null,
+                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                  }))}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none">
+                  {levelParam}L <span className="text-[#5B4FD9]">×</span>
+                </button>
+              ) : null}
+
+              {courseParam ? (
+                <Link href={`/study/courses/${encodeURIComponent(courseParam)}`}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] no-underline transition hover:bg-[#5B4FD9]/15">
+                  {courseParam} hub →
+                </Link>
+              ) : null}
             </div>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
-              Tip: Try <span className="font-semibold">GST101</span> or “past question”.
+              Tip: Try <span className="font-semibold">GST101</span> or "past question".
             </p>
           )}
-
-          <div className="mt-3 flex items-center gap-2 overflow-x-auto pl-16">
-            {mineOnly && !mineExplicitOff && scopeDept ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      level: levelParam || null,
-                      semester: semesterParam || null,
-                      faculty: facultyParam || null,
-                      dept: deptParam || null,
-                      course: courseParam || null,
-                      session: sessionParam || null,
-                      type: typeParam !== "all" ? typeParam : null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      verified: verifiedOnly ? "1" : null,
-                      featured: featuredOnly ? "1" : null,
-                      mine: "0",
-                    })
-                  )
-                }
-              >
-                {scopeDept} <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
-            {typeParam !== "all" ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      level: levelParam || null,
-                      semester: semesterParam || null,
-                      faculty: facultyParam || null,
-                      dept: deptParam || null,
-                      course: courseParam || null,
-                      session: sessionParam || null,
-                      type: null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      verified: verifiedOnly ? "1" : null,
-                      featured: featuredOnly ? "1" : null,
-                    })
-                  )
-                }
-              >
-                <FileText className="h-4 w-4" />
-                {activeTypeLabel}
-                <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
-
-            {levelParam ? (
-              <Chip
-                active
-                onClick={() =>
-                  router.replace(
-                    buildHref(pathname, {
-                      q: qParam || null,
-                      level: null,
-                      semester: semesterParam || null,
-                      faculty: facultyParam || null,
-                      dept: deptParam || null,
-                      course: courseParam || null,
-                      session: sessionParam || null,
-                      type: typeParam !== "all" ? typeParam : null,
-                      sort: sortParam !== "newest" ? sortParam : null,
-                      verified: verifiedOnly ? "1" : null,
-                      featured: featuredOnly ? "1" : null,
-                    })
-                  )
-                }
-              >
-                {levelParam}L <X className="h-4 w-4" />
-              </Chip>
-            ) : null}
-
-            {courseParam ? (
-              <Link
-                href={`/study/courses/${encodeURIComponent(courseParam)}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#5B35D5]/25 bg-[#EEEDFE] px-3 py-1.5 text-xs font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10"
-              >
-                {courseParam} hub →
-              </Link>
-            ) : null}
-
-          </div>
         </Card>
       </div>
 
