@@ -1,6 +1,15 @@
 // app/api/ai/save-generated-questions/route.ts
 // POST /api/ai/save-generated-questions
 // Saves AI-generated MCQ questions to study_quiz_sets and linked tables.
+//
+// ── Run this in the Supabase SQL editor before deploying ─────────────────────
+// ALTER TABLE public.study_quiz_sets
+//   ADD COLUMN IF NOT EXISTS source_material_id uuid
+//     REFERENCES public.study_materials(id) ON DELETE SET NULL;
+// ALTER TABLE public.study_quiz_sets
+//   ADD COLUMN IF NOT EXISTS due_at timestamptz
+//     DEFAULT (now() + interval '1 day');
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -62,7 +71,7 @@ export async function POST(req: NextRequest) {
   const material = mat as MaterialTitleRow;
   const title = `AI Generated - ${material.title ?? "Practice Set"}`;
 
-  const { data: set, error: setErr } = await admin
+  let setResult = await admin
     .from("study_quiz_sets")
     .insert({
       title,
@@ -76,8 +85,32 @@ export async function POST(req: NextRequest) {
     .select("id")
     .single();
 
+  // If the columns don't exist yet, fall back to inserting without them
+  if (setResult.error) {
+    console.error("[save-generated-questions] supabase error:", setResult.error);
+    const msg = setResult.error.message ?? "";
+    const isMissingColumn = msg.includes("column") && msg.includes("does not exist");
+    if (isMissingColumn) {
+      setResult = await admin
+        .from("study_quiz_sets")
+        .insert({
+          title,
+          source: "ai_generated",
+          course_id: courseId,
+          created_by: user.id,
+          published: true,
+        } as any)
+        .select("id")
+        .single();
+      if (setResult.error) {
+        console.error("[save-generated-questions] supabase error (fallback):", setResult.error);
+      }
+    }
+  }
+
+  const { data: set, error: setErr } = setResult;
+
   if (setErr || !set) {
-    console.error("[save-generated-questions] quiz set insert error:", setErr);
     return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
   }
 
