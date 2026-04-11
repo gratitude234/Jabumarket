@@ -71,6 +71,36 @@ async function enforceRateLimit(
   return { allowed: true };
 }
 
+// GET /api/ai/generate-questions — returns remaining cooldown seconds for the current user
+export async function GET(_req: NextRequest) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ retryAfterSeconds: 0 });
+  }
+
+  const admin = adminSupabase;
+  const { data } = await admin
+    .from("ai_rate_limits")
+    .select("last_called_at")
+    .eq("user_id", user.id)
+    .eq("endpoint", "generate-questions")
+    .maybeSingle();
+
+  const row = data as RateLimitRow | null;
+  if (row?.last_called_at) {
+    const nextAllowedAt = new Date(row.last_called_at).getTime() + 5 * 60 * 1000;
+    const remaining = nextAllowedAt - Date.now();
+    if (remaining > 0) {
+      return NextResponse.json({ retryAfterSeconds: Math.ceil(remaining / 1000) });
+    }
+  }
+
+  return NextResponse.json({ retryAfterSeconds: 0 });
+}
+
 export async function POST(req: NextRequest) {
   // Auth
   const supabase = await createSupabaseServerClient();
@@ -82,14 +112,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse body
-  let body: { materialId?: string };
+  let body: { materialId?: string; count?: number; difficulty?: "easy" | "mixed" | "hard"; focus?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { materialId } = body;
+  const { materialId, count = 10, difficulty = "mixed", focus } = body;
   if (!materialId) {
     return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
   }
@@ -170,9 +200,18 @@ export async function POST(req: NextRequest) {
 
   const base64Pdf = Buffer.from(pdfBuffer).toString("base64");
 
+  const difficultyInstruction = {
+    easy: "Generate straightforward recall and definition questions.",
+    mixed: "Mix of recall, application, and analysis questions.",
+    hard: "Generate exam-style questions requiring deep understanding and application.",
+  }[difficulty] ?? "Mix of recall, application, and analysis questions.";
+
+  const focusInstruction = focus ? `Focus specifically on: ${focus}` : "";
+
   const systemPrompt = `You are an exam question generator for Nigerian university students.
-Generate exactly 15 multiple choice questions strictly from the provided PDF content.
+Generate exactly ${count} multiple choice questions strictly from the provided PDF content.
 Do not add any knowledge from outside the document.
+${difficultyInstruction}${focusInstruction ? `\n${focusInstruction}` : ""}
 Each question must have 4 options (A, B, C, D) with exactly one correct answer.
 Include a short explanation (1-2 sentences) for each correct answer, citing the part of the document it came from.
 
@@ -199,7 +238,7 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
     ],
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 4096,
+      maxOutputTokens: Math.min(4096, count * 300),
     },
   };
 

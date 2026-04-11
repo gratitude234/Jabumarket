@@ -441,13 +441,20 @@ export default function MaterialDetailClient({
   const [relatedMaterials] = useState<any[]>(initialRelatedMaterials);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [genQsLoading, setGenQsLoading] = useState(false);
   const [genQsError, setGenQsError] = useState<string | null>(null);
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[] | null>(null);
-  const [genQsSheetOpen, setGenQsSheetOpen] = useState(false);
   const [savingQs, setSavingQs] = useState(false);
   const [savedSetId, setSavedSetId] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+
+  // Quiz state machine
+  const [quizState, setQuizState] = useState<"idle" | "config" | "loading" | "quiz" | "results">("idle");
+  const [quizConfig, setQuizConfig] = useState<{ count: number; difficulty: "easy" | "mixed" | "hard"; focus: string }>({ count: 10, difficulty: "mixed", focus: "" });
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, { chosen: string; correct: boolean; skipped: boolean }>>({});
+  const [retryPool, setRetryPool] = useState<GeneratedQuestion[] | null>(null);
+
+  // Rate-limit countdown
+  const [genQsCooldown, setGenQsCooldown] = useState(0);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -465,6 +472,22 @@ export default function MaterialDetailClient({
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
   useEffect(() => { if (!chatOpen) return; chatInputRef.current?.focus(); }, [chatOpen]);
+
+  // Proactive rate-limit check on mount
+  useEffect(() => {
+    if (kind !== "pdf") return;
+    fetch("/api/ai/generate-questions")
+      .then((r) => r.json())
+      .then((d) => { if (d.retryAfterSeconds > 0) setGenQsCooldown(d.retryAfterSeconds); })
+      .catch(() => {});
+  }, [kind]);
+
+  // Countdown ticker
+  useEffect(() => {
+    if (genQsCooldown <= 0) return;
+    const t = setInterval(() => setGenQsCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [genQsCooldown]);
 
   async function handleToggleSave() {
     setSaving(true);
@@ -503,23 +526,35 @@ export default function MaterialDetailClient({
   }
 
   async function handleGenerateQuestions() {
-    setGenQsLoading(true);
+    setQuizState("loading");
     setGenQsError(null);
     setSavedSetId(null);
     try {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ materialId: m.id }),
+        body: JSON.stringify({
+          materialId: m.id,
+          count: quizConfig.count,
+          difficulty: quizConfig.difficulty,
+          focus: quizConfig.focus || undefined,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate questions.");
+      if (!res.ok) {
+        if (res.status === 429) {
+          const retryAfter = parseInt(res.headers.get("Retry-After") ?? "300");
+          setGenQsCooldown(retryAfter);
+        }
+        throw new Error(data.error ?? "Failed to generate questions.");
+      }
       setGeneratedQuestions(data.questions);
-      setRevealed({});
-      setGenQsSheetOpen(true);
+      setAnswers({});
+      setCurrentQuestionIndex(0);
+      setRetryPool(null);
+      setQuizState("quiz");
     } catch (e: unknown) {
       setGenQsError(e instanceof Error ? e.message : "Something went wrong.");
-    } finally {
-      setGenQsLoading(false);
+      setQuizState("config");
     }
   }
 
@@ -679,20 +714,21 @@ export default function MaterialDetailClient({
           <div className="space-y-2">
             {/* Generate practice questions */}
             {kind === "pdf" && (
-              <button type="button" onClick={handleGenerateQuestions} disabled={genQsLoading}
+              <button type="button"
+                onClick={() => setQuizState("config")}
+                disabled={genQsCooldown > 0}
                 className="flex w-full items-center gap-3 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/70 px-4 py-3.5 text-left transition hover:bg-[#EEEDFE] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B4FD9] text-white">
-                  {genQsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  <Sparkles className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-[#3A2EB8]">
-                    {genQsLoading ? "Generating questions…" : "Generate Practice Questions"}
+                    {genQsCooldown > 0 ? `Wait ${genQsCooldown}s` : "Generate Practice Questions"}
                   </p>
                   <p className="text-xs text-[#5B4FD9]/70">AI-powered exam prep from this material</p>
                 </div>
               </button>
             )}
-            {genQsError && <p className="text-center text-xs text-red-500">{genQsError}</p>}
 
             {/* Summarize + Ask AI side by side */}
             <div className={cn("gap-2", kind === "pdf" ? "grid grid-cols-2" : "block")}>
@@ -876,70 +912,290 @@ export default function MaterialDetailClient({
         </div>
       )}
 
-      {/* Generated Questions Sheet */}
-      {genQsSheetOpen && generatedQuestions && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setGenQsSheetOpen(false)} />
-          <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col rounded-t-3xl bg-card shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-4">
-              <div>
-                <p className="text-sm font-bold text-foreground">Practice Questions</p>
-                <p className="text-xs text-muted-foreground">{generatedQuestions.length} questions generated by AI</p>
+      {/* Practice Questions Sheet — config / loading / quiz / results */}
+      {quizState !== "idle" && (() => {
+        const qs = generatedQuestions ?? [];
+        const currentQ = qs[currentQuestionIndex];
+        const currentAnswer = answers[currentQuestionIndex];
+        const answered = currentAnswer !== undefined;
+        const correctCount = Object.values(answers).filter((a) => a.correct).length;
+        const skippedCount = Object.values(answers).filter((a) => a.skipped).length;
+        const missedList = qs
+          .map((q, i) => ({ q, i, ans: answers[i] }))
+          .filter(({ ans }) => ans && !ans.correct && !ans.skipped);
+        const scoreRingR = 40;
+        const scoreRingCx = 50;
+        const scoreRingCirc = 2 * Math.PI * scoreRingR;
+        const scoreRingPct = qs.length === 0 ? 0 : Math.round((correctCount / qs.length) * 100);
+        const scoreRingOffset = scoreRingCirc * (1 - scoreRingPct / 100);
+        const scoreRingColor = scoreRingPct >= 80 ? "#22c55e" : scoreRingPct >= 60 ? "#f59e0b" : "#ef4444";
+
+        return (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setQuizState("idle")} />
+            <div className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col rounded-t-3xl bg-card shadow-2xl">
+              {/* Sheet header */}
+              <div className="flex items-center justify-between border-b border-border px-4 py-4">
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    {quizState === "config" ? "Configure Questions" :
+                     quizState === "loading" ? "Generating…" :
+                     quizState === "quiz" ? `Q ${currentQuestionIndex + 1} / ${qs.length}` :
+                     "Results"}
+                  </p>
+                  {quizState === "quiz" && (
+                    <p className="text-xs text-[#5B4FD9] font-semibold">{correctCount}/{currentQuestionIndex} correct</p>
+                  )}
+                </div>
+                <button type="button" onClick={() => setQuizState("idle")}
+                  className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background text-muted-foreground hover:bg-secondary/50 focus-visible:outline-none">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button type="button" onClick={() => setGenQsSheetOpen(false)}
-                className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background text-muted-foreground hover:bg-secondary/50 focus-visible:outline-none">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pb-36">
-              {generatedQuestions.map((q, idx) => (
-                <div key={idx} className="rounded-2xl border border-border bg-background p-4">
-                  <p className="mb-3 text-sm font-bold text-foreground">{idx + 1}. {q.question}</p>
-                  <div className="space-y-2">
-                    {(["A", "B", "C", "D"] as const).map((key) => {
-                      const isRevealed = revealed[idx] === true;
-                      const isCorrect = q.answer === key;
-                      return (
-                        <div key={key} className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-sm",
-                          isRevealed && isCorrect ? "border-l-4 border-[#5B4FD9] bg-[#EEEDFE] font-semibold text-[#3A2EB8]" : "border border-border/60 text-foreground")}>
-                          <span className="shrink-0 font-bold">{key}.</span>
-                          <span>{q.options[key]}</span>
-                        </div>
-                      );
-                    })}
+
+              {/* ── Panel A: Config ── */}
+              {quizState === "config" && (
+                <div className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Number of questions</p>
+                    <div className="flex gap-2">
+                      {([5, 10, 15, 20] as const).map((n) => (
+                        <button key={n} type="button"
+                          onClick={() => setQuizConfig((c) => ({ ...c, count: n }))}
+                          className={cn("flex-1 rounded-xl border py-2.5 text-sm font-semibold transition focus-visible:outline-none",
+                            quizConfig.count === n
+                              ? "border-[#5B4FD9] bg-[#5B4FD9] text-white"
+                              : "border-border bg-background text-foreground hover:bg-secondary/50"
+                          )}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    {revealed[idx] ? (
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        <span className="font-semibold text-[#5B4FD9]">Explanation: </span>{q.explanation}
-                      </p>
-                    ) : (
-                      <button type="button" onClick={() => setRevealed((prev) => ({ ...prev, [idx]: true }))}
-                        className="inline-flex items-center gap-2 rounded-xl border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-2 text-xs font-semibold text-[#3A2EB8] transition hover:bg-[#E5E2FF]">
-                        Reveal answer
-                      </button>
-                    )}
+
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Difficulty</p>
+                    <div className="flex flex-col gap-2">
+                      {([
+                        { value: "easy", label: "Easy warm-up", sub: "Recall & definitions" },
+                        { value: "mixed", label: "Mixed", sub: "Recall, application & analysis" },
+                        { value: "hard", label: "Exam-hard", sub: "Deep understanding & application" },
+                      ] as const).map(({ value, label, sub }) => (
+                        <button key={value} type="button"
+                          onClick={() => setQuizConfig((c) => ({ ...c, difficulty: value }))}
+                          className={cn("flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none",
+                            quizConfig.difficulty === value
+                              ? "border-[#5B4FD9] bg-[#EEEDFE]"
+                              : "border-border bg-background hover:bg-secondary/40"
+                          )}>
+                          <div className={cn("h-4 w-4 shrink-0 rounded-full border-2",
+                            quizConfig.difficulty === value ? "border-[#5B4FD9] bg-[#5B4FD9]" : "border-border")} />
+                          <div>
+                            <p className={cn("text-sm font-semibold", quizConfig.difficulty === value ? "text-[#3A2EB8]" : "text-foreground")}>{label}</p>
+                            <p className="text-xs text-muted-foreground">{sub}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Focus area <span className="normal-case font-normal text-muted-foreground">(optional)</span></p>
+                    <input type="text" value={quizConfig.focus}
+                      onChange={(e) => setQuizConfig((c) => ({ ...c, focus: e.target.value }))}
+                      placeholder="e.g. continuity and limits"
+                      className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-[#5B4FD9] focus:ring-2 focus:ring-[#5B4FD9]/20" />
+                  </div>
+
+                  {genQsError && <p className="text-center text-xs text-red-500">{genQsError}</p>}
+
+                  <div className="pb-4">
+                    <button type="button" onClick={handleGenerateQuestions}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
+                      <Sparkles className="h-4 w-4" />
+                      Generate {quizConfig.count} questions
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="absolute inset-x-0 bottom-0 border-t border-border bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              {savedSetId ? (
-                <Link href={`/study/practice/${savedSetId}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
-                  Start Practicing →
-                </Link>
-              ) : (
-                <button type="button" onClick={handleSaveQuestions} disabled={savingQs}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
-                  {savingQs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  {savingQs ? "Saving…" : "Save to Practice"}
-                </button>
+              )}
+
+              {/* ── Panel B: Loading ── */}
+              {quizState === "loading" && (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#5B4FD9]" />
+                  <p className="text-sm text-muted-foreground">Generating {quizConfig.count} questions…</p>
+                </div>
+              )}
+
+              {/* ── Panel C: Quiz ── */}
+              {quizState === "quiz" && currentQ && (
+                <>
+                  {/* Progress bar */}
+                  <div className="h-1 bg-secondary">
+                    <div className="h-full bg-[#5B4FD9] transition-all"
+                      style={{ width: `${((currentQuestionIndex + 1) / qs.length) * 100}%` }} />
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-4 py-5 pb-36">
+                    <p className="mb-4 text-sm font-bold text-foreground leading-relaxed">
+                      {currentQuestionIndex + 1}. {currentQ.question}
+                    </p>
+                    <div className="space-y-2.5">
+                      {(["A", "B", "C", "D"] as const).map((key) => {
+                        const isCorrect = currentQ.answer === key;
+                        const isChosen = currentAnswer?.chosen === key;
+                        return (
+                          <button key={key} type="button"
+                            disabled={answered}
+                            onClick={() => {
+                              if (answered) return;
+                              setAnswers((prev) => ({ ...prev, [currentQuestionIndex]: { chosen: key, correct: isCorrect, skipped: false } }));
+                            }}
+                            className={cn(
+                              "flex w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm text-left transition focus-visible:outline-none",
+                              !answered && "hover:bg-secondary/50 border-border/60 text-foreground",
+                              answered && isCorrect && "border-[#5B4FD9] bg-[#EEEDFE] font-semibold text-[#3A2EB8]",
+                              answered && isChosen && !isCorrect && "border-red-400 bg-red-50 font-semibold text-red-700",
+                              answered && !isCorrect && !isChosen && "border-border/40 text-muted-foreground opacity-60",
+                            )}>
+                            <span className="shrink-0 font-bold">{key}.</span>
+                            <span>{currentQ.options[key]}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {answered && (
+                      <div className="mt-4 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/60 px-4 py-3">
+                        <p className="text-xs leading-relaxed text-[#3A2EB8]/85">
+                          <span className="font-semibold">Explanation: </span>{currentQ.explanation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 flex gap-2 border-t border-border bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                    <button type="button"
+                      onClick={() => {
+                        if (!answered) setAnswers((prev) => ({ ...prev, [currentQuestionIndex]: { chosen: "", correct: false, skipped: true } }));
+                        if (currentQuestionIndex + 1 >= qs.length) {
+                          setQuizState("results");
+                        } else {
+                          setCurrentQuestionIndex((i) => i + 1);
+                        }
+                      }}
+                      className="flex-1 rounded-2xl border border-border bg-background py-3 text-sm font-semibold text-muted-foreground transition hover:bg-secondary/50 focus-visible:outline-none">
+                      Skip
+                    </button>
+                    <button type="button"
+                      disabled={!answered}
+                      onClick={() => {
+                        if (currentQuestionIndex + 1 >= qs.length) {
+                          setQuizState("results");
+                        } else {
+                          setCurrentQuestionIndex((i) => i + 1);
+                        }
+                      }}
+                      className="flex-[2] rounded-2xl bg-[#5B4FD9] py-3 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] disabled:opacity-40 focus-visible:outline-none">
+                      Next →
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── Panel D: Results ── */}
+              {quizState === "results" && (
+                <div className="flex-1 overflow-y-auto px-4 py-5 pb-40 space-y-5">
+                  {/* Score ring */}
+                  <div className="flex flex-col items-center gap-3 pt-2">
+                    <svg width={100} height={100} viewBox="0 0 100 100">
+                      <circle cx={scoreRingCx} cy={scoreRingCx} r={scoreRingR} fill="none" stroke="currentColor" strokeWidth={8} opacity={0.1} />
+                      <circle cx={scoreRingCx} cy={scoreRingCx} r={scoreRingR} fill="none"
+                        stroke={scoreRingColor} strokeWidth={8}
+                        strokeDasharray={scoreRingCirc} strokeDashoffset={scoreRingOffset}
+                        strokeLinecap="round"
+                        transform={`rotate(-90 ${scoreRingCx} ${scoreRingCx})`} />
+                      <text x={scoreRingCx} y={scoreRingCx} textAnchor="middle" dominantBaseline="central"
+                        fontSize={18} fontWeight={700} fill="currentColor">{correctCount}/{qs.length}</text>
+                    </svg>
+                    <p className="text-sm font-semibold text-foreground">
+                      {scoreRingPct >= 80 ? "Excellent!" : scoreRingPct >= 60 ? "Good effort" : "Keep practising"}
+                    </p>
+                  </div>
+
+                  {/* Stat pills */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-xl border border-border bg-background py-3 text-center">
+                      <p className="text-lg font-bold text-[#5B4FD9]">{correctCount}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Correct</p>
+                    </div>
+                    <div className="flex-1 rounded-xl border border-border bg-background py-3 text-center">
+                      <p className="text-lg font-bold text-red-500">{missedList.length}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Missed</p>
+                    </div>
+                    <div className="flex-1 rounded-xl border border-border bg-background py-3 text-center">
+                      <p className="text-lg font-bold text-muted-foreground">{skippedCount}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Skipped</p>
+                    </div>
+                  </div>
+
+                  {/* Missed questions list */}
+                  {missedList.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Missed questions</p>
+                      {missedList.map(({ q, i, ans }) => (
+                        <div key={i} className="rounded-2xl border border-border bg-background p-4 space-y-2">
+                          <p className="text-sm font-semibold text-foreground">{q.question}</p>
+                          <div className="flex gap-2 text-xs">
+                            {ans?.chosen && (
+                              <span className="rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-red-700 font-medium">
+                                You: {ans.chosen}. {q.options[ans.chosen as "A"|"B"|"C"|"D"]}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#5B4FD9] font-semibold">
+                            Correct: {q.answer}. {q.options[q.answer]}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Results footer */}
+              {quizState === "results" && (
+                <div className="absolute inset-x-0 bottom-0 space-y-2 border-t border-border bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                  {missedList.length > 0 && (
+                    <button type="button"
+                      onClick={() => {
+                        const missed = missedList.map(({ q }) => q);
+                        setGeneratedQuestions(missed);
+                        setRetryPool(missed);
+                        setAnswers({});
+                        setCurrentQuestionIndex(0);
+                        setQuizState("quiz");
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3A2EB8] transition hover:bg-[#E5E2FF] focus-visible:outline-none">
+                      <RotateCcw className="h-4 w-4" />
+                      Retry missed questions ({missedList.length})
+                    </button>
+                  )}
+                  {savedSetId ? (
+                    <Link href="/study/practice"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] focus-visible:outline-none">
+                      Saved — view on practice page →
+                    </Link>
+                  ) : (
+                    <button type="button" onClick={handleSaveQuestions} disabled={savingQs}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4A3FC8] disabled:opacity-60 focus-visible:outline-none">
+                      {savingQs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {savingQs ? "Saving…" : "Save to practice library"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
     </div>
   );
 }

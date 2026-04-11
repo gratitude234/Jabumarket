@@ -29,7 +29,10 @@
       "Bash(cat /c/Users/hp/jabumarket-frontend/supabase/migrations/*.sql)",
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
-      "Bash(mv /tmp/page_truncated.tsx \"C:/Users/hp/jabumarket-frontend/app/study/courses/[code]/page.tsx\")"
+      "Bash(mv /tmp/page_truncated.tsx \"C:/Users/hp/jabumarket-frontend/app/study/courses/[code]/page.tsx\")",
+      "Bash(xargs grep:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)"
     ]
   }
 }

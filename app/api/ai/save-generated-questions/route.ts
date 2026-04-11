@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
       course_id: courseId,
       created_by: user.id,
       published: true,
-    })
+      source_material_id: materialId,
+      due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    } as any)
     .select("id")
     .single();
 

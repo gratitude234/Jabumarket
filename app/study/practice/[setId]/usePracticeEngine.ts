@@ -570,6 +570,16 @@ export function usePracticeEngine({
         .eq("id", attemptId)
         .eq("user_id", userId);
 
+      // Update set-level due_at for spaced repetition
+      const pct = total > 0 ? (correct / total) * 100 : 0;
+      const daysAhead = pct >= 80 ? 3 : pct >= 60 ? 2 : 1;
+      const dueAt = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+      supabase
+        .from("study_quiz_sets")
+        .update({ due_at: dueAt } as any)
+        .eq("id", setId)
+        .then(() => {}); // fire-and-forget
+
       // Update daily activity/streak (ignore if missing)
       // WAT = UTC+1. Use Nigerian local date, not UTC.
       const watOffsetMs = 60 * 60 * 1000;
