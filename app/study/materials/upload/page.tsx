@@ -265,6 +265,11 @@ export default function UploadMaterialsPage() {
   const departmentId  = me?.scope?.department_id ?? null;
   const allowedLevels = me?.scope?.levels ?? null;
 
+  // Student scope from study_preferences (populated in auth effect)
+  const [scopedDeptId,    setScopedDeptId]    = useState<string>("");
+  const [scopedFacultyId, setScopedFacultyId] = useState<string>("");
+  const [scopedLevel,     setScopedLevel]     = useState<number | null>(null);
+
   // Courses
   const [courses,        setCourses]        = useState<CourseRow[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
@@ -322,10 +327,22 @@ export default function UploadMaterialsPage() {
           router.replace("/login?next=%2Fstudy%2Fmaterials%2Fupload");
           return;
         }
-        if (mounted) setUserId(auth.user.id);
-        const meRes: RepMeResponse = await fetch("/api/study/rep-applications/me").then((r) => r.json());
+        const uid = auth.user.id;
+        const [meRes, prefsRes] = await Promise.all([
+          fetch("/api/study/rep-applications/me").then((r) => r.json() as Promise<RepMeResponse>),
+          supabase.from("study_preferences").select("department_id,faculty_id,level").eq("user_id", uid).maybeSingle(),
+        ]);
         if (!mounted) return;
         setMe(meRes);
+        const prefsData = !prefsRes.error ? prefsRes.data : null;
+        if (prefsData) {
+          setScopedDeptId(String((prefsData as any)?.department_id ?? "").trim());
+          setScopedFacultyId(String((prefsData as any)?.faculty_id ?? "").trim());
+          const lv = (prefsData as any)?.level;
+          setScopedLevel(typeof lv === "number" ? lv : null);
+        }
+        // Set userId last so the course-loading effect fires after prefs are known
+        if (mounted) setUserId(uid);
 
         // Restore draft
         try {
@@ -382,6 +399,13 @@ export default function UploadMaterialsPage() {
             const lvls = Array.isArray(allowedLevels) ? allowedLevels : [];
             if (lvls.length) query = query.in("level", lvls);
           }
+        } else if (scopedDeptId) {
+          // Regular student scoped to their own department + level from prefs
+          query = query.eq("department_id", scopedDeptId);
+          if (scopedLevel) query = query.eq("level", scopedLevel);
+        } else {
+          // No prefs set — cap the list so we don't load 3000+ courses
+          query = query.limit(200);
         }
 
         const { data, error } = await query;
@@ -396,7 +420,7 @@ export default function UploadMaterialsPage() {
       }
     })();
     return () => { mounted = false; };
-  }, [userId, isRep, departmentId, role, allowedLevels]);
+  }, [userId, isRep, departmentId, role, allowedLevels, scopedDeptId, scopedLevel]);
 
   // ── Save draft ─────────────────────────────────────────────────────────────
 
@@ -540,8 +564,18 @@ export default function UploadMaterialsPage() {
           (c) => c.course_code.replace(/\s+/g, " ").toUpperCase() === code.toUpperCase()
         );
         if (matched.length === 1) {
-          setSelectedCourseId(matched[0].id);
-          saveRecentCourse(matched[0].id);
+          const c = matched[0];
+          // Only auto-select if the course is within the user's scope
+          const inScope = isRep
+            ? (!departmentId || c.department_id === departmentId)
+            : (!scopedDeptId || c.department_id === scopedDeptId);
+          if (inScope) {
+            setSelectedCourseId(c.id);
+            saveRecentCourse(c.id);
+          }
+        } else if (matched.length > 1) {
+          // Multiple matches across departments — pre-fill search but let user pick
+          setBanner({ type: "warning", text: `Found multiple courses for "${code}" — please select the right one below.` });
         }
       }
     });
@@ -1007,6 +1041,20 @@ export default function UploadMaterialsPage() {
               <p className="text-xs text-muted-foreground">
                 This course applies to all {files.length} file{files.length === 1 ? "" : "s"}. You can override per file on the next step.
               </p>
+
+              {/* No-prefs nudge for regular students */}
+              {!isRep && !scopedDeptId && !coursesLoading && (
+                <div className="flex items-start gap-2 rounded-2xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Showing a limited course list.{" "}
+                    <Link href="/study/onboarding" className="font-semibold underline">
+                      Set your department
+                    </Link>{" "}
+                    in Study settings to see only your courses.
+                  </span>
+                </div>
+              )}
 
               {/* Search row */}
               <div className="flex items-center gap-2">

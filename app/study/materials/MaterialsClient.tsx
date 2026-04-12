@@ -862,15 +862,13 @@ export default function MaterialsClient() {
     };
   }, []);
 
-  // Auto-enable "My materials" after onboarding (unless user already chose a scope).
+  // After prefs load, scope the default view to the student's dept+level (mine=0, show all).
   useEffect(() => {
     if (!prefsLoaded) return;
     if (mineParam) return;
-    if (!myBadge) return;
+    // Only redirect if we actually have a dept_id to scope by and it isn't already in the URL.
+    if (!scopeDeptId || deptIdParam) return;
 
-    // Avoid a route transition (which can look like a "reload") by updating the URL
-    // without triggering Next.js navigation.
-    // Also pre-apply dept name and level from prefs so the URL is shareable and bookmarkable.
     const href = buildHref(pathname, {
       q: normalizeQuery(q) || null,
       level: levelParam || (scopeLevel ? String(scopeLevel) : null),
@@ -878,14 +876,14 @@ export default function MaterialsClient() {
       faculty: facultyParam || null,
       faculty_id: facultyIdParam || null,
       dept: deptParam || scopeDept || null,
-      dept_id: deptIdParam || scopeDeptId || null,
+      dept_id: scopeDeptId,
       course: courseParam || null,
       session: sessionParam || null,
       type: typeParam !== "all" ? typeParam : null,
       sort: sortParam !== "newest" ? sortParam : null,
       verified: verifiedOnly ? "1" : null,
       featured: featuredOnly ? "1" : null,
-      mine: "1",
+      mine: "0",
     });
 
     router.replace(href, { scroll: false });

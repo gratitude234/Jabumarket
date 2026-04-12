@@ -109,7 +109,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       }
       // Override the base query: filter by uploader_id, remove the approved:true default
-      const mineQuery = supabase
+      let mineQuery = supabase
         .from("study_materials")
         .select(
           `id,title,description,file_path,session,approved,created_at,downloads,up_votes,
@@ -117,11 +117,37 @@ export async function GET(req: Request) {
            study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)`,
           { count: "exact" }
         )
-        .eq("uploader_id", uid)
-        .order("created_at", { ascending: false })
-        .range(from, to);
+        .eq("uploader_id", uid);
 
-      const mineRes = await mineQuery;
+      // Apply the same filters as the main branch
+      if (q) {
+        const qSafe = q
+          .replace(/[%_]/g, "")
+          .replace(/[(),]/g, " ")
+          .trim()
+          .replace(/\s+/g, " ");
+        const like = `*${qSafe.replace(/\s+/g, "*")}*`;
+        mineQuery = mineQuery.or(
+          `title.ilike.${like},course_code.ilike.${like},department.ilike.${like},faculty.ilike.${like}`
+        );
+      }
+      if (level) {
+        const lv = Number(level);
+        if (Number.isFinite(lv)) mineQuery = mineQuery.eq("level", String(lv));
+      }
+      if (faculty_id) mineQuery = mineQuery.eq("faculty_id", faculty_id);
+      else if (faculty) mineQuery = mineQuery.eq("faculty", faculty);
+      if (dept_id) mineQuery = mineQuery.eq("department_id", dept_id);
+      else if (dept) mineQuery = mineQuery.eq("department", dept);
+      if (course) mineQuery = mineQuery.eq("course_code", course.trim().toUpperCase());
+      if (type && type !== "all") mineQuery = mineQuery.eq("material_type", type);
+
+      if (sort === "oldest") mineQuery = mineQuery.order("created_at", { ascending: true });
+      else if (sort === "downloads_desc") mineQuery = mineQuery.order("downloads", { ascending: false, nullsFirst: false });
+      else if (sort === "downloads_asc") mineQuery = mineQuery.order("downloads", { ascending: true, nullsFirst: false });
+      else mineQuery = mineQuery.order("created_at", { ascending: false });
+
+      const mineRes = await mineQuery.range(from, to);
       if (mineRes.error) {
         return NextResponse.json({ ok: false, error: mineRes.error.message }, { status: 400 });
       }
