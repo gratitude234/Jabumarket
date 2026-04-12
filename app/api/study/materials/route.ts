@@ -84,7 +84,9 @@ export async function GET(req: Request) {
     const level = (url.searchParams.get("level") || "").trim();
     const semester = (url.searchParams.get("semester") || "").trim();
     const faculty = (url.searchParams.get("faculty") || "").trim();
+    const faculty_id = (url.searchParams.get("faculty_id") || "").trim();
     const dept = (url.searchParams.get("dept") || "").trim();
+    const dept_id = (url.searchParams.get("dept_id") || "").trim();
     const course = (url.searchParams.get("course") || "").trim();
     const session = (url.searchParams.get("session") || "").trim();
     const type = (url.searchParams.get("type") || "").trim();
@@ -171,8 +173,10 @@ export async function GET(req: Request) {
       if (sem) query = query.eq("semester", sem);
     }
 
-    if (faculty) query = query.eq("faculty", faculty);
-    if (dept) query = query.eq("department", dept);
+    if (faculty_id) query = query.eq("faculty_id", faculty_id);
+    else if (faculty) query = query.eq("faculty", faculty);
+    if (dept_id) query = query.eq("department_id", dept_id);
+    else if (dept) query = query.eq("department", dept);
     if (course) query = query.eq("course_code", course.trim().toUpperCase());
     if (session) query = query.ilike("session", `%${session}%`);
     if (type && type !== "all") query = query.eq("material_type", type);

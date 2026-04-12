@@ -48,6 +48,8 @@ type Course = {
   semester: string;
   course_code: string;
   course_title: string | null;
+  faculty_id?: string | null;
+  department_id?: string | null;
 };
 
 type MaterialRow = {
@@ -577,7 +579,9 @@ export default function MaterialsClient() {
   const levelParam = sp.get("level") ?? "";
   const semesterParam = sp.get("semester") ?? "";
   const facultyParam = sp.get("faculty") ?? "";
+  const facultyIdParam = sp.get("faculty_id") ?? "";
   const deptParam = sp.get("dept") ?? "";
+  const deptIdParam = sp.get("dept_id") ?? "";
   const courseParam = sp.get("course") ?? "";
   const sessionParam = sp.get("session") ?? "";
   const verifiedParam = sp.get("verified") ?? "";
@@ -601,7 +605,9 @@ export default function MaterialsClient() {
   const [draftLevel, setDraftLevel] = useState(levelParam);
   const [draftSemester, setDraftSemester] = useState(semesterParam);
   const [draftFaculty, setDraftFaculty] = useState(facultyParam);
+  const [draftFacultyId, setDraftFacultyId] = useState(facultyIdParam);
   const [draftDept, setDraftDept] = useState(deptParam);
+  const [draftDeptId, setDraftDeptId] = useState(deptIdParam);
   const [draftCourse, setDraftCourse] = useState(courseParam);
   const [draftSession, setDraftSession] = useState(sessionParam);
   const [draftType, setDraftType] = useState<MaterialTypeKey>(typeParam);
@@ -630,6 +636,7 @@ export default function MaterialsClient() {
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [myBadge, setMyBadge] = useState<string | null>(null);
   const [scopeDept, setScopeDept] = useState<string>("");
+  const [scopeDeptId, setScopeDeptId] = useState<string>("");
   const [scopeLevel, setScopeLevel] = useState<number | null>(null);
   const [scopeSemesterDb, setScopeSemesterDb] = useState<string>("");
 
@@ -675,7 +682,9 @@ export default function MaterialsClient() {
       levelParam,
       semesterParam,
       facultyParam,
+      facultyIdParam,
       deptParam,
+      deptIdParam,
       courseParam,
       sessionParam,
       typeParam,
@@ -689,7 +698,9 @@ export default function MaterialsClient() {
     levelParam,
     semesterParam,
     facultyParam,
+    facultyIdParam,
     deptParam,
+    deptIdParam,
     courseParam,
     sessionParam,
     typeParam,
@@ -809,10 +820,12 @@ export default function MaterialsClient() {
         let level: number | null = null;
         let semester = "";
 
+        let deptId = "";
         if (prefsData) {
           level = (prefsData as any)?.level ?? null;
           semester = String((prefsData as any)?.semester ?? "").trim();
           deptName = String((prefsData as any)?.department?.name ?? "").trim();
+          deptId = String((prefsData as any)?.department_id ?? "").trim();
         }
 
         const badgeParts: string[] = [];
@@ -823,6 +836,7 @@ export default function MaterialsClient() {
         if (mounted) {
           setMyBadge(badgeParts.length ? badgeParts.join(" • ") : null);
           setScopeDept(deptName);
+          setScopeDeptId(deptId);
           setScopeLevel(typeof level === "number" && Number.isFinite(level) ? level : null);
           setScopeSemesterDb(mapSemesterParamToDb(semester));
           setPrefsLoaded(true);
@@ -862,7 +876,9 @@ export default function MaterialsClient() {
       level: levelParam || (scopeLevel ? String(scopeLevel) : null),
       semester: semesterParam || null,
       faculty: facultyParam || null,
+      faculty_id: facultyIdParam || null,
       dept: deptParam || scopeDept || null,
+      dept_id: deptIdParam || scopeDeptId || null,
       course: courseParam || null,
       session: sessionParam || null,
       type: typeParam !== "all" ? typeParam : null,
@@ -883,7 +899,7 @@ export default function MaterialsClient() {
       setOptionsLoading(true);
       let q = supabase
         .from("study_courses")
-        .select("id,faculty,department,level,semester,course_code,course_title")
+        .select("id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id")
         .order("course_code", { ascending: true })
         .limit(3000);
 
@@ -914,32 +930,34 @@ export default function MaterialsClient() {
   }, [mineOnly, scopeDept, scopeLevel, scopeSemesterDb]);
 
   const facultyOptions = useMemo(() => {
-    const uniq = new Set<string>();
+    const map = new Map<string, string>(); // faculty_id -> name
     for (const c of courses) {
-      const v = (c.faculty ?? "").toString().trim();
-      if (v) uniq.add(v);
+      const id = (c.faculty_id ?? "").toString().trim();
+      const name = (c.faculty ?? "").toString().trim();
+      if (id && name && !map.has(id)) map.set(id, name);
     }
-    return Array.from(uniq)
-      .sort((a, b) => a.localeCompare(b))
-      .map((v) => ({ value: v, label: v }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, name]) => ({ value: id, label: name }));
   }, [courses]);
 
   const deptOptions = useMemo(() => {
-    const uniq = new Set<string>();
+    const map = new Map<string, string>(); // department_id -> name
     for (const c of courses) {
-      if (draftFaculty && c.faculty !== draftFaculty) continue;
-      const v = (c.department ?? "").toString().trim();
-      if (v) uniq.add(v);
+      if (draftFacultyId ? c.faculty_id !== draftFacultyId : (draftFaculty && c.faculty !== draftFaculty)) continue;
+      const id = (c.department_id ?? "").toString().trim();
+      const name = (c.department ?? "").toString().trim();
+      if (id && name && !map.has(id)) map.set(id, name);
     }
-    return Array.from(uniq)
-      .sort((a, b) => a.localeCompare(b))
-      .map((v) => ({ value: v, label: v }));
-  }, [courses, draftFaculty]);
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, name]) => ({ value: id, label: name }));
+  }, [courses, draftFaculty, draftFacultyId]);
 
   const courseOptions = useMemo(() => {
     const filtered = courses.filter((c) => {
-      if (draftFaculty && c.faculty !== draftFaculty) return false;
-      if (draftDept && c.department !== draftDept) return false;
+      if (draftFacultyId ? c.faculty_id !== draftFacultyId : (draftFaculty && c.faculty !== draftFaculty)) return false;
+      if (draftDeptId ? c.department_id !== draftDeptId : (draftDept && c.department !== draftDept)) return false;
       if (draftLevel && String(c.level) !== String(draftLevel)) return false;
       return true;
     });
@@ -975,8 +993,10 @@ export default function MaterialsClient() {
       if (qNorm) url.searchParams.set("q", qNorm);
       if (levelParam) url.searchParams.set("level", String(levelParam));
       if (semesterParam) url.searchParams.set("semester", String(semesterParam));
-      if (facultyParam) url.searchParams.set("faculty", String(facultyParam));
-      if (deptParam) url.searchParams.set("dept", String(deptParam));
+      if (facultyIdParam) url.searchParams.set("faculty_id", facultyIdParam);
+      else if (facultyParam) url.searchParams.set("faculty", String(facultyParam));
+      if (deptIdParam) url.searchParams.set("dept_id", deptIdParam);
+      else if (deptParam) url.searchParams.set("dept", String(deptParam));
       if (courseParam) url.searchParams.set("course", String(courseParam));
       if (sessionParam.trim()) url.searchParams.set("session", sessionParam.trim());
       if (typeParam && typeParam !== "all") url.searchParams.set("type", String(typeParam));
@@ -1043,7 +1063,9 @@ export default function MaterialsClient() {
           level: levelParam || null,
           semester: semesterParam || null,
           faculty: facultyParam || null,
+          faculty_id: facultyIdParam || null,
           dept: deptParam || null,
+          dept_id: deptIdParam || null,
           course: courseParam || null,
           session: sessionParam || null,
           type: typeParam !== "all" ? typeParam : null,
@@ -1066,7 +1088,9 @@ export default function MaterialsClient() {
     levelParam,
     semesterParam,
     facultyParam,
+    facultyIdParam,
     deptParam,
+    deptIdParam,
     courseParam,
     sessionParam,
     typeParam,
@@ -1081,7 +1105,9 @@ export default function MaterialsClient() {
     setDraftLevel(levelParam);
     setDraftSemester(semesterParam);
     setDraftFaculty(facultyParam);
+    setDraftFacultyId(facultyIdParam);
     setDraftDept(deptParam);
+    setDraftDeptId(deptIdParam);
     setDraftCourse(courseParam);
     setDraftSession(sessionParam);
     setDraftType(typeParam);
@@ -1098,7 +1124,9 @@ export default function MaterialsClient() {
         level: draftLevel || null,
         semester: draftSemester || null,
         faculty: draftFaculty || null,
+        faculty_id: draftFacultyId || null,
         dept: draftDept || null,
+        dept_id: draftDeptId || null,
         course: draftCourse || null,
         session: draftSession.trim() || null,
         type: draftType !== "all" ? draftType : null,
@@ -1226,7 +1254,8 @@ export default function MaterialsClient() {
                 const next = sortParam === "downloads_desc" ? "newest" : "downloads_desc";
                 router.replace(buildHref(pathname, {
                   q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                  faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                  faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                  dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
                   session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
                   sort: next !== "newest" ? next : null,
                   verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
@@ -1264,7 +1293,8 @@ export default function MaterialsClient() {
               {mineOnly && !mineExplicitOff && scopeDept ? (
                 <button type="button" onClick={() => router.replace(buildHref(pathname, {
                     q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                    dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
                     session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
                     sort: sortParam !== "newest" ? sortParam : null,
                     verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null, mine: "0",
@@ -1277,7 +1307,8 @@ export default function MaterialsClient() {
               {typeParam !== "all" ? (
                 <button type="button" onClick={() => router.replace(buildHref(pathname, {
                     q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                    dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
                     session: sessionParam || null, type: null,
                     sort: sortParam !== "newest" ? sortParam : null,
                     verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
@@ -1290,7 +1321,8 @@ export default function MaterialsClient() {
               {levelParam ? (
                 <button type="button" onClick={() => router.replace(buildHref(pathname, {
                     q: qParam || null, level: null, semester: semesterParam || null,
-                    faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                    faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                    dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
                     session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
                     sort: sortParam !== "newest" ? sortParam : null,
                     verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
@@ -1331,7 +1363,8 @@ export default function MaterialsClient() {
             <button key={key} type="button"
               onClick={() => router.replace(buildHref(pathname, {
                 q: qParam || null, level: levelParam || null, semester: semesterParam || null,
-                faculty: facultyParam || null, dept: deptParam || null, course: courseParam || null,
+                faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
                 session: sessionParam || null, type: key !== "all" ? key : null,
                 sort: sortParam !== "newest" ? sortParam : null,
                 verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
@@ -1484,7 +1517,9 @@ export default function MaterialsClient() {
                 setDraftLevel("");
                 setDraftSemester("");
                 setDraftFaculty("");
+                setDraftFacultyId("");
                 setDraftDept("");
+                setDraftDeptId("");
                 setDraftCourse("");
                 setDraftSession("");
                 setDraftType("all");
@@ -1586,9 +1621,12 @@ export default function MaterialsClient() {
         <div className="mt-3 grid gap-2">
           <SelectRow
             label="Faculty"
-            value={draftFaculty}
+            value={draftFacultyId}
             onChange={(v) => {
-              setDraftFaculty(v);
+              setDraftFacultyId(v);
+              const found = courses.find((c) => c.faculty_id === v);
+              setDraftFaculty(found ? found.faculty : "");
+              setDraftDeptId("");
               setDraftDept("");
               setDraftCourse("");
             }}
@@ -1598,12 +1636,14 @@ export default function MaterialsClient() {
 
           <SelectRow
             label="Department"
-            value={draftDept}
+            value={draftDeptId}
             onChange={(v) => {
-              setDraftDept(v);
+              setDraftDeptId(v);
+              const found = courses.find((c) => c.department_id === v);
+              setDraftDept(found ? found.department : "");
               setDraftCourse("");
             }}
-            placeholder={optionsLoading ? "Loading…" : draftFaculty ? "All depts in faculty" : "All departments"}
+            placeholder={optionsLoading ? "Loading…" : draftFacultyId ? "All depts in faculty" : "All departments"}
             options={deptOptions}
           />
 
