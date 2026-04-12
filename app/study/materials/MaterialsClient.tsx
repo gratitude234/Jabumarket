@@ -903,7 +903,7 @@ export default function MaterialsClient() {
 
       // When in "My materials", keep dropdowns scoped too (best-effort).
       if (mineOnly) {
-        if (scopeDept) q = q.eq("department", scopeDept);
+        if (scopeDeptId) q = q.eq("department_id", scopeDeptId);
         if (typeof scopeLevel === "number" && Number.isFinite(scopeLevel)) q = q.eq("level", scopeLevel);
         if (scopeSemesterDb) q = q.eq("semester", scopeSemesterDb);
       }
@@ -925,7 +925,7 @@ export default function MaterialsClient() {
     return () => {
       mounted = false;
     };
-  }, [mineOnly, scopeDept, scopeLevel, scopeSemesterDb]);
+  }, [mineOnly, scopeDeptId, scopeLevel, scopeSemesterDb]);
 
   const facultyOptions = useMemo(() => {
     const map = new Map<string, string>(); // faculty_id -> name
@@ -1167,7 +1167,9 @@ export default function MaterialsClient() {
       levelParam ||
       semesterParam ||
       facultyParam ||
+      facultyIdParam ||
       deptParam ||
+      deptIdParam ||
       courseParam ||
       sessionParam ||
       (typeParam && typeParam !== "all") ||
@@ -1206,8 +1208,8 @@ export default function MaterialsClient() {
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={repStatus ?? undefined} />
 
-      {/* M-7: Onboarding nudge — shown when user has no department prefs set */}
-      {prefsLoaded && !scopeDept && (
+      {/* M-7: Onboarding nudge — shown when user has no department prefs set and hasn't dismissed it */}
+      {prefsLoaded && !scopeDept && typeof window !== "undefined" && !window.localStorage.getItem("jabuStudy_skipOnboarding") && (
         <Link
           href="/study/onboarding"
           className={cn(
@@ -1288,17 +1290,18 @@ export default function MaterialsClient() {
                 Clear all
               </button>
 
-              {mineOnly && !mineExplicitOff && scopeDept ? (
+              {(deptParam || deptIdParam) ? (
                 <button type="button" onClick={() => router.replace(buildHref(pathname, {
                     q: qParam || null, level: levelParam || null, semester: semesterParam || null,
                     faculty: facultyParam || null, faculty_id: facultyIdParam || null,
-                    dept: deptParam || null, dept_id: deptIdParam || null, course: courseParam || null,
+                    dept: null, dept_id: null, course: courseParam || null,
                     session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
                     sort: sortParam !== "newest" ? sortParam : null,
-                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null, mine: "0",
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                    mine: mineParam || null,
                   }))}
                   className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none">
-                  {scopeDept} <span className="text-[#5B4FD9]">×</span>
+                  {deptParam || scopeDept || "Department"} <span className="text-[#5B4FD9]">×</span>
                 </button>
               ) : null}
 

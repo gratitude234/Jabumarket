@@ -1,162 +1,235 @@
-Fix 6 bugs in the Jabumarket Study Hub. Make minimal, surgical changes only.
-Don't rewrite unrelated logic.
+Fix 6 bugs in the Jabumarket Study Hub. Minimal, surgical changes only.
+Do not rewrite unrelated logic.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 1 — CRITICAL: Upload page shows ALL courses to all students
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/study/materials/upload/page.tsx
-
-Problem: The course-loading useEffect only scopes courses when isRep is true.
-When isRep is false (regular student), the query runs with NO filters and
-returns every course in the database across all departments.
-
-Fix:
-1. After the auth+rep useEffect loads, also fetch the current user's
-   study_preferences row to get their department_id, faculty_id, and level.
-   Store as: scopedDeptId, scopedFacultyId, scopedLevel (state).
-2. In the course-loading useEffect, add an else branch:
-   else if (scopedDeptId) {
-     query = query.eq("department_id", scopedDeptId);
-     if (scopedLevel) query = query.eq("level", scopedLevel);
-   }
-   This scopes regular students to their own dept/level from their prefs.
-3. If the user has no prefs set (scopedDeptId is null), still add a
-   reasonable default: .limit(200).order("course_code") so the list isn't
-   3000+ entries. Show a note "Set your department in Study settings to see
-   your courses" above the course list in that case.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 2 — CRITICAL: Filename auto-match silently picks wrong department's course
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/study/materials/upload/page.tsx
-
-Problem: In the runConcurrent callback, when a course code is parsed from
-the filename, the code does:
-  const matched = courses.filter(c => c.course_code === code);
-  if (matched.length === 1) setSelectedCourseId(matched[0].id); ← silent auto-select
-
-Because Bug 1 loads ALL courses, matched can pick a course from the wrong
-department entirely with no warning to the user.
-
-Fix:
-1. Change the auto-select condition from `matched.length === 1` to:
-   - Only auto-select if matched.length === 1 AND the course belongs to the
-     student's own department (matched[0].department_id === scopedDeptId),
-     OR if the user is a rep and it's within their scope.
-2. If multiple matches exist across departments, do NOT auto-select. Instead
-   just set setQ(code) to pre-fill the search so the student picks manually.
-3. If auto-select is skipped due to ambiguity, show a banner:
-   "Found multiple courses for [code] — please select the right one below."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 3 — HIGH: Materials filter API uses text match for department (always 0 results)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/api/study/materials/route.ts
-
-Problem: The dept filter does:
-  if (dept) query = query.eq("department", dept)
-This is a raw text match on a denormalized column. The text never reliably
-matches across different upload sessions. The study_materials table already
-has a department_id UUID column.
-
-Fix:
-1. Add a new query param: dept_id (UUID string).
-2. In the query builder:
-   if (dept_id) query = query.eq("department_id", dept_id);
-   else if (dept) query = query.eq("department", dept); // keep as fallback
-3. Do the same for faculty:
-   Add faculty_id param → filter by .eq("faculty_id", faculty_id) first,
-   fall back to .eq("faculty", faculty) if only text is provided.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 4 — HIGH: Auto-redirect to mine=1 fires for all onboarded users,
-               showing "No materials found" to students who never uploaded
+BUG 7 — CRITICAL: Dept filter chip is invisible when mine=0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 File: app/study/materials/MaterialsClient.tsx
 
-Problem: This useEffect fires for every user who has study_preferences set:
-  useEffect(() => {
-    if (!prefsLoaded) return;
-    if (mineParam) return;
-    if (!myBadge) return;
-    router.replace(href with mine=1); // ← fires immediately on first load
-  }, [prefsLoaded]);
+Problem: The dept chip is conditionally rendered like this:
+  {mineOnly && !mineExplicitOff && scopeDept ? (
+    <button>{scopeDept} ×</button>
+  ) : null}
 
-Most students have never uploaded anything, so they land on mine=1 and see
-"No materials found" even though hundreds of materials exist.
+When mine=0, mineOnly is false so the chip never renders. The
+department filter is silently active with no visible chip and no
+way to remove it except "Clear all". This is why the user sees
+"No materials found" with only a "Clear all" button — the dept
+filter is invisible.
 
-Fix:
-Remove the auto-redirect to mine=1 entirely. The default view should show
-ALL approved materials (mine=0 behavior), scoped by the student's dept/level
-from study_preferences using dept_id and level params (from Bug 3's fix).
+Fix: Replace the condition entirely. The chip should render
+whenever deptParam OR deptIdParam is present in the URL,
+regardless of mine status:
 
-The correct default URL should be:
-  /study/materials?dept_id=<uuid>&level=<number>&mine=0
-NOT mine=1.
-
-Keep the existing "My uploads" toggle functionality — just don't auto-enable it.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 5 — MEDIUM: mine=1 silently ignores dept, level, and other filters
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File: app/api/study/materials/route.ts
-
-Problem: The mineOnly code path is a completely separate query that ignores
-all filter params (dept, level, type, sort, search query, etc). The filter
-chips show as active in the UI but do nothing — misleading the user.
-
-Fix: In the mineOnly query branch, apply the same filters that the main
-branch uses:
-  - q (search)
-  - level
-  - type (material_type)
-  - sort order
-  - dept_id / dept
-  - course (course_code)
-Apply these to the uploader_id-filtered query the same way they're applied
-in the main query builder below it.
+  {(deptParam || deptIdParam) ? (
+    <button type="button" onClick={() => router.replace(buildHref(pathname, {
+      q: qParam || null, level: levelParam || null,
+      semester: semesterParam || null,
+      faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+      dept: null, dept_id: null,
+      course: courseParam || null, session: sessionParam || null,
+      type: typeParam !== "all" ? typeParam : null,
+      sort: sortParam !== "newest" ? sortParam : null,
+      verified: verifiedOnly ? "1" : null,
+      featured: featuredOnly ? "1" : null,
+      mine: mineParam || null,
+    }))}
+      className="shrink-0 inline-flex items-center gap-1.5 ...">
+      {deptParam || scopeDept} <span>×</span>
+    </button>
+  ) : null}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BUG 6 — MEDIUM: MaterialsClient uses dept name string instead of dept_id UUID
-         for personalization, breaking auto-scoping for all onboarded users
+BUG 8 — HIGH: Filter options dropdown scopes by dept name text
+              instead of department_id UUID
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 File: app/study/materials/MaterialsClient.tsx
 
-Problem: In the prefs-loading useEffect, deptName is read from the join:
-  deptName = String((prefsData as any)?.department?.name ?? "").trim();
-  setScopeDept(deptName); // stored as display name text
-  // later used as: dept: deptParam || scopeDept
+Problem: In the "Load filter options" useEffect, when scoping
+the courses dropdown for mineOnly mode:
+  if (scopeDept) q = q.eq("department", scopeDept);
 
-This passes a display name string as the ?dept= param. But the API filters
-on study_materials.department which was denormalized at upload time from a
-different source. The text never reliably matches.
+This uses the department display name (text) which may not match
+the study_courses.department column exactly — same text-mismatch
+bug as the main filter.
 
-Fix:
-1. Add scopeDeptId state (string): populate it from
-   study_preferences.department_id directly (it's already in the select).
-2. Add scopeFacultyId state: from study_preferences.faculty_id.
-3. In the auto-redirect URL building (or whichever URL is built from prefs),
-   pass dept_id=scopeDeptId and faculty_id=scopeFacultyId instead of the
-   dept text name.
-4. In fetchPage(), pass dept_id and faculty_id to the API when available.
-5. Update filtersKey to include dept_id and faculty_id so filter changes
-   correctly trigger refetches.
-6. Update all buildHref() calls throughout the file to pass through
-   dept_id and faculty_id params alongside the existing dept/faculty params.
+Fix: Replace with UUID filtering:
+  if (scopeDeptId) q = q.eq("department_id", scopeDeptId);
+  if (scopeFacultyId) q = q.eq("faculty_id", scopeFacultyId);
+
+Remove the text-based scopeDept/scopeFaculty fallbacks in this
+specific block since we now always have the UUID in scopeDeptId.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SUMMARY OF FILES TO EDIT
+BUG 9 — HIGH: hasAnyFilters missing deptIdParam and facultyIdParam
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- app/study/materials/upload/page.tsx          (Bugs 1, 2)
-- app/api/study/materials/route.ts             (Bugs 3, 5)
-- app/study/materials/MaterialsClient.tsx      (Bugs 4, 6)
+File: app/study/materials/MaterialsClient.tsx
 
-Do NOT touch:
-- Any admin routes
-- The upload API (app/api/study/materials/upload/route.ts)
-- Any other files not listed above
+Problem: The hasAnyFilters boolean only checks deptParam (text)
+but not deptIdParam or facultyIdParam:
+  const hasAnyFilters = Boolean(
+    qParam || levelParam || semesterParam ||
+    facultyParam ||   // ← checks text only
+    deptParam ||      // ← checks text only
+    // deptIdParam is MISSING
+    // facultyIdParam is MISSING
+    ...
+  );
 
-Backward compatibility requirements:
-- Old ?dept= text URLs must still work as a fallback (Bug 3)
-- mine=1 toggle must still work when the user explicitly clicks it (Bug 4)
-- No existing rep/librarian upload flows should break (Bug 1)
+When the URL has ?dept_id=<uuid> but no ?dept=, hasAnyFilters
+is false so the "Clear all" button never appears even though
+an active filter exists.
+
+Fix: Add the missing params:
+  const hasAnyFilters = Boolean(
+    qParam || levelParam || semesterParam ||
+    facultyParam || facultyIdParam ||
+    deptParam || deptIdParam ||
+    courseParam || sessionParam ||
+    (typeParam && typeParam !== "all") ||
+    verifiedOnly || featuredOnly ||
+    (sortParam && sortParam !== "newest") ||
+    mineOnly
+  );
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUG 10 — HIGH: Approval route doesn't re-sync denormalized
+               columns from the linked course
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+File: app/api/study-admin/materials/[id]/approve/route.ts
+
+Problem: When approving a material, only these columns are updated:
+  { approved: true, updated_at, approved_by, approved_at }
+
+The denormalized columns — department_id, department, faculty_id,
+faculty, level, semester, course_code — are never re-synced from
+the linked study_courses row. If those columns were corrupted at
+upload time (wrong dept, wrong level), approving the material
+permanently locks in the bad data.
+
+Fix: Before updating approved=true, fetch the linked course row
+and include its denormalized fields in the same update patch:
+
+  // Fetch course to re-sync denormalized fields
+  const { data: courseRow } = await admin
+    .from("study_courses")
+    .select("course_code, department, department_id, faculty, faculty_id, level, semester")
+    .eq("id", matRow.course_id)
+    .maybeSingle();
+
+  const patch = {
+    approved: true,
+    updated_at: nowIso,
+    approved_by: moderatorId,
+    approved_at: nowIso,
+    // Re-sync denormalized fields from course
+    ...(courseRow ? {
+      course_code:   courseRow.course_code   ?? null,
+      department:    courseRow.department    ?? null,
+      department_id: courseRow.department_id ?? null,
+      faculty:       courseRow.faculty       ?? null,
+      faculty_id:    courseRow.faculty_id    ?? null,
+      level:         courseRow.level != null ? String(courseRow.level) : null,
+      semester:      courseRow.semester      ?? null,
+    } : {}),
+  };
+
+Apply the same fix to bulk-approve/route.ts — when bulk approving,
+fetch all course rows for the material IDs in one query and include
+the denormalized fields in the bulk update.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUG 11 — MEDIUM: bulk-approve has broken baseUrl construction
+                 due to JS operator precedence
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+File: app/api/study-admin/materials/bulk-approve/route.ts
+
+Problem:
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000";
+
+Due to JS operator precedence, || evaluates before ?. This means
+even when NEXT_PUBLIC_SITE_URL is set, the ternary always uses
+VERCEL_URL in the template string. Dept notifications and AI
+summary generation fire to the wrong URL on every bulk approve.
+
+Fix: Add parentheses to enforce correct evaluation:
+  const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000");
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUG 12 — MEDIUM: Onboarding skip() saves empty prefs row,
+                 permanently breaking the "For You" section
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+File: app/study/onboarding/OnboardingClient.tsx
+
+Problem: The skip() function upserts a prefs row with only
+user_id and updated_at — no faculty_id, department_id, level,
+or semester:
+  await supabase.from("study_preferences").upsert({
+    user_id: user.id,
+    updated_at: new Date().toISOString(),
+  });
+
+Now hasPrefs is true (a row exists) but scopeDeptId is empty.
+The onboarding nudge ("Set your department") will never show
+again because the check is if (!hasPrefs). The "For You"
+section shows nothing. The student is permanently stuck.
+
+Fix: Do NOT upsert a prefs row on skip. Instead, use a separate
+localStorage flag to mark that the user has dismissed the
+onboarding nudge:
+  localStorage.setItem("jabuStudy_skipOnboarding", "1");
+
+Then in the onboarding nudge check (in MaterialsClient.tsx and
+StudyHomeClient.tsx), also check:
+  !localStorage.getItem("jabuStudy_skipOnboarding")
+
+This way skipping hides the nudge without corrupting the prefs
+table with an empty row. If the user later goes to onboarding
+and saves properly, remove the localStorage flag.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ALSO: Write a one-time DB cleanup SQL script
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Save as: scripts/fix-denormalized-materials.sql
+
+Write a SQL UPDATE that fixes all corrupted study_materials rows
+by re-syncing their denormalized columns from their linked
+study_courses row, for any material where the department_id on
+the material does not match the department_id on its linked course:
+
+  UPDATE study_materials sm
+  SET
+    department_id = sc.department_id,
+    department    = sc.department,
+    faculty_id    = sc.faculty_id,
+    faculty       = sc.faculty,
+    level         = sc.level::text,
+    semester      = sc.semester,
+    course_code   = sc.course_code,
+    updated_at    = now()
+  FROM study_courses sc
+  WHERE sm.course_id = sc.id
+    AND (
+      sm.department_id IS DISTINCT FROM sc.department_id OR
+      sm.faculty_id    IS DISTINCT FROM sc.faculty_id    OR
+      sm.level         IS DISTINCT FROM sc.level::text   OR
+      sm.semester      IS DISTINCT FROM sc.semester      OR
+      sm.course_code   IS DISTINCT FROM sc.course_code
+    );
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILES TO EDIT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- app/study/materials/MaterialsClient.tsx           (Bugs 7, 8, 9)
+- app/api/study-admin/materials/[id]/approve/route.ts  (Bug 10)
+- app/api/study-admin/materials/bulk-approve/route.ts  (Bug 10, 11)
+- app/study/onboarding/OnboardingClient.tsx         (Bug 12)
+- scripts/fix-denormalized-materials.sql            (new file)
+
+Do NOT touch any other files.

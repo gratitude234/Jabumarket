@@ -568,23 +568,13 @@ export default function OnboardingClient() {
     setStep((s) => (s === 1 ? 1 : ((s - 1) as Step)));
   }
 
-  async function skip() {
-    // Skip is allowed: just navigate.
-    // Touch study_preferences so Study Home doesn't keep prompting.
-    setBanner(null);
+  function skip() {
+    // Record the dismissal in localStorage so the nudge doesn't keep reappearing,
+    // without writing an empty prefs row that would corrupt the "For You" section.
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth?.user;
-      if (!user) {
-        router.replace(`/login?next=${encodeURIComponent("/study/onboarding")}`);
-        return;
-      }
-      await supabase.from("study_preferences").upsert({
-        user_id: user.id,
-        updated_at: new Date().toISOString(),
-      } as any);
+      localStorage.setItem("jabuStudy_skipOnboarding", "1");
     } catch {
-      // ignore
+      // ignore — private browsing may block localStorage
     }
     router.replace(next);
   }
@@ -634,6 +624,9 @@ export default function OnboardingClient() {
 
       const { error } = await supabase.from("study_preferences").upsert(prefsPayload);
       if (error) throw error;
+
+      // Clear the skip flag now that real prefs are saved
+      try { localStorage.removeItem("jabuStudy_skipOnboarding"); } catch {}
 
       // Transition to results screen (step 4) instead of immediate redirect
       setStep(4);

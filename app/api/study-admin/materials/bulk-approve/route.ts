@@ -36,13 +36,63 @@ export async function POST(req: Request) {
       }
     }
 
+    // Fetch the linked courses for all materials so we can re-sync denormalized columns.
+    const { data: matsForCourses } = await admin
+      .from("study_materials")
+      .select("id, course_id")
+      .in("id", ids);
+
+    const courseIds = [
+      ...new Set(
+        (matsForCourses ?? []).map((m: any) => m.course_id).filter(Boolean)
+      ),
+    ] as string[];
+
+    const courseMap = new Map<string, any>();
+    if (courseIds.length) {
+      const { data: courseRows } = await admin
+        .from("study_courses")
+        .select("id, course_code, department, department_id, faculty, faculty_id, level, semester")
+        .in("id", courseIds);
+      for (const cr of courseRows ?? []) courseMap.set((cr as any).id, cr);
+    }
+
     const nowIso = new Date().toISOString();
+
+    // Build per-material updates with denormalized fields re-synced from course
+    const matCourseIdMap = new Map<string, string>(
+      (matsForCourses ?? []).map((m: any) => [m.id, m.course_id])
+    );
+
+    // Apply a single bulk update for approved + updated_at (common to all),
+    // then patch denormalized fields per material (only those that have a course row).
     const { error: updErr } = await admin
       .from("study_materials")
       .update({ approved: true, updated_at: nowIso })
       .in("id", ids);
+    if (!updErr) {
+      // Re-sync denormalized fields per material — individual updates, fire-and-forget style
+      for (const id of ids) {
+        const courseId = matCourseIdMap.get(id);
+        const cr = courseId ? courseMap.get(courseId) : null;
+        if (cr) {
+          await admin
+            .from("study_materials")
+            .update({
+              course_code:   cr.course_code   ?? null,
+              department:    cr.department    ?? null,
+              department_id: cr.department_id ?? null,
+              faculty:       cr.faculty       ?? null,
+              faculty_id:    cr.faculty_id    ?? null,
+              level:         cr.level != null ? String(cr.level) : null,
+              semester:      cr.semester      ?? null,
+            })
+            .eq("id", id);
+        }
+      }
+    }
 
-    if (updErr) throw updErr;
+    if (updErr) throw updErr; // throw after the denorm re-sync attempt
 
     // Fetch uploader_id + title for all approved materials so we can
     // send each person a single grouped notification (fire-and-forget).
@@ -63,9 +113,11 @@ export async function POST(req: Request) {
 
     // Fire dept notifications + AI summary per approved material — fire-and-forget
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
+      const baseUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000");
       for (const id of ids) {
         fetch(`${baseUrl}/api/study/notify-new-material`, {
           method: "POST",

@@ -52,13 +52,40 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!ok) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    // Standardized patch: only touch columns we rely on everywhere.
+    // Fetch the material's course row to re-sync denormalized columns.
+    const { data: matForCourse } = await admin
+      .from("study_materials")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    const courseId = (matForCourse as any)?.course_id ?? null;
+    let courseRow: any = null;
+    if (courseId) {
+      const { data: cr } = await admin
+        .from("study_courses")
+        .select("course_code, department, department_id, faculty, faculty_id, level, semester")
+        .eq("id", courseId)
+        .maybeSingle();
+      courseRow = cr ?? null;
+    }
+
     const nowIso = new Date().toISOString();
     const patch = {
       approved: true,
       updated_at: nowIso,
       approved_by: moderatorId,
       approved_at: nowIso,
+      // Re-sync denormalized fields from the linked course
+      ...(courseRow ? {
+        course_code:   courseRow.course_code   ?? null,
+        department:    courseRow.department    ?? null,
+        department_id: courseRow.department_id ?? null,
+        faculty:       courseRow.faculty       ?? null,
+        faculty_id:    courseRow.faculty_id    ?? null,
+        level:         courseRow.level != null ? String(courseRow.level) : null,
+        semester:      courseRow.semester      ?? null,
+      } : {}),
     };
 
     const { data, error } = await admin
