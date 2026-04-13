@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
+  ArrowRight,
   AlertTriangle, CheckCircle2, Flag,
+  BookOpen,
   GraduationCap, Loader2, RotateCcw, Send,
   Sparkles, ThumbsUp, Zap,
 } from "lucide-react";
@@ -33,6 +35,24 @@ type AnswerRow = {
   created_at: string | null; author_email: string | null;
   author_id: string | null; is_accepted: boolean | null;
   upvotes_count?: number | null; is_ai?: boolean | null;
+};
+
+type CourseResources = {
+  materials: Array<{ id: string; title: string | null; material_type: string | null; downloads: number | null }>;
+  practiceSets: Array<{ id: string; title: string | null; questions_count: number | null }>;
+};
+
+type MaterialResourceRow = {
+  id: string;
+  title: string | null;
+  material_type: string | null;
+  downloads: number | null;
+};
+
+type PracticeSetResourceRow = {
+  id: string;
+  title: string | null;
+  questions_count: number | null;
 };
 
 function QuestionSkeleton() {
@@ -191,6 +211,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
   const [error,    setError]    = useState<string | null>(null);
   const [question, setQuestion] = useState<QuestionRow | null>(null);
   const [answers,  setAnswers]  = useState<AnswerRow[]>([]);
+  const [courseResources, setCourseResources] = useState<CourseResources | null>(null);
 
   const [myVoteLoading, setMyVoteLoading] = useState(false);
   const [myUpvoted,     setMyUpvoted]     = useState(false);
@@ -201,6 +222,7 @@ export default function QuestionDetailClient({ id }: { id: string }) {
   const [postError,  setPostError]  = useState<string | null>(null);
   const [expanded,   setExpanded]   = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const loadSeqRef = useRef(0);
 
   const isMyQuestion     = meId != null && question?.author_id === meId;
   const humanAnswerCount = answers.filter((a) => !a.is_ai && a.author_email !== "ai@jabumarket.app").length;
@@ -220,13 +242,17 @@ export default function QuestionDetailClient({ id }: { id: string }) {
   }, []);
 
   async function load() {
+    const loadSeq = ++loadSeqRef.current;
     setLoading(true); setError(null);
+    setCourseResources(null);
+    setMyUpvoted(false);
     try {
       const q = await supabase
         .from("study_questions")
         .select("id,title,body,course_code,level,created_at,answers_count,upvotes_count,solved,author_email,author_id")
         .eq("id", id).single();
       if (q.error) throw q.error;
+      if (loadSeq !== loadSeqRef.current) return;
       setQuestion(q.data as any);
 
       const a = await supabase
@@ -237,17 +263,61 @@ export default function QuestionDetailClient({ id }: { id: string }) {
         .order("upvotes_count", { ascending: false, nullsFirst: false })
         .order("created_at",    { ascending: true });
       if (a.error) throw a.error;
+      if (loadSeq !== loadSeqRef.current) return;
       setAnswers((a.data as any) ?? []);
+
+      if (q.data?.course_code) {
+        const code = q.data.course_code;
+        Promise.all([
+          // Assumption: study_materials is keyed by course_id, so filter via study_courses join.
+          supabase
+            .from("study_materials")
+            .select("id,title,material_type,downloads,study_courses!inner(course_code)")
+            .eq("approved", true)
+            .eq("study_courses.course_code", code)
+            .order("downloads", { ascending: false, nullsFirst: false })
+            .limit(3),
+          supabase
+            .from("study_quiz_sets")
+            .select("id,title,questions_count")
+            .eq("published", true)
+            .ilike("course_code", code)
+            .order("created_at", { ascending: false })
+            .limit(2),
+        ]).then(([matRes, setRes]) => {
+          if (loadSeq !== loadSeqRef.current) return;
+
+          const materials = ((matRes.data ?? []) as Array<MaterialResourceRow & {
+            study_courses?: { course_code: string | null } | Array<{ course_code: string | null }> | null;
+          }>).map((m) => ({
+            id: m.id,
+            title: m.title,
+            material_type: m.material_type,
+            downloads: m.downloads,
+          }));
+          const practiceSets = (setRes.data ?? []) as PracticeSetResourceRow[];
+
+          if (materials.length > 0 || practiceSets.length > 0) {
+            setCourseResources({ materials, practiceSets });
+          }
+        }).catch(() => {
+          // non-critical, swallow silently
+        });
+      }
 
       const { data: u } = await supabase.auth.getUser();
       if (u?.user?.id) {
         const v = await supabase.from("study_question_votes")
           .select("id").eq("question_id", id).eq("voter_id", u.user.id).maybeSingle();
+        if (loadSeq !== loadSeqRef.current) return;
         setMyUpvoted(!!v.data);
       }
     } catch (e: any) {
+      if (loadSeq !== loadSeqRef.current) return;
       setError(e?.message ?? "Failed to load question.");
-    } finally { setLoading(false); }
+    } finally {
+      if (loadSeq === loadSeqRef.current) setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -501,6 +571,93 @@ export default function QuestionDetailClient({ id }: { id: string }) {
           {postError && (
             <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{postError}
+            </div>
+          )}
+
+          {courseResources && question?.course_code && (
+            <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-extrabold text-foreground">
+                  What else can help?
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Resources for {question.course_code}
+                </p>
+              </div>
+
+              {courseResources.materials.length > 0 && (
+                <div className="border-b border-border px-4 py-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Study materials
+                  </p>
+                  <div className="space-y-2">
+                    {courseResources.materials.map((m) => (
+                      <Link
+                        key={m.id}
+                        href={`/study/materials/${encodeURIComponent(m.id)}`}
+                        className={cn(
+                          "flex items-center gap-3 rounded-2xl border border-border",
+                          "bg-background px-3 py-2.5 no-underline transition",
+                          "hover:bg-secondary/30",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        )}
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+                          <BookOpen className="h-3.5 w-3.5 text-[#5B35D5] dark:text-indigo-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {m.title ?? "Material"}
+                          </p>
+                          {m.downloads != null && (
+                            <p className="text-xs text-muted-foreground">
+                              {m.downloads.toLocaleString()} downloads
+                            </p>
+                          )}
+                        </div>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {courseResources.practiceSets.length > 0 && (
+                <div className="px-4 py-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Practice sets
+                  </p>
+                  <div className="space-y-2">
+                    {courseResources.practiceSets.map((s) => (
+                      <Link
+                        key={s.id}
+                        href={`/study/practice/${encodeURIComponent(s.id)}`}
+                        className={cn(
+                          "flex items-center gap-3 rounded-2xl border border-border",
+                          "bg-background px-3 py-2.5 no-underline transition",
+                          "hover:bg-secondary/30",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        )}
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+                          <Zap className="h-3.5 w-3.5 text-[#5B35D5] dark:text-indigo-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {s.title ?? "Practice set"}
+                          </p>
+                          {s.questions_count != null && (
+                            <p className="text-xs text-muted-foreground">
+                              {s.questions_count} question{s.questions_count !== 1 ? "s" : ""}
+                            </p>
+                          )}
+                        </div>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

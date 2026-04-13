@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Loader2,
   RefreshCcw,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   XCircle,
@@ -93,6 +94,130 @@ type OptionRow = {
 };
 
 type ReviewTab = "wrong" | "flagged" | "unanswered" | "all";
+
+type AiExplainState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; text: string }
+  | { status: "error"; message: string };
+
+function AiExplainInline({
+  questionId,
+  questionPrompt,
+  chosenOptionText,
+  correctOptionText,
+  isCorrect,
+}: {
+  questionId: string;
+  questionPrompt: string;
+  chosenOptionText: string | null | undefined;
+  correctOptionText: string | null | undefined;
+  isCorrect: boolean;
+}) {
+  const [state, setState] = useState<AiExplainState>({ status: "idle" });
+
+  async function fetchExplanation() {
+    setState({ status: "loading" });
+    try {
+      const res = await fetch("/api/ai/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionId,
+          questionPrompt,
+          chosenOptionText,
+          correctOptionText,
+          isCorrect,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setState({ status: "error", message: json.error ?? "Something went wrong." });
+      } else {
+        setState({ status: "done", text: json.explanation });
+      }
+    } catch {
+      setState({ status: "error", message: "Network error. Please try again." });
+    }
+  }
+
+  if (state.status === "idle") {
+    return (
+      <button
+        type="button"
+        onClick={fetchExplanation}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-all",
+          "border-[#5B35D5]/20 bg-[#EEEDFE] hover:bg-[#EEEDFE]/80",
+          "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+        )}
+      >
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/10 text-[#5B35D5] dark:text-indigo-300">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">
+            Ask AI to go deeper
+          </p>
+          <p className="text-[11px] text-[#5B35D5]/70 dark:text-[#5B35D5]/60">
+            Expanded explanation powered by Gemini
+          </p>
+        </div>
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#5B35D5]" />
+      </button>
+    );
+  }
+
+  if (state.status === "loading") {
+    return (
+      <div className={cn(
+        "flex items-center gap-3 rounded-2xl border px-3 py-3",
+        "border-[#5B35D5]/20 bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10"
+      )}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/10 text-[#5B35D5]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </span>
+        <div>
+          <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">Thinking…</p>
+          <p className="text-[11px] text-[#5B35D5]/70">Generating your explanation</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="rounded-2xl border border-rose-200/60 bg-rose-50/60 px-3 py-2.5 dark:border-rose-800/40 dark:bg-rose-950/20">
+        <p className="text-xs font-extrabold text-rose-700 dark:text-rose-400">
+          Couldn&apos;t generate explanation
+        </p>
+        <button
+          type="button"
+          onClick={fetchExplanation}
+          className="mt-1 text-[11px] text-rose-600 underline dark:text-rose-400"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(
+      "rounded-2xl border px-4 py-3",
+      "border-[#5B35D5]/20 bg-[#EEEDFE] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10"
+    )}>
+      <div className="mb-2 flex items-center gap-2">
+        <Sparkles className="h-3.5 w-3.5 text-[#5B35D5]" />
+        <p className="text-xs font-extrabold text-[#3B24A8] dark:text-indigo-300">AI Explanation</p>
+      </div>
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#3B24A8]/85 dark:text-indigo-200">
+        {state.text}
+      </p>
+    </div>
+  );
+}
 
 // ─── Score Ring ───────────────────────────────────────────────────────────────
 // No grade label — just percentage. Less demoralizing, more informative.
@@ -928,31 +1053,43 @@ export default function AttemptReviewClient() {
 
               {/* Mark as understood + correct answer label */}
               {(isWrong || isUnanswered) && (
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => toggleUnderstood(selected.id)}
-                    disabled={understoodSaving[selected.id]}
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      understood[selected.id]
-                        ? "border-emerald-300/40 bg-emerald-100/30 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300"
-                        : "border-border bg-background text-foreground hover:bg-secondary/50",
-                      understoodSaving[selected.id] ? "opacity-60" : ""
-                    )}
-                  >
-                    <div
-                      className={cn("h-3.5 w-3.5 rounded-full border-2 flex-shrink-0", understood[selected.id] ? "border-emerald-600 bg-emerald-600" : "border-border")}
-                    />
-                    {understood[selected.id] ? "Got it" : "Mark as understood"}
-                  </button>
+                <>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleUnderstood(selected.id)}
+                      disabled={understoodSaving[selected.id]}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        understood[selected.id]
+                          ? "border-emerald-300/40 bg-emerald-100/30 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300"
+                          : "border-border bg-background text-foreground hover:bg-secondary/50",
+                        understoodSaving[selected.id] ? "opacity-60" : ""
+                      )}
+                    >
+                      <div
+                        className={cn("h-3.5 w-3.5 rounded-full border-2 flex-shrink-0", understood[selected.id] ? "border-emerald-600 bg-emerald-600" : "border-border")}
+                      />
+                      {understood[selected.id] ? "Got it" : "Mark as understood"}
+                    </button>
 
-                  {correctOpt && (
-                    <p className="text-right text-xs text-muted-foreground">
-                      Correct: <span className="font-medium text-foreground">{normalize(correctOpt.text)}</span>
-                    </p>
-                  )}
-                </div>
+                    {correctOpt && (
+                      <p className="text-right text-xs text-muted-foreground">
+                        Correct: <span className="font-medium text-foreground">{normalize(correctOpt.text)}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <AiExplainInline
+                      questionId={selected.id}
+                      questionPrompt={selected.prompt}
+                      chosenOptionText={chosenOpt?.text ?? null}
+                      correctOptionText={correctOpt?.text ?? null}
+                      isCorrect={false}
+                    />
+                  </div>
+                </>
               )}
             </>
           )}
