@@ -221,11 +221,15 @@ function CourseTagInput({
 function GpaSection({
   currentCgpa,
   targetCgpa,
+  currentPrefilled,
+  targetPrefilled,
   onCurrentChange,
   onTargetChange,
 }: {
   currentCgpa: string;
   targetCgpa: string;
+  currentPrefilled: boolean;
+  targetPrefilled: boolean;
   onCurrentChange: (v: string) => void;
   onTargetChange: (v: string) => void;
 }) {
@@ -253,6 +257,11 @@ function GpaSection({
             placeholder="e.g. 3.20"
             className="w-full rounded-xl border border-border bg-secondary/40 px-3 py-2 text-[15px] font-semibold text-foreground outline-none transition focus:border-violet-400 focus:bg-background focus:ring-2 focus:ring-violet-500/20"
           />
+          {currentPrefilled && (
+            <p className="mt-1 text-[10px] text-[#5B35D5] dark:text-indigo-300">
+              Pre-filled from your GPA calculator
+            </p>
+          )}
         </div>
         {/* Arrow */}
         <span className="pb-2.5 text-lg text-muted-foreground/50">→</span>
@@ -271,6 +280,11 @@ function GpaSection({
             placeholder="e.g. 4.00"
             className="w-full rounded-xl border border-border bg-secondary/40 px-3 py-2 text-[15px] font-semibold text-foreground outline-none transition focus:border-violet-400 focus:bg-background focus:ring-2 focus:ring-violet-500/20"
           />
+          {targetPrefilled && (
+            <p className="mt-1 text-[10px] text-[#5B35D5] dark:text-indigo-300">
+              Pre-filled from your GPA calculator
+            </p>
+          )}
         </div>
       </div>
 
@@ -413,6 +427,8 @@ export default function AiStudyPlanPage() {
   // ── Prefill state
   const [prefilling,    setPrefilling]    = useState(true);
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
+  const [cgpaPrefilled, setCgpaPrefilled] = useState(false);
+  const [targetPrefilled, setTargetPrefilled] = useState(false);
 
   // ── Generation state
   const [loading,       setLoading]       = useState(false);
@@ -426,9 +442,19 @@ export default function AiStudyPlanPage() {
   const [savedPlan,   setSavedPlan]   = useState<StudyPlan | null>(null);
   const [savedPlanAt, setSavedPlanAt] = useState<string | null>(null);
   const [progress,    setProgress]    = useState<Record<string, boolean>>({});
+  const currentCgpaRef = useRef(currentCgpa);
+  const targetCgpaRef = useRef(targetCgpa);
 
   // ── Derived
   const urgency = getUrgency(weeksUntilExam);
+
+  useEffect(() => {
+    currentCgpaRef.current = currentCgpa;
+  }, [currentCgpa]);
+
+  useEffect(() => {
+    targetCgpaRef.current = targetCgpa;
+  }, [targetCgpa]);
 
   // ── Pre-fill from Supabase preferences ────────────────────────────────────
 
@@ -488,6 +514,38 @@ export default function AiStudyPlanPage() {
         if (restoredPlan) {
           setSavedPlan(restoredPlan);
           setSavedPlanAt(prefsData?.last_study_plan_at ?? null);
+        }
+
+        const { data: gpaRow } = await supabase
+          .from("study_gpa_data")
+          .select("data")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        let prefillCgpa: string | null = null;
+        let prefillTarget: string | null = null;
+        if (gpaRow?.data) {
+          try {
+            const parsed = JSON.parse(
+              typeof gpaRow.data === "string" ? gpaRow.data : JSON.stringify(gpaRow.data)
+            );
+            const tt = parsed?.targetTool;
+            if (tt?.currentCgpa && String(tt.currentCgpa).trim()) {
+              prefillCgpa = String(tt.currentCgpa).trim();
+            }
+            if (tt?.targetCgpa && String(tt.targetCgpa).trim()) {
+              prefillTarget = String(tt.targetCgpa).trim();
+            }
+          } catch {}
+        }
+
+        if (prefillCgpa && !currentCgpaRef.current) {
+          setCurrentCgpa(prefillCgpa);
+          setCgpaPrefilled(true);
+        }
+        if (prefillTarget && !targetCgpaRef.current) {
+          setTargetCgpa(prefillTarget);
+          setTargetPrefilled(true);
         }
 
         if (!prefsData) return;
@@ -595,7 +653,9 @@ export default function AiStudyPlanPage() {
         setProgress({});
 
         if (userId) {
-          localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+          try {
+            localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+          } catch {}
           await supabase
             .from("study_preferences")
             .upsert(
@@ -621,7 +681,9 @@ export default function AiStudyPlanPage() {
 
   function clearPlan() {
     if (userId) {
-      localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+      try {
+        localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+      } catch {}
     }
     setPlan(null);
     setProgress({});
@@ -630,7 +692,11 @@ export default function AiStudyPlanPage() {
   function handleToggleDay(key: string, val: boolean) {
     setProgress((prev) => {
       const next = { ...prev, [key]: val };
-      if (userId) localStorage.setItem(`jabu_study_plan_progress:${userId}`, JSON.stringify(next));
+      if (userId) {
+        try {
+          localStorage.setItem(`jabu_study_plan_progress:${userId}`, JSON.stringify(next));
+        } catch {}
+      }
       return next;
     });
   }
@@ -762,8 +828,16 @@ export default function AiStudyPlanPage() {
         <GpaSection
           currentCgpa={currentCgpa}
           targetCgpa={targetCgpa}
-          onCurrentChange={setCurrentCgpa}
-          onTargetChange={setTargetCgpa}
+          currentPrefilled={cgpaPrefilled}
+          targetPrefilled={targetPrefilled}
+          onCurrentChange={(value) => {
+            setCurrentCgpa(value);
+            if (cgpaPrefilled) setCgpaPrefilled(false);
+          }}
+          onTargetChange={(value) => {
+            setTargetCgpa(value);
+            if (targetPrefilled) setTargetPrefilled(false);
+          }}
         />
       </SectionCard>
 

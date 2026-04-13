@@ -13,6 +13,8 @@ import CourseSearch from "./_components/CourseSearch";
 import { HeroCard } from "./_components/HeroCard";
 import { QuickActions } from "./_components/QuickActions";
 import RankWidget from "./_components/RankWidget";
+import ProgressWidget from "./_components/ProgressWidget";
+import SetupNudge from "./_components/SetupNudge";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
@@ -79,6 +81,7 @@ function StudyHomeInner({
     session: string | null;
   }>({ show: false, suggested: null, current: null, session: null });
   const [switchingSemester, setSwitchingSemester] = useState(false);
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
 
   // P-5: Exam countdown
   const [examCountdown, setExamCountdown] = useState<{
@@ -105,6 +108,14 @@ function StudyHomeInner({
       } catch { /* non-critical */ }
     }
     checkExamSeason();
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("jabu:setupNudgeDismissed") === "1") {
+        setNudgeDismissed(true);
+      }
+    } catch {}
   }, []);
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -286,6 +297,10 @@ function StudyHomeInner({
         </Link>
       )}
 
+      {!hasPrefs && !nudgeDismissed && !loading && (
+        <SetupNudge onDismiss={() => setNudgeDismissed(true)} />
+      )}
+
       <CourseSearch />
 
       <HeroCard
@@ -297,6 +312,8 @@ function StudyHomeInner({
       <QuickActions />
 
       {userId && <RankWidget userId={userId} />}
+
+      {userId && <ProgressWidget userId={userId} />}
 
       <ContinueCard />
 
