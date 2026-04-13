@@ -305,6 +305,7 @@ export default function UploadMaterialsPage() {
     () => courses.find((c) => c.id === selectedCourseId) || null,
     [courses, selectedCourseId]
   );
+  const allUploadsDone = queue.length > 0 && queue.every((e) => e.status === "done");
 
   const scopeBadge = useMemo(() => {
     if (!isRep) return null;
@@ -440,6 +441,17 @@ export default function UploadMaterialsPage() {
       try { window.localStorage.removeItem(DRAFT_KEY); } catch {}
     }
   }, [queue]);
+
+  function resetUpload() {
+    setFiles([]);
+    setQueue([]);
+    setSelectedCourseId("");
+    setQ("");
+    setDescription("");
+    setAutoFillBanner(false);
+    setStep(1);
+    try { window.localStorage.removeItem(DRAFT_KEY); } catch {}
+  }
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -1455,18 +1467,82 @@ export default function UploadMaterialsPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setFiles([]);
-                    setSelectedCourseId("");
-                    setQ("");
-                    setAutoFillBanner(false);
-                    setStep(1);
-                  }}
+                  onClick={resetUpload}
                   className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/50"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add more files
                 </button>
               </div>
+
+              {allUploadsDone && (
+                <div
+                  className={cn(
+                    "rounded-2xl px-4 py-3.5",
+                    isRep
+                      ? "border border-[#AFA9EC] bg-[#EEEDFE] dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10"
+                      : "border border-emerald-300/50 bg-emerald-50 dark:border-emerald-700/40 dark:bg-emerald-950/20"
+                  )}
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <CheckCircle2
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        isRep ? "text-[#5B35D5] dark:text-indigo-300" : "text-emerald-600 dark:text-emerald-400"
+                      )}
+                    />
+                    <p
+                      className={cn(
+                        "text-sm font-extrabold",
+                        isRep ? "text-[#3C3489] dark:text-indigo-200" : "text-emerald-900 dark:text-emerald-200"
+                      )}
+                    >
+                      {isRep
+                        ? `${queue.length} file${queue.length !== 1 ? "s" : ""} are live`
+                        : `${queue.length} file${queue.length !== 1 ? "s" : ""} uploaded successfully`}
+                    </p>
+                  </div>
+
+                  <p
+                    className={cn(
+                      "mb-3 text-xs leading-relaxed",
+                      isRep ? "text-[#534AB7] dark:text-indigo-300" : "text-emerald-800/80 dark:text-emerald-300"
+                    )}
+                  >
+                    {isRep
+                      ? "As a course rep, your uploads are auto-approved and visible to students immediately."
+                      : `Your material${queue.length !== 1 ? "s are" : " is"} in the review queue. You'll be notified once approved — usually within 24 hours.`}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCourse && (
+                      <Link
+                        href={`/study/courses/${encodeURIComponent(selectedCourse.course_code)}`}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold text-white no-underline",
+                          isRep
+                            ? "bg-[#5B35D5] hover:bg-[#4526B8]"
+                            : "bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700"
+                        )}
+                      >
+                        View {selectedCourse.course_code}
+                        <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={resetUpload}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-extrabold",
+                        isRep
+                          ? "border-[#AFA9EC] bg-white/70 text-[#3C3489] hover:bg-white dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10 dark:text-indigo-300"
+                          : "border-emerald-300/60 bg-white/70 text-emerald-800 hover:bg-white dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-300"
+                      )}
+                    >
+                      {isRep ? "Upload more" : "Upload another"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Summary metric cards */}
               {(() => {

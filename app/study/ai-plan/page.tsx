@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft,
@@ -416,6 +417,7 @@ function WeekCard({
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function AiStudyPlanPage() {
+  const searchParams = useSearchParams();
   // ── Form state
   const [courses,       setCourses]       = useState<string[]>([]);
   const [currentCgpa,   setCurrentCgpa]   = useState("");
@@ -548,6 +550,20 @@ export default function AiStudyPlanPage() {
           setTargetPrefilled(true);
         }
 
+        const paramCgpa = searchParams.get("currentCgpa")?.trim() ?? "";
+        const paramTarget = searchParams.get("targetCgpa")?.trim() ?? "";
+        const hasCurrentValue = !!(currentCgpaRef.current || prefillCgpa);
+        const hasTargetValue = !!(targetCgpaRef.current || prefillTarget);
+
+        if (paramCgpa && !hasCurrentValue) {
+          setCurrentCgpa(paramCgpa);
+          setCgpaPrefilled(true);
+        }
+        if (paramTarget && !hasTargetValue) {
+          setTargetCgpa(paramTarget);
+          setTargetPrefilled(true);
+        }
+
         if (!prefsData) return;
 
         // Fetch courses matching their profile
@@ -585,7 +601,7 @@ export default function AiStudyPlanPage() {
 
     prefill();
     return () => { cancelled = true; };
-  }, []);
+  }, [searchParams]);
 
   // ── Generation ──────────────────────────────────────────────────────────────
 

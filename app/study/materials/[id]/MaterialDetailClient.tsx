@@ -215,7 +215,7 @@ function ImageViewer({ url, title, heightClass = "h-[70vh]" }: { url: string; ti
   );
 }
 
-function InlinePreview({ url, title, kind }: { url: string; title: string; kind: "pdf" | "image" | "other" }) {
+function InlinePreview({ url, title, kind, onAskAI }: { url: string; title: string; kind: "pdf" | "image" | "other"; onAskAI?: () => void }) {
   const [open, setOpen] = useState(false);
   if (kind === "other" || !url) return null;
 
@@ -241,7 +241,28 @@ function InlinePreview({ url, title, kind }: { url: string; title: string; kind:
       </button>
       {open && (
         <div className="border-t border-border p-3">
-          {kind === "pdf" && <PdfViewer url={url} heightClass="h-[60vh]" />}
+          {kind === "pdf" && (
+            <div className="relative">
+              <PdfViewer url={url} heightClass="h-[60vh]" />
+              {onAskAI && (
+                <button
+                  type="button"
+                  onClick={onAskAI}
+                  className={cn(
+                    "absolute bottom-3 right-3 z-10",
+                    "inline-flex items-center gap-1.5 rounded-full",
+                    "bg-[#5B35D5] px-3.5 py-2 text-xs font-extrabold text-white",
+                    "shadow-lg hover:bg-[#4526B8]",
+                    "focus-visible:outline-none focus-visible:ring-2",
+                    "focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+                  )}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Ask AI
+                </button>
+              )}
+            </div>
+          )}
           {kind === "image" && <ImageViewer url={url} title={title} heightClass="h-[60vh]" />}
         </div>
       )}
@@ -796,7 +817,7 @@ export default function MaterialDetailClient({
 
       {/* Chat panel */}
       {kind === "pdf" && chatOpen && (
-        <div className="overflow-hidden rounded-2xl border border-[#5B4FD9]/25 bg-card">
+        <div id="material-chat-panel" className="overflow-hidden rounded-2xl border border-[#5B4FD9]/25 bg-card">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-[#5B4FD9]" />
@@ -845,7 +866,19 @@ export default function MaterialDetailClient({
       )}
 
       {/* Inline preview */}
-      {hasFile && <InlinePreview url={fileUrl} title={title} kind={kind} />}
+      {hasFile && (
+        <InlinePreview
+          url={fileUrl}
+          title={title}
+          kind={kind}
+          onAskAI={kind === "pdf" ? () => {
+            setChatOpen(true);
+            setTimeout(() => {
+              document.getElementById("material-chat-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 100);
+          } : undefined}
+        />
+      )}
 
       {/* About card */}
       <div className="rounded-2xl border border-border bg-card p-5">

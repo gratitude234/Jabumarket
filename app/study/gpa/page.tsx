@@ -24,6 +24,7 @@ import {
   Wand2,
   TrendingUp,
   BarChart2,
+  ArrowRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -998,6 +999,14 @@ export default function GpaPage() {
     return { type: "success" as const, text: "Achievable — keep up a steady routine." };
   }, [requiredGpa, scaleMax]);
 
+  const parsedCurrent = parseFloat(currentCgpa);
+  const parsedTarget = parseFloat(targetCgpa);
+  const showPlanCta =
+    Number.isFinite(parsedCurrent) &&
+    Number.isFinite(parsedTarget) &&
+    parsedCurrent > 0 &&
+    parsedTarget > parsedCurrent;
+
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   function updateSemester(semId: string, patch: Partial<Semester>) {
@@ -1776,6 +1785,27 @@ export default function GpaPage() {
             <p className="mt-2 text-sm text-muted-foreground">Fill all fields with valid numbers to see the required GPA.</p>
           )}
         </div>
+
+        {showPlanCta && (
+          <Link
+            href={`/study/ai-plan?currentCgpa=${encodeURIComponent(currentCgpa)}&targetCgpa=${encodeURIComponent(targetCgpa)}`}
+            className={cn(
+              "mt-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 no-underline transition",
+              "bg-[#5B35D5] hover:bg-[#4526B8]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+            )}
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-white">
+                Build a plan to reach {targetCgpa}
+              </p>
+              <p className="mt-0.5 text-xs text-white/65">
+                AI generates a week-by-week study schedule
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-white" />
+          </Link>
+        )}
       </SectionCard>
 
       {/* ── Sticky footer ──────────────────────────────────────────────────── */}
