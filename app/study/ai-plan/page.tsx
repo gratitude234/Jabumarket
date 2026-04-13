@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft,
@@ -417,7 +416,6 @@ function WeekCard({
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function AiStudyPlanPage() {
-  const searchParams = useSearchParams();
   // ── Form state
   const [courses,       setCourses]       = useState<string[]>([]);
   const [currentCgpa,   setCurrentCgpa]   = useState("");
@@ -550,8 +548,13 @@ export default function AiStudyPlanPage() {
           setTargetPrefilled(true);
         }
 
-        const paramCgpa = searchParams.get("currentCgpa")?.trim() ?? "";
-        const paramTarget = searchParams.get("targetCgpa")?.trim() ?? "";
+        let paramCgpa = "";
+        let paramTarget = "";
+        try {
+          const params = new URLSearchParams(window.location.search);
+          paramCgpa = params.get("currentCgpa")?.trim() ?? "";
+          paramTarget = params.get("targetCgpa")?.trim() ?? "";
+        } catch {}
         const hasCurrentValue = !!(currentCgpaRef.current || prefillCgpa);
         const hasTargetValue = !!(targetCgpaRef.current || prefillTarget);
 
@@ -601,7 +604,7 @@ export default function AiStudyPlanPage() {
 
     prefill();
     return () => { cancelled = true; };
-  }, [searchParams]);
+  }, []);
 
   // ── Generation ──────────────────────────────────────────────────────────────
 
