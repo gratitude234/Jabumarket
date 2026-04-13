@@ -18,6 +18,7 @@ const TILES = [
     sublabel: "Start a session",
     icon: Zap,
     primary: true,
+    isNew: false,
   },
   {
     href: "/study/materials",
@@ -33,6 +34,7 @@ const TILES = [
     sublabel: "Notes & past Qs",
     icon: BookOpen,
     primary: false,
+    isNew: false,
   },
   {
     href: "/study/questions",
@@ -40,6 +42,7 @@ const TILES = [
     sublabel: "Ask or answer",
     icon: MessagesSquare,
     primary: false,
+    isNew: false,
   },
   {
     href: "/study/gpa",
@@ -47,6 +50,7 @@ const TILES = [
     sublabel: "Track your GPA",
     icon: Calculator,
     primary: false,
+    isNew: false,
   },
   {
     href: "/study/ai-plan",
@@ -54,6 +58,7 @@ const TILES = [
     sublabel: "Build a study plan",
     icon: BrainCircuit,
     primary: false,
+    isNew: false,
   },
 ] as const;
 
