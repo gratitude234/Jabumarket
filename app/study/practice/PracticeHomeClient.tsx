@@ -43,6 +43,24 @@ const SORTS: Array<{ key: SortKey; label: string; icon: React.ReactNode }> = [
 
 const LEVELS = ["100", "200", "300", "400", "500"] as const;
 const SEMESTERS = ["1st", "2nd", "summer"] as const;
+const PRACTICE_LEVEL_STORAGE_KEY = "jabu:practiceFilter:level";
+const PRACTICE_SEMESTER_STORAGE_KEY = "jabu:practiceFilter:semester";
+
+function semesterParamToStoredValue(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1st" || normalized === "first") return "first";
+  if (normalized === "2nd" || normalized === "second") return "second";
+  if (normalized === "summer") return "summer";
+  return "";
+}
+
+function storedSemesterToParam(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "first" || normalized === "1st") return "1st";
+  if (normalized === "second" || normalized === "2nd") return "2nd";
+  if (normalized === "summer") return "summer";
+  return "";
+}
 
 type ViewKey = "for_you" | "recent" | "all";
 
@@ -969,6 +987,8 @@ function PracticeHomeInner() {
   const [draftSort, setDraftSort] = useState<SortKey>(sortParam);
   const [draftPublished, setDraftPublished] = useState(publishedOnly);
   const [draftDifficulty, setDraftDifficulty] = useState(difficultyParam);
+  const filterBootstrapRef = useRef(false);
+  const [filterStorageReady, setFilterStorageReady] = useState(false);
 
   // Data
   const [loading, setLoading] = useState(true);
@@ -1076,6 +1096,62 @@ function PracticeHomeInner() {
   }, [qParam, courseParam, levelParam, semesterParam, sortParam, publishedOnly, viewParam]);
 
   useEffect(() => setQ(qParam), [qParam]);
+
+  useEffect(() => {
+    let savedLevel = "";
+    let savedSemester = "";
+
+    try {
+      savedLevel = localStorage.getItem(PRACTICE_LEVEL_STORAGE_KEY) ?? "";
+      savedSemester = localStorage.getItem(PRACTICE_SEMESTER_STORAGE_KEY) ?? "";
+    } catch {
+      setFilterStorageReady(true);
+      return;
+    }
+
+    const nextLevel = levelParam || savedLevel;
+    const nextSemester = semesterParam || storedSemesterToParam(savedSemester);
+
+    if (nextLevel !== levelParam || nextSemester !== semesterParam) {
+      filterBootstrapRef.current = true;
+      router.replace(
+        buildHref(pathname, {
+          q: qParam || null,
+          course: courseParam || null,
+          level: nextLevel || null,
+          semester: nextSemester || null,
+          difficulty: difficultyParam || null,
+          sort: sortParam !== "newest" ? sortParam : null,
+          published: publishedOnly ? "1" : null,
+          view: viewParam !== "for_you" ? viewParam : null,
+        })
+      );
+      return;
+    }
+
+    setFilterStorageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (filterBootstrapRef.current) {
+      filterBootstrapRef.current = false;
+      setFilterStorageReady(true);
+      return;
+    }
+
+    if (!filterStorageReady) return;
+
+    try {
+      if (levelParam) localStorage.setItem(PRACTICE_LEVEL_STORAGE_KEY, levelParam);
+      else localStorage.removeItem(PRACTICE_LEVEL_STORAGE_KEY);
+
+      const storedSemester = semesterParamToStoredValue(semesterParam);
+      if (storedSemester) localStorage.setItem(PRACTICE_SEMESTER_STORAGE_KEY, storedSemester);
+      else localStorage.removeItem(PRACTICE_SEMESTER_STORAGE_KEY);
+    } catch {
+      // localStorage is best-effort only
+    }
+  }, [filterStorageReady, levelParam, semesterParam]);
 
   // debounce search to URL
   const debounceRef = useRef<number | null>(null);

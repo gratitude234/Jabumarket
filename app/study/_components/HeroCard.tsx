@@ -1,27 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
-import { getPracticeStreak } from "@/lib/studyPractice";
+import {
+  getInProgressAttempts,
+  getPracticeStreak,
+  type PracticeAttemptRow,
+} from "@/lib/studyPractice";
+
+type DueCourseRow = {
+  // Assumption: Supabase may return the nested relation as either an object or
+  // a single-item array depending on generated typings for this relation.
+  study_quiz_sets:
+    | { course_code: string | null }
+    | Array<{ course_code: string | null }>
+    | null;
+};
+
+function extractCourseCode(row: DueCourseRow) {
+  const nested = row.study_quiz_sets;
+  if (Array.isArray(nested)) return nested[0]?.course_code ?? null;
+  return nested?.course_code ?? null;
+}
 
 export function HeroCard({
   displayName,
-  hasPrefs,
   userId,
+  loading,
 }: {
   displayName: string | null;
-  hasPrefs: boolean;
   userId: string | null;
+  loading: boolean;
 }) {
   const [streak, setStreak] = useState(0);
   const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
   const [dueCount, setDueCount] = useState<number | null>(null);
+  const [dueCourses, setDueCourses] = useState<string[]>([]);
+  const [continueAttempt, setContinueAttempt] = useState<PracticeAttemptRow | null>(null);
   const [streakLoading, setStreakLoading] = useState(true);
+  const [ctaResolved, setCtaResolved] = useState(false);
 
-  // ── Streak + 28-day activity ──────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -32,7 +53,6 @@ export function HeroCard({
         if (!cancelled) setStreakLoading(false);
       }
 
-      // 28-day dot grid
       if (!userId) return;
       try {
         const since = new Date(Date.now() + 3_600_000 - 28 * 86_400_000)
@@ -44,144 +64,200 @@ export function HeroCard({
           .eq("user_id", userId)
           .gte("activity_date", since);
         if (!cancelled && data) {
-          const s = new Set<string>();
-          for (const r of data as { activity_date: string; did_practice: boolean }[]) {
-            if (r?.did_practice === true && r?.activity_date) s.add(String(r.activity_date));
+          const nextDays = new Set<string>();
+          for (const row of data as { activity_date: string; did_practice: boolean }[]) {
+            if (row?.did_practice === true && row?.activity_date) nextDays.add(String(row.activity_date));
           }
-          setActiveDays(s);
+          setActiveDays(nextDays);
         }
-      } catch { /* non-critical */ }
+      } catch {
+        // non-critical
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
-  // ── Due today count ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!userId) { setDueCount(0); return; }
+    if (loading) return;
+
+    if (!userId) {
+      setDueCount(0);
+      setDueCourses([]);
+      setContinueAttempt(null);
+      setCtaResolved(true);
+      return;
+    }
+
     let cancelled = false;
+    setCtaResolved(false);
+
     (async () => {
       try {
         const now = new Date().toISOString();
-        const { count, error } = await supabase
-          .from("study_weak_questions")
-          .select("user_id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .lte("next_due_at", now)
-          .is("graduated_at", null);
-        if (!cancelled && !error) setDueCount(count ?? 0);
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [userId]);
+        const [countRes, coursesRes, inProgress] = await Promise.all([
+          supabase
+            .from("study_weak_questions")
+            .select("user_id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .lte("next_due_at", now)
+            .is("graduated_at", null),
+          supabase
+            .from("study_weak_questions")
+            .select("study_quiz_sets(course_code)")
+            .eq("user_id", userId)
+            .lte("next_due_at", now)
+            .is("graduated_at", null)
+            .limit(10),
+          getInProgressAttempts(1).catch(() => []),
+        ]);
 
-  // ── Dot grid helpers ───────────────────────────────────────────────────────
+        if (cancelled) return;
+
+        setDueCount(!countRes.error ? countRes.count ?? 0 : 0);
+
+        if (!coursesRes.error && Array.isArray(coursesRes.data)) {
+          const nextCourses = Array.from(
+            new Set(
+              (coursesRes.data as DueCourseRow[])
+                .map(extractCourseCode)
+                .map((code) => code?.trim())
+                .filter((code): code is string => Boolean(code))
+            )
+          ).slice(0, 2);
+          setDueCourses(nextCourses);
+        } else {
+          setDueCourses([]);
+        }
+
+        setContinueAttempt(inProgress[0] ?? null);
+      } catch {
+        if (!cancelled) {
+          setDueCount(0);
+          setDueCourses([]);
+          setContinueAttempt(null);
+        }
+      } finally {
+        if (!cancelled) setCtaResolved(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, userId]);
+
   const now = new Date(Date.now() + 3_600_000);
   const todayStr = now.toISOString().slice(0, 10);
   const dotDays: string[] = [];
   for (let i = 27; i >= 0; i--) {
-    dotDays.push(
-      new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10)
-    );
+    dotDays.push(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10));
   }
 
   const streakColor =
     streak >= 7 ? "text-orange-500" : streak >= 3 ? "text-amber-500" : "text-muted-foreground";
 
-  const hour = new Date().getHours();
-  const timeGreeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const timeGreeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
+  }, []);
+
+  const greeting = displayName ? `${timeGreeting}, ${displayName}` : `${timeGreeting}`;
+  const dueMinutes = dueCount && dueCount > 0 ? Math.ceil(dueCount * 0.4) : 0;
+  const answeredCount = typeof continueAttempt?.score === "number" ? continueAttempt.score : 0;
+  const totalCount = typeof continueAttempt?.total_questions === "number" ? continueAttempt.total_questions : 0;
 
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-      {/* ── Top section ── */}
       <div className="p-5 pb-4">
-        {/* Greeting row */}
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">{timeGreeting}</p>
-            <p className="mt-0.5 text-xl font-extrabold tracking-tight text-foreground">
-              {displayName ? `${displayName} 👋` : "Welcome 👋"}
+          <div className="min-w-0">
+            <p className="text-xl font-extrabold tracking-tight text-foreground">{greeting}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Pick up where you left off and keep your streak moving.
             </p>
           </div>
-          <Link
-            href="/study/onboarding"
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-border bg-background px-3 py-2",
-              "text-sm font-semibold text-foreground hover:bg-secondary/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              !hasPrefs && "border-[#5B35D5]/20 bg-[#EEEDFE] text-[#3B24A8]"
-            )}
-          >
-            {hasPrefs ? "Preferences" : "Set up"} <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+
+          <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 shadow-sm">
+            <Flame className={cn("h-4 w-4", streakLoading ? "text-muted-foreground" : streakColor)} />
+            <span className="text-sm font-extrabold text-foreground">{streakLoading ? "0" : streak}</span>
+          </div>
         </div>
 
-        {/* Stat tiles — only shown once prefs are configured */}
-        {hasPrefs ? (
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-              <p className={cn("text-xl font-extrabold leading-none", streakLoading ? "text-muted-foreground" : streakColor)}>
-                {streakLoading ? "0" : streak}
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                day{streak !== 1 ? "s" : ""} streak 🔥
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-              <p className="text-xl font-extrabold leading-none text-[#5B35D5]">—</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">mastery this wk</p>
-            </div>
-
-            <div className="rounded-2xl bg-secondary/60 px-3 py-2.5">
-              <p className="text-xl font-extrabold leading-none text-foreground">●●●</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">courses active</p>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
-            Set up your study profile to track your streak, mastery, and active courses.
-          </p>
-        )}
-
-        {/* Due today */}
-        {dueCount !== null && dueCount > 0 ? (
+        {!ctaResolved ? (
+          <div className="mt-4 h-[72px] animate-pulse rounded-2xl bg-secondary/70" />
+        ) : dueCount !== null && dueCount > 0 ? (
           <Link
             href="/study/practice?due=1"
             className={cn(
-              "mt-3 flex items-center justify-between gap-3 no-underline",
-              "rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-3 py-2.5",
-              "dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10"
+              "mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 no-underline shadow-sm transition",
+              "bg-[#5B35D5] text-white hover:bg-[#4526B8]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
             )}
           >
-            <p className="text-sm font-semibold text-[#3B24A8] dark:text-indigo-200">
-              {dueCount} {dueCount === 1 ? "card" : "cards"} due today
-            </p>
-            <span className="rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#4526B8]">
-              Review now →
-            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold">
+                Review {dueCount} due card{dueCount === 1 ? "" : "s"} · ~{dueMinutes} min
+              </p>
+              {dueCourses.length > 0 ? (
+                <p className="mt-1 truncate text-xs text-white/70">{dueCourses.join(", ")}</p>
+              ) : null}
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-white" />
           </Link>
-        ) : dueCount === 0 && hasPrefs ? (
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-            All caught up today
-          </div>
-        ) : null}
+        ) : continueAttempt ? (
+          <Link
+            href={`/study/practice/${encodeURIComponent(continueAttempt.set_id)}?attempt=${encodeURIComponent(continueAttempt.id)}`}
+            className={cn(
+              "mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 no-underline transition",
+              "hover:bg-secondary/40",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-foreground">
+                Continue {continueAttempt.study_quiz_sets?.title ?? "Practice set"}
+                {totalCount > 0 ? ` · ${answeredCount}/${totalCount}` : ""}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Resume your in-progress practice attempt.
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        ) : (
+          <Link
+            href="/study/practice"
+            className={cn(
+              "mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 no-underline transition",
+              "hover:bg-secondary/40",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            <div>
+              <p className="text-sm font-extrabold text-foreground">Start practicing</p>
+              <p className="mt-1 text-xs text-muted-foreground">Warm up with a fresh study session.</p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        )}
       </div>
 
-      {/* ── 28-day activity bar ── */}
       <div className="border-t border-border px-5 py-3">
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           28-day activity
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(14, 1fr)", gap: "4px" }}>
-          {dotDays.map((d) => {
-            const isToday = d === todayStr;
-            const practiced = activeDays.has(d);
+          {dotDays.map((day) => {
+            const isToday = day === todayStr;
+            const practiced = activeDays.has(day);
             return (
               <div
-                key={d}
-                title={d}
+                key={day}
+                title={day}
                 className={cn(
                   "h-2 rounded-sm",
                   isToday

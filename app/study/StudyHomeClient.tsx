@@ -9,6 +9,7 @@ import { EmptyState } from "./_components/StudyUI";
 import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
 import { ForYouSection, MaterialCard, Section, Skeleton, type MaterialMini, type Chips } from "./_components/ForYouSection";
 import { ContinueCard } from "./_components/ContinueCard";
+import CourseSearch from "./_components/CourseSearch";
 import { HeroCard } from "./_components/HeroCard";
 import { QuickActions } from "./_components/QuickActions";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
@@ -284,10 +285,12 @@ function StudyHomeInner({
         </Link>
       )}
 
+      <CourseSearch />
+
       <HeroCard
         displayName={displayName}
-        hasPrefs={hasPrefs}
         userId={userId}
+        loading={loading}
       />
 
       <QuickActions />

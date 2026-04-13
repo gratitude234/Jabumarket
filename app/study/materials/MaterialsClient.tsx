@@ -52,6 +52,13 @@ type Course = {
   department_id?: string | null;
 };
 
+type FastLaneCourse = {
+  id: string;
+  course_code: string;
+  course_title: string | null;
+  materialCount: number;
+};
+
 type MaterialRow = {
   id: string;
   title: string | null;
@@ -639,6 +646,8 @@ export default function MaterialsClient() {
   const [scopeDeptId, setScopeDeptId] = useState<string>("");
   const [scopeLevel, setScopeLevel] = useState<number | null>(null);
   const [scopeSemesterDb, setScopeSemesterDb] = useState<string>("");
+  const [fastLaneLoading, setFastLaneLoading] = useState(false);
+  const [fastLaneCourses, setFastLaneCourses] = useState<FastLaneCourse[]>([]);
 
   // Rep / contributor status — determines Upload vs Contribute UI
   const [repStatus, setRepStatus] = useState<
@@ -889,6 +898,74 @@ export default function MaterialsClient() {
     router.replace(href, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefsLoaded]);
+
+  const hasFastLanePrefs = Boolean(scopeLevel || scopeDeptId || scopeDept);
+
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    if (!hasFastLanePrefs) {
+      setFastLaneCourses([]);
+      setFastLaneLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setFastLaneLoading(true);
+      try {
+        let courseQuery = supabase
+          .from("study_courses")
+          .select("id,course_code,course_title")
+          .eq("status", "approved")
+          .order("course_code", { ascending: true })
+          .limit(8);
+
+        if (typeof scopeLevel === "number" && Number.isFinite(scopeLevel)) {
+          courseQuery = courseQuery.eq("level", scopeLevel);
+        }
+
+        if (scopeDeptId) {
+          courseQuery = courseQuery.eq("department_id", scopeDeptId);
+        } else if (scopeDept) {
+          courseQuery = courseQuery.ilike("department", `%${scopeDept}%`);
+        }
+
+        const { data: courseData, error: courseError } = await courseQuery;
+        if (cancelled || courseError || !Array.isArray(courseData) || courseData.length === 0) {
+          if (!cancelled) setFastLaneCourses([]);
+          return;
+        }
+
+        const nextCourses = await Promise.all(
+          (courseData as Array<Pick<FastLaneCourse, "id" | "course_code" | "course_title">>).map(
+            async (course) => {
+              const { count } = await supabase
+                .from("study_materials")
+                .select("id", { count: "exact", head: true })
+                .eq("course_id", course.id)
+                .eq("approved", true);
+
+              return {
+                ...course,
+                materialCount: count ?? 0,
+              };
+            }
+          )
+        );
+
+        if (!cancelled) setFastLaneCourses(nextCourses);
+      } catch {
+        if (!cancelled) setFastLaneCourses([]);
+      } finally {
+        if (!cancelled) setFastLaneLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasFastLanePrefs, prefsLoaded, scopeDept, scopeDeptId, scopeLevel]);
 
   // Load filter options
   useEffect(() => {
@@ -1224,6 +1301,98 @@ export default function MaterialsClient() {
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Link>
       )}
+
+      {fastLaneLoading ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-extrabold text-foreground">My courses</p>
+            <span className="text-xs font-bold text-[#5B35D5] dark:text-indigo-300">All →</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                className="flex shrink-0 animate-pulse rounded-2xl border border-border bg-card px-3 py-2"
+              >
+                <div>
+                  <div className="h-3 w-16 rounded bg-muted" />
+                  <div className="mt-2 h-2.5 w-20 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : hasFastLanePrefs && fastLaneCourses.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-extrabold text-foreground">My courses</p>
+            <Link
+              href="/study/materials"
+              className="text-xs font-bold text-[#5B35D5] hover:underline dark:text-indigo-300"
+            >
+              All →
+            </Link>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {fastLaneCourses.map((course) => {
+              const active = courseParam.toUpperCase() === course.course_code.toUpperCase();
+              return (
+                <button
+                  key={course.id}
+                  type="button"
+                  onClick={() =>
+                    router.replace(
+                      buildHref(pathname, {
+                        q: qParam || null,
+                        level: levelParam || null,
+                        semester: semesterParam || null,
+                        faculty: facultyParam || null,
+                        faculty_id: facultyIdParam || null,
+                        dept: deptParam || null,
+                        dept_id: deptIdParam || null,
+                        course: course.course_code,
+                        session: sessionParam || null,
+                        type: typeParam !== "all" ? typeParam : null,
+                        sort: sortParam !== "newest" ? sortParam : null,
+                        verified: verifiedOnly ? "1" : null,
+                        featured: featuredOnly ? "1" : null,
+                        mine: mineParam || null,
+                      })
+                    )
+                  }
+                  className={cn(
+                    "flex shrink-0 rounded-2xl border px-3 py-2 text-left transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    active
+                      ? "border-[#AFA9EC] bg-[#EEEDFE] dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10"
+                      : "border-border bg-card hover:bg-secondary/30"
+                  )}
+                >
+                  <div>
+                    <p
+                      className={cn(
+                        "text-[12px] font-extrabold",
+                        active ? "text-[#3C3489] dark:text-indigo-200" : "text-foreground"
+                      )}
+                    >
+                      {course.course_code}
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-1 text-[10px]",
+                        active ? "text-[#534AB7] dark:text-indigo-300" : "text-muted-foreground"
+                      )}
+                    >
+                      {course.materialCount} material{course.materialCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
       <div className="sticky top-16 z-30">

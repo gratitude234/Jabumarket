@@ -16,7 +16,7 @@ import {
   BookOpen,
   AlertTriangle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatWhen } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -24,6 +24,37 @@ import StudyTabs from "../_components/StudyTabs";
 type StudyDay  = { day: string; focus: string; tasks: string[]; hours: number };
 type StudyWeek = { week: number; theme: string; weeklyGoal: string; days: StudyDay[] };
 type StudyPlan = { summary: string; totalWeeks: number; weeks: StudyWeek[]; generalTips: string[] };
+type StudyPreferencesRow = {
+  level: number | null;
+  department: string | null;
+  department_id: string | null;
+  faculty: string | null;
+  last_study_plan: unknown;
+  last_study_plan_at: string | null;
+};
+
+function parseStoredPlan(value: unknown): StudyPlan | null {
+  if (!value) return null;
+
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const maybePlan = parsed as Partial<StudyPlan>;
+    if (
+      typeof maybePlan.summary !== "string" ||
+      typeof maybePlan.totalWeeks !== "number" ||
+      !Array.isArray(maybePlan.weeks) ||
+      !Array.isArray(maybePlan.generalTips)
+    ) {
+      return null;
+    }
+
+    return maybePlan as StudyPlan;
+  } catch {
+    return null;
+  }
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -391,9 +422,10 @@ export default function AiStudyPlanPage() {
   const [plan,          setPlan]          = useState<StudyPlan | null>(null);
 
   // ── Persistence
-  const [userId,   setUserId]   = useState<string | null>(null);
-  const [savedAt,  setSavedAt]  = useState<string | null>(null);
-  const [progress, setProgress] = useState<Record<string, boolean>>({});
+  const [userId,      setUserId]      = useState<string | null>(null);
+  const [savedPlan,   setSavedPlan]   = useState<StudyPlan | null>(null);
+  const [savedPlanAt, setSavedPlanAt] = useState<string | null>(null);
+  const [progress,    setProgress]    = useState<Record<string, boolean>>({});
 
   // ── Derived
   const urgency = getUrgency(weeksUntilExam);
@@ -411,8 +443,14 @@ export default function AiStudyPlanPage() {
 
         setUserId(user.id);
 
-        // Restore saved plan from localStorage (< 7 days old)
-        const savedRaw = localStorage.getItem(`jabu_study_plan:${user.id}`);
+        // Restore progress state from localStorage.
+        try {
+          const progressRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
+          if (progressRaw) setProgress(JSON.parse(progressRaw) as Record<string, boolean>);
+        } catch {
+          // ignore malformed progress state
+        }
+        const savedRaw: string | null = null; // Plan restore now comes from study_preferences.
         if (savedRaw) {
           try {
             const saved = JSON.parse(savedRaw) as {
@@ -423,7 +461,8 @@ export default function AiStudyPlanPage() {
             const age = Date.now() - new Date(saved.generatedAt).getTime();
             if (age < 7 * 24 * 60 * 60 * 1000 && saved.plan) {
               setPlan(saved.plan);
-              setSavedAt(saved.generatedAt);
+              setSavedPlan(saved.plan);
+              setSavedPlanAt(saved.generatedAt);
               if (saved.courses?.length) setCourses(saved.courses);
               const progRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
               if (progRaw) setProgress(JSON.parse(progRaw));
@@ -438,11 +477,20 @@ export default function AiStudyPlanPage() {
         // Fetch study preferences
         const { data: prefs } = await supabase
           .from("study_preferences")
-          .select("level, department, department_id, faculty")
+          .select("level, department, department_id, faculty, last_study_plan, last_study_plan_at")
           .eq("user_id", user.id)
           .maybeSingle();
 
-        if (!prefs || cancelled) return;
+        if (cancelled) return;
+
+        const prefsData = (prefs as StudyPreferencesRow | null) ?? null;
+        const restoredPlan = parseStoredPlan(prefsData?.last_study_plan);
+        if (restoredPlan) {
+          setSavedPlan(restoredPlan);
+          setSavedPlanAt(prefsData?.last_study_plan_at ?? null);
+        }
+
+        if (!prefsData) return;
 
         // Fetch courses matching their profile
         let q = supabase
@@ -452,21 +500,21 @@ export default function AiStudyPlanPage() {
           .order("course_code", { ascending: true })
           .limit(10);
 
-        if (prefs.level)         q = q.eq("level", prefs.level);
-        if (prefs.department_id) q = q.eq("department_id", prefs.department_id);
-        else if (prefs.department) q = q.ilike("department", `%${prefs.department}%`);
+        if (prefsData.level) q = q.eq("level", prefsData.level);
+        if (prefsData.department_id) q = q.eq("department_id", prefsData.department_id);
+        else if (prefsData.department) q = q.ilike("department", `%${prefsData.department}%`);
 
         const { data: courseRows } = await q;
         if (cancelled) return;
 
         if (courseRows && courseRows.length > 0) {
-          const codes = courseRows.map((c: any) => c.course_code as string);
+          const codes = (courseRows as Array<{ course_code: string }>).map((course) => course.course_code);
           setCourses(codes);
           setPrefillSource(
-            prefs.department
-              ? `${prefs.level ? `${prefs.level}L · ` : ""}${prefs.department}`
-              : prefs.level
-              ? `${prefs.level}L`
+            prefsData.department
+              ? `${prefsData.level ? `${prefsData.level}L · ` : ""}${prefsData.department}`
+              : prefsData.level
+              ? `${prefsData.level}L`
               : null
           );
         }
@@ -527,7 +575,7 @@ export default function AiStudyPlanPage() {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        accumulated = chunk;
+        accumulated += chunk;
         setStreamingText(accumulated);
       }
 
@@ -539,17 +587,25 @@ export default function AiStudyPlanPage() {
           .replace(/```\s*$/i, "")
           .trim();
         const parsed = JSON.parse(clean) as StudyPlan;
+        const generatedAt = new Date().toISOString();
+
         setPlan(parsed);
-        setSavedAt(null);
+        setSavedPlan(parsed);
+        setSavedPlanAt(generatedAt);
+        setProgress({});
+
         if (userId) {
-          localStorage.setItem(
-            `jabu_study_plan:${userId}`,
-            JSON.stringify({
-              plan: parsed,
-              generatedAt: new Date().toISOString(),
-              courses: validCourses,
-            })
-          );
+          localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
+          await supabase
+            .from("study_preferences")
+            .upsert(
+              {
+                user_id: userId,
+                last_study_plan: JSON.stringify(parsed),
+                last_study_plan_at: generatedAt,
+              },
+              { onConflict: "user_id" }
+            );
         }
       } catch {
         setError("The AI response was too long or malformed. Try fewer weeks or fewer courses.");
@@ -565,11 +621,9 @@ export default function AiStudyPlanPage() {
 
   function clearPlan() {
     if (userId) {
-      localStorage.removeItem(`jabu_study_plan:${userId}`);
       localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
     }
     setPlan(null);
-    setSavedAt(null);
     setProgress({});
   }
 
@@ -646,6 +700,27 @@ export default function AiStudyPlanPage() {
           <p className="text-[13px] text-muted-foreground">Personalised week-by-week study schedule</p>
         </div>
       </div>
+
+      {savedPlan ? (
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-extrabold text-foreground">Your last study plan</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Generated {savedPlanAt ? formatWhen(savedPlanAt) : "recently"} - {savedPlan.totalWeeks} weeks
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPlan(savedPlan)}
+              className="rounded-xl border border-[#AFA9EC] px-3 py-1.5 text-xs font-bold text-[#5B35D5] transition hover:bg-[#EEEDFE] dark:border-[#5B35D5]/40 dark:text-indigo-200 dark:hover:bg-[#5B35D5]/10"
+            >
+              View →
+            </button>
+          </div>
+          <p className="line-clamp-2 text-xs text-muted-foreground">{savedPlan.summary}</p>
+        </div>
+      ) : null}
 
       {/* ── Prefill banner */}
       {prefilling ? (
@@ -884,21 +959,9 @@ export default function AiStudyPlanPage() {
         <div className="space-y-3">
 
           {/* Saved plan banner */}
-          {savedAt && (
+          {savedPlanAt && (
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-secondary/40 px-4 py-2.5">
-              <p className="text-xs text-muted-foreground">
-                Generated{" "}
-                {Math.floor(
-                  (Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)
-                )}{" "}
-                day
-                {Math.floor(
-                  (Date.now() - new Date(savedAt).getTime()) / (1000 * 60 * 60 * 24)
-                ) !== 1
-                  ? "s"
-                  : ""}{" "}
-                ago
-              </p>
+              <p className="text-xs text-muted-foreground">Generated {formatWhen(savedPlanAt)}</p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -979,7 +1042,7 @@ export default function AiStudyPlanPage() {
           </button>
 
           {/* Regenerate */}
-          {!savedAt && (
+          {!savedPlanAt && (
             <button
               type="button"
               onClick={generate}
