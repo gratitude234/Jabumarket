@@ -7,7 +7,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
+  FileText,
   Loader2,
+  MessageCircle,
   RefreshCcw,
   Send,
   Timer,
@@ -333,6 +335,39 @@ export default function PracticeTakeClient() {
       }
     })();
   }, [submitted, finalizing]);
+
+  const [sourceMaterial, setSourceMaterial] = useState<{ id: string; title: string | null } | null>(null);
+  useEffect(() => {
+    const sourceMaterialId = meta?.source_material_id?.trim();
+    if (!sourceMaterialId) {
+      setSourceMaterial(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: srcMat } = await supabase
+          .from("study_materials")
+          .select("id, title")
+          .eq("id", sourceMaterialId)
+          .maybeSingle();
+
+        if (!cancelled && srcMat?.id) {
+          setSourceMaterial({
+            id: String(srcMat.id),
+            title: srcMat.title ?? null,
+          });
+        } else if (!cancelled) {
+          setSourceMaterial(null);
+        }
+      } catch {
+        if (!cancelled) setSourceMaterial(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [meta?.source_material_id]);
 
   // M-3: Mark as understood
   const [understood, setUnderstood] = useState<Record<string, boolean>>({});
@@ -710,6 +745,28 @@ if (err || !meta) {
                 </button>
               )}
 
+              {stats.total > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pct = Math.round((stats.correct / stats.total) * 100);
+                    const setTitle = normalize(meta?.title ?? "a practice set");
+                    const courseCode = meta?.course_code ? ` (${meta.course_code})` : "";
+                    const streakLine = streakCount && streakCount > 1
+                      ? `\n🔥 ${streakCount}-day streak!`
+                      : "";
+                    const msg = encodeURIComponent(
+                      `I scored ${pct}% on "${setTitle}"${courseCode} on Jabumarket Study Hub!${streakLine}\n\nPractice for free: https://jabumarket.com/study`
+                    );
+                    window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener,noreferrer");
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-[#25D366] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#1EB856]"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  WhatsApp
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={async () => {
@@ -869,6 +926,25 @@ if (err || !meta) {
                   <div>
                     <p className="text-sm font-semibold text-foreground">{meta.course_code} materials</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">Brush up on weak topics</p>
+                  </div>
+                </Link>
+              )}
+
+              {sourceMaterial && (
+                <Link
+                  href={`/study/materials/${encodeURIComponent(sourceMaterial.id)}`}
+                  className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+                    <FileText className="h-4 w-4 text-[#5B35D5] dark:text-indigo-300" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      Source material
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                      {sourceMaterial.title ?? "View PDF"}
+                    </p>
                   </div>
                 </Link>
               )}

@@ -159,7 +159,7 @@ export function usePracticeEngine({
 
         const setReq = supabase
           .from("study_quiz_sets")
-          .select("id,title,description,course_code,level,time_limit_minutes,published")
+          .select("id,title,description,course_code,level,time_limit_minutes,source_material_id,published")
           .eq("id", setId)
           .maybeSingle();
 

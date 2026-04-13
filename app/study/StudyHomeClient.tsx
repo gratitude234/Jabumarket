@@ -12,6 +12,7 @@ import { ContinueCard } from "./_components/ContinueCard";
 import CourseSearch from "./_components/CourseSearch";
 import { HeroCard } from "./_components/HeroCard";
 import { QuickActions } from "./_components/QuickActions";
+import RankWidget from "./_components/RankWidget";
 import { cn, currentAcademicSessionFallback } from "@/lib/utils";
 import {
   ArrowRight,
@@ -294,6 +295,8 @@ function StudyHomeInner({
       />
 
       <QuickActions />
+
+      {userId && <RankWidget userId={userId} />}
 
       <ContinueCard />
 

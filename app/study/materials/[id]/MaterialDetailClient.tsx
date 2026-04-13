@@ -301,11 +301,12 @@ type AiSummaryState =
   | { status: "done"; overview: string; keyTopics: string[]; examTips: string[]; cached: boolean }
   | { status: "error"; message: string };
 
-function AiSummarizeCard({ materialId, title, description, courseCode, materialType, compact }: {
+function AiSummarizeCard({ materialId, title, description, courseCode, materialType, compact, autoTrigger }: {
   materialId: string; title: string; description: string | null;
-  courseCode: string | null | undefined; materialType: string | null; compact?: boolean;
+  courseCode: string | null | undefined; materialType: string | null; compact?: boolean; autoTrigger?: boolean;
 }) {
   const [state, setState] = useState<AiSummaryState>({ status: "idle" });
+  const autoTriggeredRef = useRef(false);
 
   async function fetchSummary() {
     setState({ status: "loading" });
@@ -326,6 +327,14 @@ function AiSummarizeCard({ materialId, title, description, courseCode, materialT
       setState({ status: "error", message: "Network error. Please try again." });
     }
   }
+
+  useEffect(() => {
+    if (autoTrigger && state.status === "idle" && !autoTriggeredRef.current) {
+      autoTriggeredRef.current = true;
+      void fetchSummary();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (state.status === "idle") {
     if (compact) {
@@ -357,7 +366,7 @@ function AiSummarizeCard({ materialId, title, description, courseCode, materialT
           <Loader2 className="h-4 w-4 animate-spin" />
         </span>
         <div>
-          <p className="text-sm font-bold text-[#3A2EB8] dark:text-indigo-300">Analysing material…</p>
+          <p className="text-sm font-bold text-[#3A2EB8] dark:text-indigo-300">Summarising...</p>
           <p className="text-xs text-[#5B4FD9]/70">Gemini is generating your summary</p>
         </div>
       </div>
@@ -743,7 +752,8 @@ export default function MaterialDetailClient({
             {/* Summarize + Ask AI side by side */}
             <div className={cn("gap-2", kind === "pdf" ? "grid grid-cols-2" : "block")}>
               <AiSummarizeCard materialId={m.id} title={title} description={m.description}
-                courseCode={course?.course_code} materialType={m.material_type} />
+                courseCode={course?.course_code} materialType={m.material_type}
+                autoTrigger={kind === "pdf" && !m.ai_summary} />
 
               {kind === "pdf" && (
                 <button type="button" onClick={() => setChatOpen((v) => !v)}

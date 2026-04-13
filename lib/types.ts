@@ -111,6 +111,7 @@ export type QuizSet = {
   course_code: string | null;
   level: string | null;
   time_limit_minutes: number | null;
+  source_material_id?: string | null;
 };
 
 export type QuizQuestion = {
