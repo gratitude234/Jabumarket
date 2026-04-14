@@ -45,6 +45,18 @@ export async function POST(req: Request) {
         { onConflict: 'endpoint' }
       );
 
+    // Trim to the 10 most-recent subscriptions for this rider
+    const { data: allSubs } = await admin
+      .from('rider_push_subscriptions')
+      .select('id, updated_at')
+      .eq('rider_id', riderId)
+      .order('updated_at', { ascending: false })
+
+    const toDelete = (allSubs ?? []).slice(10).map((s: { id: string }) => s.id)
+    if (toDelete.length) {
+      await admin.from('rider_push_subscriptions').delete().in('id', toDelete)
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });

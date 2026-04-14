@@ -1230,7 +1230,7 @@ export default function MaterialsClient() {
     );
     try {
       // Atomic increment via DB function — no race condition, bypasses RLS
-      await supabase.rpc("increment_material_downloads", { material_id: materialId });
+      await supabase.rpc("increment_material_downloads", { p_id: materialId });
     } catch {
       // Roll back the optimistic update if the RPC fails
       setMaterials((prev) =>
@@ -1261,8 +1261,10 @@ export default function MaterialsClient() {
 
   const activeTypeLabel = MATERIAL_TYPES.find((t) => t.key === typeParam)?.label ?? "All";
 
-  function onPreviewMaterial(m: MaterialRow) {
-    const href = "";
+  async function onPreviewMaterial(m: MaterialRow) {
+    const res = await fetch(`/api/study/materials/${m.id}/download?preview=1`);
+    const json = res.ok ? await res.json() : null;
+    const href: string = json?.url ?? "";
     if (!href) {
       setToast("No file URL found");
       return;

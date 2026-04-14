@@ -191,12 +191,22 @@ export async function POST(req: Request) {
           uploader_email: uploader_email,
           material_type: material_type || null,
           downloads: 0,
+          course_code:   (courseRow as any)?.course_code   ?? null,
+          department:    (courseRow as any)?.department    ?? null,
+          faculty:       (courseRow as any)?.faculty       ?? null,
+          level:         (courseRow as any)?.level != null
+                           ? String((courseRow as any).level)
+                           : null,
+          semester:      (courseRow as any)?.semester      ?? null,
+          faculty_id:    (courseRow as any)?.faculty_id    ?? null,
+          department_id: (courseRow as any)?.department_id ?? null,
         } as any)
         .select("id")
         .maybeSingle();
 
       if (insErr2) return jsonError(insErr2.message || "Insert failed", 500, "DB_ERROR");
       if (!inserted2?.id) return jsonError("Insert failed", 500, "DB_ERROR");
+      console.error("Primary insert failed, used fallback:", insErr);
 
       // Continue with inserted2
       (inserted as any).id = inserted2.id;

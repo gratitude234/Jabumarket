@@ -40,6 +40,18 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'endpoint' })
 
+    // Trim to the 10 most-recent subscriptions for this user
+    const { data: allSubs } = await admin
+      .from('user_push_subscriptions')
+      .select('id, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+
+    const toDelete = (allSubs ?? []).slice(10).map((s: { id: string }) => s.id)
+    if (toDelete.length) {
+      await admin.from('user_push_subscriptions').delete().in('id', toDelete)
+    }
+
     return NextResponse.json({ ok: true })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Server error'

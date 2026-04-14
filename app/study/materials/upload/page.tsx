@@ -259,6 +259,7 @@ export default function UploadMaterialsPage() {
   const [loading,  setLoading]  = useState(true);
   const [userId,   setUserId]   = useState<string | null>(null);
   const [me,       setMe]       = useState<RepMeResponse | null>(null);
+  const [repDeptName, setRepDeptName] = useState<string | null>(null);
 
   const isRep       = me?.ok && me.status === "approved" && !!me.scope?.department_id && !!me.role;
   const role: Role | null = (me?.role as Role) ?? null;
@@ -365,6 +366,25 @@ export default function UploadMaterialsPage() {
     })();
     return () => { mounted = false; };
   }, [router]);
+
+  useEffect(() => {
+    let mounted = true;
+    setRepDeptName(null);
+    if (!isRep || !departmentId) return () => { mounted = false; };
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from("study_departments")
+          .select("name")
+          .eq("id", departmentId)
+          .maybeSingle();
+        if (mounted) setRepDeptName(data?.name ?? null);
+      } catch {}
+    })();
+
+    return () => { mounted = false; };
+  }, [isRep, departmentId]);
 
   // ── Load recent courses ────────────────────────────────────────────────────
 
@@ -855,6 +875,30 @@ export default function UploadMaterialsPage() {
         </Card>
       ) : (
         <>
+          {isRep && (
+            <div
+              className={cn(
+                "flex items-center gap-3 rounded-2xl px-4 py-3",
+                "border border-[#AFA9EC] bg-[#EEEDFE]",
+                "dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10"
+              )}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0 text-[#5B35D5] dark:text-indigo-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-extrabold text-[#3C3489] dark:text-indigo-200">
+                  Uploading as: {role === "dept_librarian" ? "Dept Librarian" : "Course Rep"}
+                </p>
+                <p className="mt-0.5 text-xs text-[#534AB7] dark:text-indigo-300">
+                  {repDeptName ?? "Your department"}
+                  {role === "course_rep" && allowedLevels?.length
+                    ? ` · ${allowedLevels.map((l) => `${l}L`).join(", ")}`
+                    : " · All levels"}{" "}
+                  — uploads auto-approved
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Banner */}
           {banner && (
             <div

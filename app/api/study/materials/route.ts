@@ -141,6 +141,11 @@ export async function GET(req: Request) {
       else if (dept) mineQuery = mineQuery.eq("department", dept);
       if (course) mineQuery = mineQuery.eq("course_code", course.trim().toUpperCase());
       if (type && type !== "all") mineQuery = mineQuery.eq("material_type", type);
+      if (semester) {
+        const sem = mapSemesterParamToDb(semester);
+        if (sem) mineQuery = mineQuery.eq("semester", sem);
+      }
+      if (session) mineQuery = mineQuery.eq("session", session);
 
       if (sort === "oldest") mineQuery = mineQuery.order("created_at", { ascending: true });
       else if (sort === "downloads_desc") mineQuery = mineQuery.order("downloads", { ascending: false, nullsFirst: false });

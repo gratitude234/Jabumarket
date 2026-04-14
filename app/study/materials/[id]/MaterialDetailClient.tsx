@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Send,
   Share2,
+  ShieldCheck,
   Sparkles,
   Star,
   X,
@@ -73,6 +74,7 @@ type Material = {
   featured: boolean | null;
   created_at: string | null;
   uploader_email: string | null;
+  uploader_id: string | null;
   ai_summary: string | null;
   study_courses: Course | null;
 };
@@ -472,6 +474,7 @@ export default function MaterialDetailClient({
   const [saved, setSaved] = useState(initialSaved);
   const [saving, setSaving] = useState(false);
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
+  const [uploaderIsRep, setUploaderIsRep] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const upvoteCount = m.up_votes ?? 0;
@@ -510,6 +513,22 @@ export default function MaterialDetailClient({
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory]);
   useEffect(() => { if (!chatOpen) return; chatInputRef.current?.focus(); }, [chatOpen]);
+  useEffect(() => {
+    setUploaderIsRep(false);
+    if (!m.uploader_id) return;
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from("study_reps")
+          .select("user_id, role, active")
+          .eq("user_id", m.uploader_id)
+          .eq("active", true)
+          .maybeSingle();
+        if (data?.user_id) setUploaderIsRep(true);
+      } catch {}
+    })();
+  }, [m.uploader_id]);
 
   // Hide bottom nav while quiz sheet is open
   useEffect(() => {
@@ -1010,9 +1029,24 @@ export default function MaterialDetailClient({
             </div>
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground">Uploaded by</p>
-              <p className="truncate text-xs font-semibold text-foreground">
-                {m.uploader_email ? obfuscateEmail(m.uploader_email) : "A student"}
-              </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {m.uploader_email ? obfuscateEmail(m.uploader_email) : "A student"}
+                </p>
+                {uploaderIsRep && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
+                      "border border-[#AFA9EC] bg-[#EEEDFE] text-[10px] font-semibold",
+                      "text-[#3C3489] dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10",
+                      "dark:text-indigo-200"
+                    )}
+                  >
+                    <ShieldCheck className="h-3 w-3" />
+                    Course Rep
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="shrink-0 text-right">

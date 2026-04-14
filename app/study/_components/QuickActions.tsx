@@ -7,9 +7,14 @@ import {
   Calculator,
   MessageCircle,
   MessagesSquare,
+  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface QuickActionsProps {
+  repStatus?: "not_applied" | "pending" | "approved" | "rejected" | null;
+}
 
 const TILES = [
   {
@@ -62,10 +67,24 @@ const TILES = [
   },
 ] as const;
 
-export function QuickActions() {
+const REP_TILE = {
+  href: "/study/apply-rep",
+  label: "Become a Rep",
+  sublabel: "Upload for your dept",
+  icon: ShieldCheck,
+  primary: false,
+  isNew: false,
+} as const;
+
+export function QuickActions({ repStatus }: QuickActionsProps = {}) {
+  const tiles = [
+    ...TILES,
+    ...(repStatus === "not_applied" || repStatus == null ? [REP_TILE] : []),
+  ];
+
   return (
     <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
-      {TILES.map(({ href, label, sublabel, icon: Icon, primary, isNew }) => (
+      {tiles.map(({ href, label, sublabel, icon: Icon, primary, isNew }) => (
         <Link
           key={label}
           href={href}

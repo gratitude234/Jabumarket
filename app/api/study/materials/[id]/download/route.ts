@@ -17,10 +17,11 @@ function jsonError(message: string, status: number, code: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const materialId = String(id || "").trim();
   if (!materialId) return jsonError("Missing id", 400, "BAD_REQUEST");
+  const preview = new URL(req.url).searchParams.get("preview") === "1";
 
   const supabase = await createSupabaseServerClient();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -78,6 +79,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const url = (signed as any)?.signedUrl as string | undefined;
   if (!url) return jsonError("Failed to sign download", 500, "SIGN_DOWNLOAD_FAILED");
+
+  if (preview) {
+    return NextResponse.json({ ok: true, url });
+  }
 
   // Fire-and-forget atomic increment — never blocks the redirect
   void (async () => { try { await admin.rpc("increment_material_downloads", { p_id: materialId }); } catch {} })();

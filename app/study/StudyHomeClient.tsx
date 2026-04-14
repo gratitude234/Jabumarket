@@ -309,7 +309,7 @@ function StudyHomeInner({
         loading={loading}
       />
 
-      <QuickActions />
+      <QuickActions repStatus={rep.status} />
 
       {userId && <RankWidget userId={userId} />}
 

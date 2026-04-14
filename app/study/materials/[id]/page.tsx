@@ -18,7 +18,7 @@ const getMaterial = cache(async (id: string) => {
       `id, title, description, material_type, session,
        approved, downloads, up_votes, down_votes,
        file_url, file_path, ai_summary,
-       verified, featured, created_at, uploader_email,
+       verified, featured, created_at, uploader_email, uploader_id,
        study_courses (
          id, course_code, course_title,
          level, semester, faculty, department

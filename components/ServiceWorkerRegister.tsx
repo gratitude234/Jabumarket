@@ -15,8 +15,22 @@ function urlBase64ToUint8Array(base64String: string) {
   return Uint8Array.from([...rawData], c => c.charCodeAt(0))
 }
 
+async function registerEndpoint(
+  endpoint: string,
+  p256dh: string,
+  auth: string,
+  route: string,
+) {
+  await fetch(route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint, p256dh, auth }),
+  })
+}
+
 export async function subscribeToPush(
-  registration: ServiceWorkerRegistration
+  registration: ServiceWorkerRegistration,
+  role?: 'vendor' | 'rider',
 ) {
   try {
     if (!VAPID_PUBLIC_KEY) return
@@ -25,7 +39,7 @@ export async function subscribeToPush(
 
     if (!sub) {
       // Only subscribe if permission already granted —
-      // don't prompt here; prompting is done elsewhere
+      // prompting is handled elsewhere
       if (Notification.permission !== 'granted') return
 
       sub = await registration.pushManager.subscribe({
@@ -41,25 +55,34 @@ export async function subscribeToPush(
       keys: { p256dh: string; auth: string }
     }
 
-    // POST to universal user push route
-    await fetch('/api/user/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint, p256dh: keys.p256dh, auth: keys.auth }),
-    })
+    // Always register to user_push_subscriptions (drives in-app bell count)
+    await registerEndpoint(endpoint, keys.p256dh, keys.auth, '/api/user/push')
+
+    // Also register to the role-specific table so role push helpers work
+    if (role === 'vendor') {
+      await registerEndpoint(endpoint, keys.p256dh, keys.auth, '/api/vendor/push')
+    } else if (role === 'rider') {
+      await registerEndpoint(endpoint, keys.p256dh, keys.auth, '/api/rider/push')
+    }
   } catch {
     // Silent — push is not critical
   }
 }
 
-export default function ServiceWorkerRegister() {
+type Props = {
+  /** Pass 'vendor' in the vendor layout, 'rider' in the rider layout. */
+  role?: 'vendor' | 'rider'
+}
+
+export default function ServiceWorkerRegister({ role }: Props = {}) {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
     const buildId = process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'
+    const vapidKey = encodeURIComponent(VAPID_PUBLIC_KEY)
 
     navigator.serviceWorker
-      .register(`/sw.js?v=${buildId}`)
+      .register(`/sw.js?v=${buildId}&vapid=${vapidKey}`)
       .then(async (registration) => {
         // Handle SW updates
         registration.addEventListener('updatefound', () => {
@@ -71,7 +94,6 @@ export default function ServiceWorkerRegister() {
               newWorker.state === 'installed' &&
               navigator.serviceWorker.controller
             ) {
-              // New SW waiting — show update toast
               const event = new CustomEvent('sw-update-available', {
                 detail: { worker: newWorker },
               })
@@ -82,13 +104,13 @@ export default function ServiceWorkerRegister() {
 
         // Subscribe to push if already have permission
         if (Notification.permission === 'granted') {
-          await subscribeToPush(registration)
+          await subscribeToPush(registration, role)
         }
       })
       .catch(() => {
         // SW registration failed — not critical
       })
-  }, [])
+  }, [role])
 
   return null
 }

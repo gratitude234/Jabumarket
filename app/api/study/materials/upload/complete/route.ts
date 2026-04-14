@@ -93,7 +93,14 @@ export async function POST(req: Request) {
 
     const patch: any = { updated_at: nowIso };
 
-    if (!exists) {
+    if (exists) {
+      const { data: signedData } = await admin.storage
+        .from("study-materials")
+        .createSignedUrl(file_path as string, 60 * 60 * 24 * 365);
+      if (signedData?.signedUrl) {
+        patch.file_url = signedData.signedUrl;
+      }
+    } else {
       const prior = (row as any).description as string | null;
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
       const note = `[BROKEN_UPLOAD ${stamp}] Client reported completion but file not found in storage.`;

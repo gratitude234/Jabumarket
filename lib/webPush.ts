@@ -1,14 +1,11 @@
 // lib/webPush.ts
 // Sends Web Push notifications using the `web-push` npm package with VAPID.
 //
-// Required env vars (add all four to Vercel → Settings → Environment Variables):
+// Required env vars:
 //   VAPID_PUBLIC_KEY             — base64url EC P-256 public key
 //   VAPID_PRIVATE_KEY            — base64url EC P-256 private key
-//   NEXT_PUBLIC_VAPID_PUBLIC_KEY — same value as VAPID_PUBLIC_KEY (exposed to client)
+//   NEXT_PUBLIC_VAPID_PUBLIC_KEY — same value as VAPID_PUBLIC_KEY (client-exposed)
 //   VAPID_SUBJECT                — mailto: or https: URI identifying the sender
-//
-// Generate a fresh VAPID keypair once:
-//   npx web-push generate-vapid-keys
 //
 // Server-only — never import this file in client components.
 
@@ -25,30 +22,39 @@ export type PushPayload = {
   data?: Record<string, unknown>
 }
 
-// ── VAPID config ──────────────────────────────────────────────────────────────
+// Tri-state result: 'ok' | 'expired' (410/404 — delete sub) | 'error' (transient — keep sub)
+type SendResult = 'ok' | 'expired' | 'error'
 
-function configureVapid() {
-  const pub = process.env.VAPID_PUBLIC_KEY
+// ── VAPID config — lazy singleton ─────────────────────────────────────────────
+
+let _vapidConfigured = false
+
+function ensureVapid() {
+  if (_vapidConfigured) return
+  const pub  = process.env.VAPID_PUBLIC_KEY
   const priv = process.env.VAPID_PRIVATE_KEY
-  const sub = process.env.VAPID_SUBJECT ?? 'mailto:admin@jabumarket.com'
+  const sub  = process.env.VAPID_SUBJECT ?? 'mailto:admin@jabumarket.com'
   if (!pub || !priv) throw new Error('VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set')
   webpush.setVapidDetails(sub, pub, priv)
+  _vapidConfigured = true
 }
 
 // ── Core send ─────────────────────────────────────────────────────────────────
 
 /**
  * Send a Web Push notification to a single device subscription.
- * Returns true on success, false when the subscription is expired/gone (410/404)
- * — caller should delete it from the DB.
+ * Returns:
+ *   'ok'      — delivered successfully
+ *   'expired' — subscription is gone (410/404) — caller should delete it
+ *   'error'   — transient failure — caller should NOT delete the subscription
  * Never throws.
  */
 export async function sendPush(
   subscription: { endpoint: string; p256dh: string; auth: string },
   payload: PushPayload,
-): Promise<boolean> {
+): Promise<SendResult> {
   try {
-    configureVapid()
+    ensureVapid()
 
     await webpush.sendNotification(
       {
@@ -65,15 +71,16 @@ export async function sendPush(
       }),
     )
 
-    return true
+    return 'ok'
   } catch (err: unknown) {
-    // 410 Gone / 404 = subscription expired — tell caller to delete it
     if (err && typeof err === 'object' && 'statusCode' in err) {
       const code = (err as { statusCode: number }).statusCode
-      if (code === 410 || code === 404) return false
+      // 410 Gone / 404 = subscription expired — safe to delete
+      if (code === 410 || code === 404) return 'expired'
     }
+    // Transient error (network, 429, 5xx) — keep the subscription
     console.error('[webPush] sendPush error:', err)
-    return false
+    return 'error'
   }
 }
 
@@ -88,11 +95,11 @@ async function fanOut(
 
   const results = await Promise.allSettled(subs.map(s => sendPush(s, payload)))
 
-  // Remove expired subscriptions (sendPush returns false for 410/404)
+  // Only delete subscriptions confirmed expired (410/404) — never delete on transient errors
   const expiredEndpoints = subs
     .filter((_, i) => {
       const r = results[i]
-      return r.status === 'fulfilled' && r.value === false
+      return r.status === 'fulfilled' && r.value === 'expired'
     })
     .map(s => s.endpoint)
 

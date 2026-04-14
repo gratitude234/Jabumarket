@@ -5,7 +5,13 @@
 // hasn't been written yet (common on first load), even though the user IS logged in.
 
 import type { ReactNode } from 'react';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 export default function VendorLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <ServiceWorkerRegister role="vendor" />
+    </>
+  );
 }

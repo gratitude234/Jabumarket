@@ -17,9 +17,17 @@ export async function POST(
   // Block self-rating
   const { data: matCheck } = await admin
     .from('study_materials')
-    .select('uploader_id')
+    .select('uploader_id, approved')
     .eq('id', materialId)
     .maybeSingle();
+
+  if (!matCheck) {
+    return NextResponse.json({ ok: false, error: "Material not found" }, { status: 404 });
+  }
+
+  if (!(matCheck as any).approved) {
+    return NextResponse.json({ ok: false, error: "Material is not available for voting" }, { status: 403 });
+  }
 
   if ((matCheck as any)?.uploader_id && (matCheck as any).uploader_id === user.id) {
     return NextResponse.json({ ok: false, error: 'You cannot vote on your own material' }, { status: 403 });

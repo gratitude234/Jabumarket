@@ -6,10 +6,11 @@
 const params = new URLSearchParams(self.location.search)
 const CACHE_NAME = 'jabumarket-' + (params.get('v') ?? 'dev')
 
-// Only precache the offline fallback — it's static and safe to cache
+// Store VAPID key in SW scope for pushsubscriptionchange re-subscription
+const VAPID_PUBLIC_KEY = params.get('vapid') ?? ''
+
 const PRECACHE_URLS = ['/offline']
 
-// Routes that must always go to the network (never cached)
 const NETWORK_ONLY = [
   '/api/',
   '/auth/',
@@ -28,7 +29,7 @@ const NETWORK_ONLY = [
   '/admin/',
 ]
 
-// ── Install: pre-cache static fallback ───────────────────────────────────────
+// ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
@@ -36,7 +37,7 @@ self.addEventListener('install', (e) => {
   self.skipWaiting()
 })
 
-// ── Activate: clean up old caches ────────────────────────────────────────────
+// ── Activate ──────────────────────────────────────────────────────────────────
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
@@ -46,29 +47,28 @@ self.addEventListener('activate', (e) => {
   self.clients.claim()
 })
 
-// ── Cache size helper ─────────────────────────────────────────────────────────
+// ── Cache size helper — iterative, not recursive ──────────────────────────────
 async function trimCache(cacheName, maxItems) {
   const cache = await caches.open(cacheName)
   const keys = await cache.keys()
-  if (keys.length > maxItems) {
-    await cache.delete(keys[0])
-    await trimCache(cacheName, maxItems)
-  }
+  const toDelete = keys.slice(0, Math.max(0, keys.length - maxItems))
+  await Promise.all(toDelete.map((k) => cache.delete(k)))
 }
 
-// ── Fetch: network-first for pages, cache-first for static assets ─────────────
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (e) => {
   const { request } = e
   const url = new URL(request.url)
 
-  const isNetworkOnly = NETWORK_ONLY.some(p =>
-    url.pathname === p ||
-    url.pathname.startsWith(p)
-  ) || url.searchParams.has('_rsc')
+  const isNetworkOnly =
+    NETWORK_ONLY.some((p) => url.pathname === p || url.pathname.startsWith(p)) ||
+    url.searchParams.has('_rsc')
 
-  if (request.method !== 'GET' ||
-      url.origin !== self.location.origin ||
-      isNetworkOnly) return
+  if (
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    isNetworkOnly
+  ) return
 
   // Cache-first for static assets (_next/static)
   if (url.pathname.startsWith('/_next/static/')) {
@@ -129,6 +129,43 @@ self.addEventListener('push', (event) => {
   )
 })
 
+// ── Push subscription change — re-register silently rotated subscriptions ─────
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const appServerKey = VAPID_PUBLIC_KEY
+          ? Uint8Array.from(atob(
+              VAPID_PUBLIC_KEY.replace(/-/g, '+').replace(/_/g, '/') +
+              '='.repeat((4 - (VAPID_PUBLIC_KEY.length % 4)) % 4)
+            ), c => c.charCodeAt(0))
+          : undefined
+
+        const newSub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          ...(appServerKey ? { applicationServerKey: appServerKey } : {}),
+        })
+
+        const json = newSub.toJSON()
+        const { endpoint, keys } = json
+
+        // Re-register the new subscription on the server
+        await fetch('/api/user/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint,
+            p256dh: keys?.p256dh,
+            auth:   keys?.auth,
+          }),
+        })
+      } catch (err) {
+        console.error('[SW] pushsubscriptionchange failed:', err)
+      }
+    })()
+  )
+})
+
 // ── Notification click ────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
@@ -138,7 +175,7 @@ self.addEventListener('notificationclick', (event) => {
     self.clients
       .matchAll({ type: 'window', includeUncontrolled: true })
       .then((clients) => {
-        const existing = clients.find(c => c.url.startsWith(self.location.origin))
+        const existing = clients.find((c) => c.url.startsWith(self.location.origin))
         if (existing) {
           existing.focus()
           return existing.navigate(targetUrl)

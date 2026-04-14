@@ -30,7 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const id = resolvedParams?.id || (typeof body?.id === "string" ? body.id : "") || idFromUrl(req);
     if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
 
-    // Optional note: we store it in description (short) for reviewer transparency.
+    // Optional note shown to the uploader after rejection.
     const note = typeof body?.note === "string" ? body.note.trim().slice(0, 400) : "";
 
     const admin = createSupabaseAdminClient();
@@ -57,7 +57,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Standardized patch (no schema-dependent flags).
     const nowIso = new Date().toISOString();
     const patch: any = { approved: false, updated_at: nowIso };
-    if (note) patch.description = note;
+    if (note) patch.rejection_reason = note;
 
     const { data, error } = await admin
       .from("study_materials")

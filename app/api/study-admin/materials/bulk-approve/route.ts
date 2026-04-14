@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const { scope } = await requireStudyModeratorFromRequest(req);
+    const { scope, userId: moderatorId } = await requireStudyModeratorFromRequest(req);
 
     const body = (await req.json().catch(() => null)) as any;
     const ids = Array.isArray(body?.ids) ? body.ids.filter((x: any) => typeof x === "string").slice(0, 200) : [];
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     // then patch denormalized fields per material (only those that have a course row).
     const { error: updErr } = await admin
       .from("study_materials")
-      .update({ approved: true, updated_at: nowIso })
+      .update({ approved: true, updated_at: nowIso, approved_by: moderatorId, approved_at: nowIso })
       .in("id", ids);
     if (!updErr) {
       // Re-sync denormalized fields per material — individual updates, fire-and-forget style
