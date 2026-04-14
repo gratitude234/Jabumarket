@@ -423,6 +423,7 @@ export default function AiStudyPlanPage() {
   const [weeksUntilExam, setWeeksUntilExam] = useState(4);
   const [dailyHours,    setDailyHours]    = useState(4);
   const [weakCourses,   setWeakCourses]   = useState<string[]>([]);
+  const [autoWeakSources, setAutoWeakSources] = useState<Array<{ code: string; avgPct: number }>>([]);
 
   // ── Prefill state
   const [prefilling,    setPrefilling]    = useState(true);
@@ -594,6 +595,72 @@ export default function AiStudyPlanPage() {
               ? `${prefsData.level}L`
               : null
           );
+
+          try {
+            type PracticeAttemptRow = {
+              score: number | null;
+              total_questions: number | null;
+              study_quiz_sets?:
+                | { course_code?: string | null }
+                | Array<{ course_code?: string | null }>
+                | null;
+            };
+
+            const { data: attempts } = await supabase
+              .from("study_practice_attempts")
+              .select("score, total_questions, study_quiz_sets(course_code)")
+              .eq("user_id", user.id)
+              .eq("status", "submitted")
+              .not("score", "is", null)
+              .not("total_questions", "is", null)
+              .gt("total_questions", 0)
+              .limit(150);
+
+            if (!cancelled && attempts && attempts.length > 0) {
+              const byCode = new Map<string, number[]>();
+              for (const attempt of attempts as PracticeAttemptRow[]) {
+                const joined = attempt.study_quiz_sets;
+                const code = (
+                  Array.isArray(joined) ? joined[0]?.course_code : joined?.course_code
+                )?.trim().toUpperCase();
+                if (!code) continue;
+                const pct =
+                  typeof attempt.score === "number" &&
+                  typeof attempt.total_questions === "number" &&
+                  attempt.total_questions > 0
+                    ? Math.round((attempt.score / attempt.total_questions) * 100)
+                    : null;
+                if (pct === null) continue;
+                if (!byCode.has(code)) byCode.set(code, []);
+                byCode.get(code)!.push(pct);
+              }
+
+              const weak: Array<{ code: string; avgPct: number }> = [];
+              for (const [code, pcts] of byCode.entries()) {
+                if (pcts.length < 2) continue;
+                const avgPct = Math.round(pcts.reduce((sum, pct) => sum + pct, 0) / pcts.length);
+                if (avgPct < 60) weak.push({ code, avgPct });
+              }
+
+              const allowedCodes = new Set(codes.map((code) => code.trim().toUpperCase()));
+              const eligibleWeak = weak.filter((item) => allowedCodes.has(item.code));
+              if (eligibleWeak.length > 0) {
+                setAutoWeakSources(eligibleWeak);
+                setWeakCourses((prev) => {
+                  const toAdd = eligibleWeak
+                    .map((item) => item.code)
+                    .filter((code) => !prev.includes(code));
+                  return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+                });
+              } else {
+                setAutoWeakSources([]);
+              }
+            }
+          } catch {
+            // non-critical — silently fail
+          }
+        } else {
+          setAutoWeakSources([]);
         }
       } catch {
         // silently fail — user can still type manually
@@ -947,7 +1014,26 @@ export default function AiStudyPlanPage() {
             Add courses above to select weak ones.
           </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <>
+            {autoWeakSources.length > 0 && (
+              <div
+                className={cn(
+                  "mb-3 flex items-start gap-2 rounded-xl px-3 py-2.5",
+                  "border border-amber-200/60 bg-amber-50/60",
+                  "dark:border-amber-800/40 dark:bg-amber-950/20"
+                )}
+              >
+                <span className="mt-0.5 text-amber-500 dark:text-amber-400">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                </span>
+                <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                  Auto-detected from your practice history:{" "}
+                  {autoWeakSources.map((w) => `${w.code} (${w.avgPct}%)`).join(", ")}
+                  . Pre-selected below — untick if wrong.
+                </p>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
             {courses.map((code) => {
               const isWeak = weakCourses.includes(code);
               return (
@@ -977,7 +1063,8 @@ export default function AiStudyPlanPage() {
                 </button>
               );
             })}
-          </div>
+            </div>
+          </>
         )}
       </SectionCard>
 

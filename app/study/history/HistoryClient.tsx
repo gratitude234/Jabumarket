@@ -92,6 +92,8 @@ type StatsData = {
   firstScore: number | null; // for delta
   bestScore: number | null;
   bestCourseCode: string;
+  worstCourseCode: string | null;
+  worstCourseAvg: number | null;
   totalTimeSeconds: number;
 };
 
@@ -131,7 +133,8 @@ function StatsCards({ stats, loading }: { stats: StatsData | null; loading: bool
       : null;
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div>
+      <div className="grid grid-cols-3 gap-2">
       {/* Attempts */}
       <div className="rounded-2xl border border-border bg-background p-3">
         <p className="text-[11px] text-muted-foreground">Attempts</p>
@@ -167,6 +170,29 @@ function StatsCards({ stats, loading }: { stats: StatsData | null; loading: bool
           <p className="mt-0.5 text-[10px] text-muted-foreground">{stats.bestCourseCode}</p>
         )}
       </div>
+
+      </div>
+
+      {stats.worstCourseCode && stats.worstCourseAvg !== null && stats.worstCourseAvg < 65 && (
+        <Link
+          href={`/study/practice?course=${encodeURIComponent(stats.worstCourseCode)}&view=all`}
+          className={cn(
+            "mt-3 flex items-center justify-between gap-3 rounded-2xl",
+            "border border-rose-200/60 bg-rose-50/60 px-4 py-3 no-underline transition",
+            "hover:bg-rose-50 dark:border-rose-800/40 dark:bg-rose-950/20"
+          )}
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-extrabold text-rose-800 dark:text-rose-300">
+              Needs work: {stats.worstCourseCode}
+            </p>
+            <p className="text-xs text-rose-700/70 dark:text-rose-400">
+              {stats.worstCourseAvg}% avg · tap to practice
+            </p>
+          </div>
+          <ArrowRight className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+        </Link>
+      )}
     </div>
   );
 }
@@ -774,10 +800,44 @@ export default function HistoryClient() {
           }
         }
 
+        const courseAvgs = new Map<string, number[]>();
+        for (const attempt of graded) {
+          const code = attempt.study_quiz_sets?.course_code?.trim().toUpperCase();
+          if (!code) continue;
+          const pct = Math.round((attempt.score! / attempt.total_questions!) * 100);
+          if (!courseAvgs.has(code)) courseAvgs.set(code, []);
+          courseAvgs.get(code)!.push(pct);
+        }
+
+        let worstCourseCode: string | null = null;
+        let worstCourseAvg: number | null = null;
+        for (const [code, pcts] of courseAvgs.entries()) {
+          if (pcts.length < 2) continue;
+          const avg = Math.round(pcts.reduce((s, v) => s + v, 0) / pcts.length);
+          if (worstCourseAvg === null || avg < worstCourseAvg) {
+            worstCourseAvg = avg;
+            worstCourseCode = code;
+          }
+        }
+
+        if (worstCourseCode === bestCourseCode) {
+          worstCourseCode = null;
+          worstCourseAvg = null;
+        }
+
         const totalTimeSeconds = submittedRows.reduce((s, r) => s + (r.time_spent_seconds ?? 0), 0);
 
         if (!cancelled) {
-          setStats({ totalAttempts: submittedRows.length, avgScore, firstScore, bestScore, bestCourseCode, totalTimeSeconds });
+          setStats({
+            totalAttempts: submittedRows.length,
+            avgScore,
+            firstScore,
+            bestScore,
+            bestCourseCode,
+            worstCourseCode,
+            worstCourseAvg,
+            totalTimeSeconds,
+          });
         }
 
         // ── Trend points ──

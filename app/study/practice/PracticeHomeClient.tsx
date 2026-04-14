@@ -1576,6 +1576,14 @@ function PracticeHomeInner() {
       // Slight recency boost
       if (s.created_at) score += 0.2;
 
+      const summary = setAttemptMap[s.id];
+      const bestPct = summary?.bestPct ?? null;
+      const neverAttempted = bestPct === null && !summary?.inProgressId;
+
+      if (neverAttempted) score += 2;
+      if (bestPct !== null && bestPct >= 70) score -= 2;
+      if (bestPct !== null && bestPct < 50) score += 1;
+
       return { s, score };
     });
 
@@ -1583,7 +1591,7 @@ function PracticeHomeInner() {
       .sort((a, b) => b.score - a.score)
       .slice(0, 6)
       .map((x) => x.s);
-  }, [sets, courseParam, levelParam, semesterParam, userPrefs]);
+  }, [sets, courseParam, levelParam, semesterParam, userPrefs, setAttemptMap]);
 
   const visibleSets = useMemo(() => {
     if (viewParam === "for_you") return forYouSets.length ? forYouSets : sets;
