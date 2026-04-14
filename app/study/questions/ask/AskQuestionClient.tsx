@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeft, Loader2, Send, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Search, Send, ShieldAlert } from "lucide-react";
 
 const ACCENT = "#5B35D5";
 
@@ -29,6 +29,14 @@ export default function AskQuestionClient() {
   const [level,   setLevel]   = useState(presetLevel);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
+  const [similarQuestions, setSimilarQuestions] = useState<Array<{
+    id: string;
+    title: string;
+    answers_count: number | null;
+    solved: boolean | null;
+    course_code: string | null;
+  }>>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
 
   const canSubmit = useMemo(() => {
     if (!userId) return false;
@@ -42,6 +50,55 @@ export default function AskQuestionClient() {
       setUserEmail(data?.user?.email ?? null);
     })();
   }, []);
+
+  useEffect(() => {
+    const trimmed = title.trim();
+    if (trimmed.length < 15) {
+      setSimilarQuestions([]);
+      setSimilarLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSimilarLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: trimmed, limit: "3" });
+        if (course) params.set("course", course);
+        const res = await fetch(`/api/study/search?${params.toString()}`);
+        if (!res.ok) throw new Error("search failed");
+        const json = (await res.json()) as {
+          questions?: Array<{
+            id: string;
+            title: string;
+            answers_count?: number | null;
+            solved?: boolean | null;
+            course_code?: string | null;
+          }>;
+        };
+
+        if (cancelled) return;
+        const qs = (json.questions ?? []).map((q) => ({
+          id: q.id,
+          title: q.title,
+          answers_count: q.answers_count ?? null,
+          solved: q.solved ?? null,
+          course_code: q.course_code ?? null,
+        }));
+        setSimilarQuestions(qs.slice(0, 3));
+      } catch {
+        if (!cancelled) setSimilarQuestions([]);
+      } finally {
+        if (!cancelled) setSimilarLoading(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      setSimilarLoading(false);
+    };
+  }, [title, course]);
 
   async function submit() {
     setError(null);
@@ -153,6 +210,75 @@ export default function AskQuestionClient() {
             </div>
           )}
         </div>
+
+        {title.trim().length >= 15 && (similarLoading || similarQuestions.length > 0) && (
+          <div className="rounded-2xl border-t border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground">
+                Similar questions already asked
+              </p>
+              {similarLoading && (
+                <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />
+              )}
+            </div>
+
+            {similarQuestions.length > 0 ? (
+              <div className="divide-y divide-border">
+                {similarQuestions.map((q) => (
+                  <a
+                    key={q.id}
+                    href={`/study/questions/${encodeURIComponent(q.id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      "flex items-start justify-between gap-3 px-4 py-3",
+                      "no-underline transition hover:bg-secondary/30"
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground line-clamp-2">
+                        {q.title}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {q.course_code && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {q.course_code}
+                          </span>
+                        )}
+                        {q.solved ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{ background: "#EAF3DE", color: "#3B6D11" }}
+                          >
+                            Solved
+                          </span>
+                        ) : q.answers_count && q.answers_count > 0 ? (
+                          <span className="text-[10px] text-muted-foreground">
+                            {q.answers_count} answer{q.answers_count !== 1 ? "s" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">
+                            Unanswered
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </a>
+                ))}
+              </div>
+            ) : null}
+
+            {similarQuestions.length > 0 && (
+              <div className="border-t border-border px-4 py-2.5">
+                <p className="text-[11px] text-muted-foreground">
+                  Check these first — your question may already be answered. You can still post if yours is different.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Course + Level side by side */}
         <div className="grid grid-cols-2 divide-x divide-border">

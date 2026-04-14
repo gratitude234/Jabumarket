@@ -31,6 +31,7 @@ type StudyPreferencesRow = {
   faculty: string | null;
   last_study_plan: unknown;
   last_study_plan_at: string | null;
+  last_study_plan_progress: unknown;
 };
 
 function parseStoredPlan(value: unknown): StudyPlan | null {
@@ -445,6 +446,7 @@ export default function AiStudyPlanPage() {
   const [progress,    setProgress]    = useState<Record<string, boolean>>({});
   const currentCgpaRef = useRef(currentCgpa);
   const targetCgpaRef = useRef(targetCgpa);
+  const progressSaveTimer = useRef<number | null>(null);
 
   // ── Derived
   const urgency = getUrgency(weeksUntilExam);
@@ -469,14 +471,6 @@ export default function AiStudyPlanPage() {
         if (!user || cancelled) return;
 
         setUserId(user.id);
-
-        // Restore progress state from localStorage.
-        try {
-          const progressRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
-          if (progressRaw) setProgress(JSON.parse(progressRaw) as Record<string, boolean>);
-        } catch {
-          // ignore malformed progress state
-        }
         const savedRaw: string | null = null; // Plan restore now comes from study_preferences.
         if (savedRaw) {
           try {
@@ -504,7 +498,7 @@ export default function AiStudyPlanPage() {
         // Fetch study preferences
         const { data: prefs } = await supabase
           .from("study_preferences")
-          .select("level, department, department_id, faculty, last_study_plan, last_study_plan_at")
+          .select("level, department, department_id, faculty, last_study_plan, last_study_plan_at, last_study_plan_progress")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -515,6 +509,23 @@ export default function AiStudyPlanPage() {
         if (restoredPlan) {
           setSavedPlan(restoredPlan);
           setSavedPlanAt(prefsData?.last_study_plan_at ?? null);
+        }
+
+        if (
+          prefsData?.last_study_plan_progress &&
+          typeof prefsData.last_study_plan_progress === "object" &&
+          !Array.isArray(prefsData.last_study_plan_progress)
+        ) {
+          setProgress(prefsData.last_study_plan_progress as Record<string, boolean>);
+        } else {
+          try {
+            const progressRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
+            if (progressRaw) {
+              setProgress(JSON.parse(progressRaw) as Record<string, boolean>);
+            }
+          } catch {
+            // silently ignore malformed progress
+          }
         }
 
         const { data: gpaRow } = await supabase
@@ -749,6 +760,7 @@ export default function AiStudyPlanPage() {
                 user_id: userId,
                 last_study_plan: JSON.stringify(parsed),
                 last_study_plan_at: generatedAt,
+                last_study_plan_progress: null,
               },
               { onConflict: "user_id" }
             );
@@ -770,6 +782,14 @@ export default function AiStudyPlanPage() {
       try {
         localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
       } catch {}
+      supabase
+        .from("study_preferences")
+        .update({ last_study_plan_progress: null })
+        .eq("user_id", userId)
+        .then(
+          () => {},
+          () => {}
+        );
     }
     setPlan(null);
     setProgress({});
@@ -782,10 +802,36 @@ export default function AiStudyPlanPage() {
         try {
           localStorage.setItem(`jabu_study_plan_progress:${userId}`, JSON.stringify(next));
         } catch {}
+        if (progressSaveTimer.current) {
+          window.clearTimeout(progressSaveTimer.current);
+        }
+        progressSaveTimer.current = window.setTimeout(async () => {
+          try {
+            await supabase
+              .from("study_preferences")
+              .upsert(
+                {
+                  user_id: userId,
+                  last_study_plan_progress: next,
+                },
+                { onConflict: "user_id" }
+              );
+          } catch {
+            // non-critical — localStorage is the fallback
+          }
+        }, 500);
       }
       return next;
     });
   }
+
+  useEffect(() => {
+    return () => {
+      if (progressSaveTimer.current) {
+        window.clearTimeout(progressSaveTimer.current);
+      }
+    };
+  }, []);
 
   function exportAsText() {
     if (!plan) return;

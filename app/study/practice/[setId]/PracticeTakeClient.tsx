@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   FileText,
+  Flag,
   Loader2,
   MessageCircle,
   RefreshCcw,
@@ -834,6 +835,15 @@ if (err || !meta) {
                       <span className="shrink-0 text-[11px] font-extrabold text-muted-foreground">
                         ×{r.missCount}
                       </span>
+                      <a
+                        href={`/study/report?question=${encodeURIComponent(r.questionId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition no-underline"
+                      >
+                        <Flag className="h-2.5 w-2.5" />
+                        Flag
+                      </a>
                       {r.nextDueAt ? (
                         <span className="shrink-0 text-[10px] text-muted-foreground">
                           due {formatDue(r.nextDueAt)}
@@ -1099,6 +1109,24 @@ if (err || !meta) {
                 );
               })}
             </div>
+
+            {current?.id ? (
+              <div className="mt-3 flex justify-end">
+                <a
+                  href={`/study/report?question=${encodeURIComponent(current.id)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[11px]",
+                    "text-muted-foreground/60 hover:text-muted-foreground",
+                    "transition no-underline"
+                  )}
+                >
+                  <Flag className="h-3 w-3" />
+                  Report an error
+                </a>
+              </div>
+            ) : null}
 
             {/* Navigation + submit */}
             <div className="mt-5 flex items-center justify-between gap-2">
