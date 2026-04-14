@@ -28,7 +28,7 @@ type LeaderRow = {
   points: number;
 };
 
-type Scope = "all" | "dept" | "level";
+type Scope = "all" | "dept" | "level" | "week";
 
 type UserPrefs = {
   department_id: string | null;
@@ -43,7 +43,8 @@ type UserPrefs = {
 type ProfileMap = Record<string, string>;
 
 function displayName(userId: string, email: string, profileMap: ProfileMap): string {
-  return profileMap[userId] ?? email?.split("@")[0] ?? "Anonymous";
+  const fallback = email?.trim() ? email.split("@")[0] : "";
+  return (profileMap[userId] ?? fallback) || "Anonymous";
 }
 
 function initials(name: string): string {
@@ -51,6 +52,15 @@ function initials(name: string): string {
   const a = parts[0]?.[0] ?? "?";
   const b = parts[1]?.[0] ?? "";
   return (a + b).toUpperCase();
+}
+
+function getWeekStartWAT(): string {
+  const now = new Date(Date.now() + 3_600_000);
+  const day = now.getUTCDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  const monday = new Date(now);
+  monday.setUTCDate(monday.getUTCDate() - daysFromMonday);
+  return monday.toISOString().slice(0, 10);
 }
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
@@ -81,6 +91,85 @@ async function fetchLeaderboard(scope: Scope): Promise<{
   }
 
   // Build the base leaderboard query
+  if (scope === "week") {
+    const weekStart = getWeekStartWAT();
+
+    const { data: weeklyActivity } = await supabase
+      .from("study_daily_activity")
+      .select("user_id, points, did_practice, activity_date")
+      .gte("activity_date", weekStart);
+
+    const weekMap = new Map<string, { points: number; days: number }>();
+    for (const row of (weeklyActivity ?? []) as Array<{
+      user_id: string | null;
+      points: number | null;
+      did_practice: boolean | null;
+      activity_date: string | null;
+    }>) {
+      const uid = row.user_id ?? "";
+      if (!uid) continue;
+      const existing = weekMap.get(uid) ?? { points: 0, days: 0 };
+      existing.points += typeof row.points === "number" ? row.points : 0;
+      if (row.did_practice) existing.days += 1;
+      weekMap.set(uid, existing);
+    }
+
+    const allWeekRows: LeaderRow[] = Array.from(weekMap.entries())
+      .map(([user_id, { points, days }]) => ({
+        user_id,
+        email: "",
+        questions: 0,
+        question_upvotes: 0,
+        answers: 0,
+        accepted: 0,
+        practice_points: points,
+        practice_days: days,
+        points,
+      }))
+      .sort((a, b) => b.points - a.points);
+
+    const rows = allWeekRows.slice(0, 50);
+    let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
+    if (currentUserId) {
+      const myIndex = allWeekRows.findIndex((row) => row.user_id === currentUserId);
+      if (myIndex >= 50) {
+        outsideTopNRow = { row: allWeekRows[myIndex], rank: myIndex + 1 };
+      }
+    }
+
+    const allIds = [
+      ...rows.map((row) => row.user_id),
+      ...(outsideTopNRow ? [outsideTopNRow.row.user_id] : []),
+    ];
+    const profileMap: ProfileMap = {};
+    if (allIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id,full_name,email")
+        .in("id", allIds);
+      for (const profile of (profiles ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        email: string | null;
+      }>) {
+        const label =
+          profile.full_name?.trim() ||
+          (profile.email?.trim() ? profile.email.split("@")[0] : "");
+        if (label) profileMap[profile.id] = label;
+      }
+    }
+
+    return {
+      rows,
+      viewMissing: false,
+      currentUserId,
+      userPrefs,
+      scopeLabel: "This week",
+      outsideTopNRow,
+      profileMap,
+    };
+  }
+
   let query = supabase
     .from("study_leaderboard_v")
     .select(
@@ -157,10 +246,13 @@ async function fetchLeaderboard(scope: Scope): Promise<{
   if (allIds.length > 0) {
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id,full_name")
+      .select("id,full_name,email")
       .in("id", allIds);
-    for (const p of (profiles ?? []) as { id: string; full_name: string | null }[]) {
-      if (p.full_name?.trim()) profileMap[p.id] = p.full_name.trim();
+    for (const p of (profiles ?? []) as Array<{ id: string; full_name: string | null; email: string | null }>) {
+      const label =
+        p.full_name?.trim() ||
+        (p.email?.trim() ? p.email.split("@")[0] : "");
+      if (label) profileMap[p.id] = label;
     }
   }
 
@@ -185,6 +277,7 @@ function ScopeTabs({
   userPrefs: UserPrefs | null;
 }) {
   const tabs: Array<{ key: Scope; label: string; disabled?: boolean }> = [
+    { key: "week", label: "This week" },
     { key: "all",   label: "All JABU" },
     {
       key: "dept",
@@ -427,7 +520,8 @@ export default async function LeaderboardPage({
 }) {
   // Validate scope param
   const rawScope = (searchParams?.scope ?? "all").toLowerCase();
-  const scope: Scope = rawScope === "dept" || rawScope === "level" ? rawScope : "all";
+  const scope: Scope =
+    rawScope === "week" || rawScope === "dept" || rawScope === "level" ? rawScope : "all";
 
   let rows: LeaderRow[] = [];
   let fetchError: string | null = null;

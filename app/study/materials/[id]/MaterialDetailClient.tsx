@@ -270,6 +270,13 @@ function InlinePreview({ url, title, kind, onAskAI }: { url: string; title: stri
   );
 }
 
+function computeWeakQuestionNextDue(missCount: number, fromIso: string): string {
+  const daysMap: Record<number, number> = { 1: 1, 2: 1 };
+  const days = daysMap[missCount] ?? Math.min(Math.pow(2, missCount - 2), 30);
+  const base = new Date(fromIso).getTime();
+  return new Date(base + days * 86_400_000).toISOString();
+}
+
 function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onClose: () => void; title: string; url: string; kind: "pdf" | "image" | "other" }) {
   useEffect(() => {
     if (!open) return;
@@ -482,6 +489,7 @@ export default function MaterialDetailClient({
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, { chosen: string; correct: boolean; skipped: boolean }>>({});
   const [retryPool, setRetryPool] = useState<GeneratedQuestion[] | null>(null);
+  const syncedQuizMissesRef = useRef<string | null>(null);
 
   // Rate-limit countdown
   const [genQsCooldown, setGenQsCooldown] = useState(0);
@@ -529,6 +537,91 @@ export default function MaterialDetailClient({
     return () => clearInterval(t);
   }, [genQsCooldown]);
 
+  const qs = generatedQuestions ?? [];
+  const currentAnswer = answers[currentQuestionIndex];
+  const correctCount = Object.values(answers).filter((a) => a.correct).length;
+  const skippedCount = Object.values(answers).filter((a) => a.skipped).length;
+  const missedList = qs
+    .map((q, i) => ({ q, i, ans: answers[i] }))
+    .filter(({ ans }) => ans && !ans.correct && !ans.skipped);
+
+  useEffect(() => {
+    if (quizState !== "results" || !savedSetId || missedList.length === 0) return;
+
+    const syncKey = `${savedSetId}:${missedList.map(({ i }) => i).join(",")}`;
+    if (syncedQuizMissesRef.current === syncKey) return;
+    syncedQuizMissesRef.current = syncKey;
+
+    type ExistingWeakRow = {
+      question_id: string;
+      miss_count: number | null;
+      correct_streak: number | null;
+      last_missed_at: string | null;
+    };
+
+    type SavedQuestionRow = {
+      id: string;
+      prompt: string | null;
+      position: number | null;
+    };
+
+    void (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData?.user?.id;
+        if (!userId) return;
+
+        const { data: dbQuestions } = await supabase
+          .from("study_quiz_questions")
+          .select("id, prompt, position")
+          .eq("set_id", savedSetId)
+          .order("position", { ascending: true });
+
+        const orderedQuestions = (dbQuestions ?? []) as SavedQuestionRow[];
+        if (orderedQuestions.length === 0) return;
+
+        const mappedQuestionIds = missedList
+          .map(({ i }) => orderedQuestions[i]?.id ?? null)
+          .filter((questionId): questionId is string => Boolean(questionId));
+
+        if (mappedQuestionIds.length === 0) return;
+
+        const { data: existingRows } = await supabase
+          .from("study_weak_questions")
+          .select("question_id, miss_count, correct_streak, last_missed_at")
+          .eq("user_id", userId)
+          .in("question_id", mappedQuestionIds);
+
+        const existingMap = new Map<string, ExistingWeakRow>();
+        for (const row of (existingRows ?? []) as ExistingWeakRow[]) {
+          existingMap.set(row.question_id, row);
+        }
+
+        const nowIso = new Date().toISOString();
+        const upsertRows = mappedQuestionIds.map((questionId) => {
+          const existing = existingMap.get(questionId);
+          const missCount = (existing?.miss_count ?? 0) + 1;
+          return {
+            user_id: userId,
+            question_id: questionId,
+            miss_count: missCount,
+            last_missed_at: nowIso,
+            next_due_at: computeWeakQuestionNextDue(missCount, nowIso),
+            correct_streak: 0,
+            graduated_at: null,
+            updated_at: nowIso,
+          };
+        });
+
+        await supabase
+          .from("study_weak_questions")
+          .upsert(upsertRows, { onConflict: "user_id,question_id" });
+      } catch {
+        // non-critical — SRS failure must never break the quiz UX
+      }
+    })();
+  }, [missedList, quizState, savedSetId]);
+
   async function handleToggleSave() {
     setSaving(true);
     const wasSaved = saved;
@@ -569,6 +662,7 @@ export default function MaterialDetailClient({
     setQuizState("loading");
     setGenQsError(null);
     setSavedSetId(null);
+    syncedQuizMissesRef.current = null;
     try {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -609,6 +703,7 @@ export default function MaterialDetailClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSavedSetId(data.setId);
+      syncedQuizMissesRef.current = null;
     } finally { setSavingQs(false); }
   }
 
@@ -967,15 +1062,8 @@ export default function MaterialDetailClient({
 
       {/* Practice Questions Sheet — config / loading / quiz / results */}
       {quizState !== "idle" && (() => {
-        const qs = generatedQuestions ?? [];
         const currentQ = qs[currentQuestionIndex];
-        const currentAnswer = answers[currentQuestionIndex];
         const answered = currentAnswer !== undefined;
-        const correctCount = Object.values(answers).filter((a) => a.correct).length;
-        const skippedCount = Object.values(answers).filter((a) => a.skipped).length;
-        const missedList = qs
-          .map((q, i) => ({ q, i, ans: answers[i] }))
-          .filter(({ ans }) => ans && !ans.correct && !ans.skipped);
         const scoreRingR = 40;
         const scoreRingCx = 50;
         const scoreRingCirc = 2 * Math.PI * scoreRingR;
@@ -1224,6 +1312,7 @@ export default function MaterialDetailClient({
                         setRetryPool(missed);
                         setAnswers({});
                         setCurrentQuestionIndex(0);
+                        syncedQuizMissesRef.current = null;
                         setQuizState("quiz");
                       }}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3A2EB8] transition hover:bg-[#E5E2FF] focus-visible:outline-none">

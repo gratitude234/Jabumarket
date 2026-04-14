@@ -30,6 +30,7 @@ import {
   Layers,
   Plus,
   Loader2,
+  Zap,
   ShieldCheck,
   Lock,
   PenLine,
@@ -1012,6 +1013,7 @@ function PracticeHomeInner() {
     }>;
   } | null>(null);
   const [dueLoading, setDueLoading] = useState(true);
+  const [quickLoading, setQuickLoading] = useState(false);
 
   // Attempts
   const [recentAttempts, setRecentAttempts] = useState<LatestAttempt[]>([]);
@@ -1613,6 +1615,57 @@ function PracticeHomeInner() {
     router.push(url);
   }
 
+  async function handleQuickSession() {
+    if (quickLoading) return;
+    setQuickLoading(true);
+    let navigated = false;
+    try {
+      const level = userPrefs?.level ?? null;
+      const semester = userPrefs?.semester ?? null;
+      const semMap: Record<string, string> = { "1st": "first", "2nd": "second", summer: "summer" };
+      const normalizedSemester = semester
+        ? semMap[semester.trim()] ?? semester.trim().toLowerCase()
+        : null;
+
+      let query = supabase
+        .from("study_quiz_sets")
+        .select("id, title, questions_count, total_questions, level, semester")
+        .eq("published", true)
+        .gt("questions_count", 4);
+
+      if (typeof level === "number") query = query.eq("level", level);
+      if (normalizedSemester) query = query.eq("semester", normalizedSemester);
+
+      const { data: candidates } = await query.limit(20);
+      const preferred = ((candidates ?? []) as QuizSetRow[]).filter((row) => typeof row.id === "string");
+
+      if (preferred.length > 0) {
+        const pick = preferred[Math.floor(Math.random() * preferred.length)];
+        navigated = true;
+        startSet(pick.id, "study");
+        return;
+      }
+
+      const { data: fallback } = await supabase
+        .from("study_quiz_sets")
+        .select("id")
+        .eq("published", true)
+        .gt("questions_count", 4)
+        .limit(20);
+
+      const fallbackRows = ((fallback ?? []) as Array<{ id: string }>).filter((row) => typeof row.id === "string");
+      if (fallbackRows.length === 0) return;
+
+      const pick = fallbackRows[Math.floor(Math.random() * fallbackRows.length)];
+      navigated = true;
+      startSet(pick.id, "study");
+    } catch {
+      // non-fatal — button simply stops loading
+    } finally {
+      if (!navigated) setQuickLoading(false);
+    }
+  }
+
   return (
     // FIX: prevent any horizontal overflow across the whole page
     <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-28 md:pb-6">
@@ -1688,6 +1741,35 @@ function PracticeHomeInner() {
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        onClick={handleQuickSession}
+        disabled={quickLoading}
+        className={cn(
+          "flex w-full items-center justify-between gap-3",
+          "rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm",
+          "transition hover:bg-secondary/20 disabled:opacity-60",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+            {quickLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-[#5B35D5]" />
+            ) : (
+              <Zap className="h-4 w-4 text-[#5B35D5]" />
+            )}
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-extrabold text-foreground">Quick session</p>
+            <p className="text-xs text-muted-foreground">
+              Random set for your level — no setup needed
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
 
       {/* Tabs: For you / Recent / All */}
       <MiniTabs value={viewParam} onChange={setView} />

@@ -1,7 +1,7 @@
 // app/study/ai-plan/page.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
@@ -15,6 +15,7 @@ import {
   Target,
   BookOpen,
   AlertTriangle,
+  Zap,
 } from "lucide-react";
 import { cn, formatWhen } from "@/lib/utils";
 import StudyTabs from "../_components/StudyTabs";
@@ -324,6 +325,12 @@ function GpaSection({
 
 // ── Week Card (plan output) ────────────────────────────────────────────────────
 
+function extractCourseCode(focus: string): string | null {
+  const match = focus.match(/\b([A-Z]{2,4})\s*(\d{3})\b/);
+  if (!match) return null;
+  return `${match[1]} ${match[2]}`;
+}
+
 function WeekCard({
   week,
   weekIdx,
@@ -405,6 +412,26 @@ function WeekCard({
                     </li>
                   ))}
                 </ul>
+                {(() => {
+                  const code = extractCourseCode(d.focus);
+                  if (!code || done) return null;
+                  return (
+                    <Link
+                      href={`/study/practice?course=${encodeURIComponent(code)}&view=for_you`}
+                      className={cn(
+                        "mt-2 inline-flex items-center gap-1.5 rounded-xl",
+                        "border border-[#AFA9EC] bg-[#EEEDFE]/70 px-3 py-1.5",
+                        "text-[11px] font-extrabold text-[#3C3489] no-underline",
+                        "transition hover:bg-[#EEEDFE]",
+                        "dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10",
+                        "dark:text-indigo-200 dark:hover:bg-[#5B35D5]/20"
+                      )}
+                    >
+                      <Zap className="h-3 w-3" />
+                      Practice {code} now
+                    </Link>
+                  );
+                })()}
               </div>
             );
           })}
@@ -873,6 +900,33 @@ export default function AiStudyPlanPage() {
     setWeakCourses((prev) => prev.filter((c) => courses.includes(c)));
   }, [courses]);
 
+  const planCompletionStats = useMemo(() => {
+    if (!plan) return null;
+    let totalDays = 0;
+    let doneDays = 0;
+    plan.weeks.forEach((w, wIdx) => {
+      w.days.forEach((_, dIdx) => {
+        totalDays++;
+        if (progress[`week-${wIdx}-day-${dIdx}`]) doneDays++;
+      });
+    });
+    if (totalDays === 0) return null;
+    return {
+      totalDays,
+      doneDays,
+      pct: Math.round((doneDays / totalDays) * 100),
+      weeksTotal: plan.weeks.length,
+      currentWeek: (() => {
+        for (let wIdx = 0; wIdx < plan.weeks.length; wIdx++) {
+          const w = plan.weeks[wIdx];
+          const allDone = w.days.every((_, dIdx) => !!progress[`week-${wIdx}-day-${dIdx}`]);
+          if (!allDone) return wIdx + 1;
+        }
+        return plan.weeks.length;
+      })(),
+    };
+  }, [plan, progress]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -1242,6 +1296,45 @@ export default function AiStudyPlanPage() {
             <BookOpen className="h-4 w-4 text-muted-foreground" />
             <p className="text-sm font-extrabold text-foreground">Week-by-Week Schedule</p>
           </div>
+
+          {planCompletionStats && (
+            <div className={cn("rounded-2xl border border-border bg-card px-4 py-3 shadow-sm")}>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-extrabold text-foreground">
+                    Week {planCompletionStats.currentWeek} of {planCompletionStats.weeksTotal}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {planCompletionStats.doneDays} of {planCompletionStats.totalDays} days complete
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "text-lg font-extrabold tabular-nums",
+                    planCompletionStats.pct === 100
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-[#5B35D5] dark:text-indigo-300"
+                  )}
+                >
+                  {planCompletionStats.pct}%
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    planCompletionStats.pct === 100 ? "bg-emerald-500" : "bg-[#5B35D5]"
+                  )}
+                  style={{ width: `${planCompletionStats.pct}%` }}
+                />
+              </div>
+              {planCompletionStats.pct === 100 && (
+                <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  Plan complete — well done!
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Week cards */}
           {plan.weeks.map((w, weekIdx) => (
