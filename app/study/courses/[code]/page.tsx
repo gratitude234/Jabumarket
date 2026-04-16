@@ -43,6 +43,7 @@ type Material = {
   title: string | null;
   description: string | null;
   file_url: string | null;
+  file_path: string | null;
   level: string | null;
   semester: string | null;
   session: string | null;
@@ -222,7 +223,7 @@ export default function CourseHubPage() {
       const [mRes, pRes, qRes] = await Promise.all([
         supabase
           .from("study_materials")
-          .select("id,title,description,file_url,level,session,semester,created_at,downloads,material_type")
+          .select("id,title,description,file_url,file_path,level,session,semester,created_at,downloads,material_type")
           .eq("approved", true)
           .eq("course_id", courseRow.id)
           .order("downloads", { ascending: false, nullsFirst: false })
@@ -322,6 +323,13 @@ export default function CourseHubPage() {
 
     return entries;
   }, [filteredMaterials]);
+
+  const firstPdfMaterial = useMemo(() => {
+    return materials.find((m) => {
+      const url = ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase();
+      return url.includes(".pdf");
+    }) ?? null;
+  }, [materials]);
 
   const topPractice = practiceSets[0]?.id ? `/study/practice/${encodeURIComponent(String(practiceSets[0].id))}` : `/study/practice?course=${encodeURIComponent(code)}`;
 
@@ -564,18 +572,56 @@ export default function CourseHubPage() {
           {activeTab === "practice" && (
             <div className="space-y-3">
               {practiceSets.length === 0 ? (
-                <EmptyState
-                  title="No practice sets yet"
-                  description={`Admin or course reps can publish CBT sets for ${code}. Use Materials for revision in the meantime.`}
-                  action={
-                    <Link
-                      href={`/study/practice?course=${encodeURIComponent(code)}`}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
-                    >
-                      Browse all practice <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  }
-                />
+                <>
+                  {firstPdfMaterial && (
+                    <div className={cn(
+                      "mb-4 overflow-hidden rounded-2xl border",
+                      "border-[#AFA9EC] bg-[#EEEDFE]",
+                      "dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10"
+                    )}>
+                      <div className="px-4 py-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-[#5B35D5] dark:text-indigo-300" />
+                          <p className="text-sm font-extrabold text-[#3C3489] dark:text-indigo-200">
+                            No practice sets yet
+                          </p>
+                        </div>
+                        <p className="mb-3 text-xs text-[#534AB7] dark:text-indigo-300">
+                          Generate AI-powered MCQs from the course materials
+                          already uploaded.
+                        </p>
+                        <Link
+                          href={`/study/materials/${encodeURIComponent(firstPdfMaterial.id)}`}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-xl",
+                            "bg-[#5B35D5] px-3 py-2 text-xs font-extrabold",
+                            "text-white no-underline transition hover:bg-[#4526B8]",
+                            "focus-visible:outline-none focus-visible:ring-2",
+                            "focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
+                          )}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Generate questions from{" "}
+                          {(firstPdfMaterial.title ?? "material").trim().slice(0, 30)}
+                          {(firstPdfMaterial.title ?? "").length > 30 ? "…" : ""}
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
+                  <EmptyState
+                    title="No practice sets yet"
+                    description={`Admin or course reps can publish CBT sets for ${code}. Use Materials for revision in the meantime.`}
+                    action={
+                      <Link
+                        href={`/study/practice?course=${encodeURIComponent(code)}`}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline hover:opacity-90"
+                      >
+                        Browse all practice <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    }
+                  />
+                </>
               ) : (
                 <>
                   {practiceSets.map((s) => (

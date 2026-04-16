@@ -6,7 +6,7 @@
 
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { PointsBreakdown } from "./PointsBreakdown";
 import { HowPointsWork } from "./HowPointsWork";
@@ -73,6 +73,8 @@ async function fetchLeaderboard(scope: Scope): Promise<{
   scopeLabel: string;
   outsideTopNRow: { row: LeaderRow; rank: number } | null;
   profileMap: ProfileMap;
+  repUserIds: Set<string>;
+  repRoleMap: Map<string, string>;
 }> {
   const supabase = await createSupabaseServerClient();
 
@@ -89,6 +91,32 @@ async function fetchLeaderboard(scope: Scope): Promise<{
       .maybeSingle();
     if (data) userPrefs = data as UserPrefs;
   }
+
+  const loadRepMeta = async () => {
+    const { data: repRows, error } = await supabase
+      .from("study_reps")
+      .select("user_id, role")
+      .eq("active", true);
+
+    if (error) {
+      return {
+        repUserIds: new Set<string>(),
+        repRoleMap: new Map<string, string>(),
+      };
+    }
+
+    return {
+      repUserIds: new Set<string>(
+        (repRows ?? []).map((r: any) => String(r.user_id))
+      ),
+      repRoleMap: new Map<string, string>(
+        (repRows ?? []).map((r: any) => [
+          String(r.user_id),
+          r.role === "dept_librarian" ? "Dept Librarian" : "Course Rep",
+        ])
+      ),
+    };
+  };
 
   // Build the base leaderboard query
   if (scope === "week") {
@@ -159,6 +187,8 @@ async function fetchLeaderboard(scope: Scope): Promise<{
       }
     }
 
+    const { repUserIds, repRoleMap } = await loadRepMeta();
+
     return {
       rows,
       viewMissing: false,
@@ -167,6 +197,8 @@ async function fetchLeaderboard(scope: Scope): Promise<{
       scopeLabel: "This week",
       outsideTopNRow,
       profileMap,
+      repUserIds,
+      repRoleMap,
     };
   }
 
@@ -213,7 +245,19 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     const viewMissing =
       leaderboardResult.error.code === "42P01" ||
       leaderboardResult.error.message.toLowerCase().includes("study_leaderboard_v");
-    if (viewMissing) return { rows: [], viewMissing: true, currentUserId, userPrefs, scopeLabel, outsideTopNRow: null, profileMap: {} };
+    if (viewMissing) {
+      return {
+        rows: [],
+        viewMissing: true,
+        currentUserId,
+        userPrefs,
+        scopeLabel,
+        outsideTopNRow: null,
+        profileMap: {},
+        repUserIds: new Set<string>(),
+        repRoleMap: new Map<string, string>(),
+      };
+    }
     throw new Error(leaderboardResult.error.message);
   }
 
@@ -256,6 +300,8 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     }
   }
 
+  const { repUserIds, repRoleMap } = await loadRepMeta();
+
   return {
     rows,
     viewMissing: false,
@@ -264,6 +310,8 @@ async function fetchLeaderboard(scope: Scope): Promise<{
     scopeLabel,
     outsideTopNRow,
     profileMap,
+    repUserIds,
+    repRoleMap,
   };
 }
 
@@ -441,11 +489,15 @@ function RankRow({
   rank,
   isCurrentUser,
   name,
+  repUserIds,
+  repRoleMap,
 }: {
   row: LeaderRow;
   rank: number;
   isCurrentUser: boolean;
   name: string;
+  repUserIds: Set<string>;
+  repRoleMap: Map<string, string>;
 }) {
   const inits = initials(name);
   const streakLabel = row.practice_days >= 3 ? `🔥 ${row.practice_days}d` : null;
@@ -487,6 +539,21 @@ function RankRow({
             )}>
               {name}
             </p>
+            {repUserIds.has(row.user_id) && (
+              <span className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
+                "border border-[#AFA9EC] bg-[#EEEDFE]",
+                "text-[10px] font-semibold text-[#3C3489]",
+                "dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10",
+                "dark:text-indigo-200"
+              )}>
+                <ShieldCheck
+                  style={{ width: 10, height: 10 }}
+                  className="text-[#5B35D5] dark:text-indigo-300"
+                />
+                {repRoleMap.get(row.user_id) ?? "Course Rep"}
+              </span>
+            )}
             {isCurrentUser && (
               <span className="shrink-0 rounded-full bg-[#5B35D5] px-1.5 py-px text-[9px] font-bold text-white">
                 you
@@ -531,6 +598,8 @@ export default async function LeaderboardPage({
   let scopeLabel = "All of JABU";
   let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
   let profileMap: ProfileMap = {};
+  let repUserIds = new Set<string>();
+  let repRoleMap = new Map<string, string>();
 
   try {
     const result = await fetchLeaderboard(scope);
@@ -541,6 +610,8 @@ export default async function LeaderboardPage({
     scopeLabel = result.scopeLabel;
     outsideTopNRow = result.outsideTopNRow;
     profileMap = result.profileMap;
+    repUserIds = result.repUserIds;
+    repRoleMap = result.repRoleMap;
   } catch (e: any) {
     fetchError = e?.message ?? "Failed to load leaderboard";
   }
@@ -700,6 +771,8 @@ export default async function LeaderboardPage({
               rank={i + 4}
               isCurrentUser={r.user_id === currentUserId}
               name={displayName(r.user_id, r.email, profileMap)}
+              repUserIds={repUserIds}
+              repRoleMap={repRoleMap}
             />
           ))}
 
@@ -712,6 +785,8 @@ export default async function LeaderboardPage({
                 rank={outsideTopNRow.rank}
                 isCurrentUser
                 name={displayName(outsideTopNRow.row.user_id, outsideTopNRow.row.email, profileMap)}
+                repUserIds={repUserIds}
+                repRoleMap={repRoleMap}
               />
             </>
           )}

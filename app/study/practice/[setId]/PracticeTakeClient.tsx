@@ -78,6 +78,16 @@ function formatDue(iso: string): string {
   return `in ${days}d`;
 }
 
+const STREAK_MILESTONES = [7, 14, 30, 60, 100] as const;
+type StreakMilestone = typeof STREAK_MILESTONES[number];
+
+function getStreakMilestone(streak: number): StreakMilestone | null {
+  for (const m of [...STREAK_MILESTONES].reverse()) {
+    if (streak === m) return m;
+  }
+  return null;
+}
+
 const MILESTONE_STYLES: Record<MilestoneLevel, string> = {
   perfect:   "border-amber-300/50  bg-amber-50   text-amber-900  dark:border-amber-700/50 dark:bg-amber-950/60 dark:text-amber-200",
   excellent: "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-300",
@@ -313,6 +323,7 @@ export default function PracticeTakeClient() {
 
   // Streak feedback — fetched once when results appear
   const [streakCount, setStreakCount] = useState<number | null>(null);
+  const [streakMilestone, setStreakMilestone] = useState<StreakMilestone | null>(null);
   const streakFetchedRef = useRef(false);
   useEffect(() => {
     if (!submitted || finalizing || streakFetchedRef.current) return;
@@ -330,6 +341,8 @@ export default function PracticeTakeClient() {
           .maybeSingle();
         if (data?.did_practice && typeof data?.streak_count === "number") {
           setStreakCount(data.streak_count);
+          const nextMilestone = getStreakMilestone(data.streak_count);
+          if (nextMilestone) setStreakMilestone(nextMilestone);
         }
       } catch {
         // silent
@@ -797,6 +810,63 @@ if (err || !meta) {
           </div>
 
           {/* ── SRS summary card ──────────────────────────────────────────── */}
+          {streakMilestone && (
+            <div className={cn(
+              "overflow-hidden rounded-3xl border shadow-sm",
+              "border-amber-300/50 bg-amber-50 dark:border-amber-700/40",
+              "dark:bg-amber-950/20"
+            )}>
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">🔥</span>
+                  <div>
+                    <p className="text-base font-extrabold text-amber-900 dark:text-amber-200">
+                      {streakMilestone}-day streak!
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      {streakMilestone === 7 && "One full week of consistent study."}
+                      {streakMilestone === 14 && "Two weeks straight — serious dedication."}
+                      {streakMilestone === 30 && "30 days. That's a habit now."}
+                      {streakMilestone === 60 && "60 days. You're in the top tier."}
+                      {streakMilestone === 100 && "100 days. Legendary."}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const msg = encodeURIComponent(
+                      `🔥 I just hit a ${streakMilestone}-day study streak on ` +
+                      `Jabumarket Study Hub!\n\n` +
+                      `${streakMilestone === 7 ? "One full week" :
+                         streakMilestone === 14 ? "Two weeks straight" :
+                         streakMilestone === 30 ? "30 days straight" :
+                         streakMilestone === 60 ? "60 days of consistent study" :
+                         "100 days"} of consistent practice.\n\n` +
+                      `Study smarter: https://jabumarket.com/study`
+                    );
+                    window.open(
+                      `https://wa.me/?text=${msg}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  }}
+                  className={cn(
+                    "mt-3 inline-flex w-full items-center justify-center gap-2",
+                    "rounded-2xl bg-[#25D366] px-4 py-2.5 text-sm font-extrabold",
+                    "text-white transition hover:bg-[#1EB856]",
+                    "focus-visible:outline-none focus-visible:ring-2",
+                    "focus-visible:ring-[#25D366] focus-visible:ring-offset-2"
+                  )}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Share on WhatsApp
+                </button>
+              </div>
+            </div>
+          )}
+
           {weakSummary && weakSummary.filter((r) => !r.wasCorrect).length > 0 ? (
             <Card className="rounded-3xl">
               <div className="flex items-center gap-2.5 mb-3">
