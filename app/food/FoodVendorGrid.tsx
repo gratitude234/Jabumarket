@@ -3,6 +3,7 @@
 // Client component — renders vendor cards with inline MealBuilder (no vendor profile hop)
 
 import { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Clock, CheckCircle2, Circle, Star, ShoppingBag, X, Plus } from 'lucide-react';
@@ -56,10 +57,11 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
             {/* Vendor header */}
             <div className="flex items-start gap-3">
               {v.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={v.avatar_url}
-                  alt=""
+                  alt={v.name ?? 'Vendor'}
+                  width={48}
+                  height={48}
                   className="h-12 w-12 shrink-0 rounded-2xl object-cover"
                 />
               ) : (

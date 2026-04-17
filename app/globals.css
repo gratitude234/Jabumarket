@@ -46,6 +46,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand-market: var(--color-market);
+  --color-brand-study: var(--color-study);
 }
 
 :root {
@@ -73,6 +75,8 @@
 
   --accent: oklch(0.72 0.19 155); /* Emerald */
   --accent-foreground: oklch(0.145 0 0);
+  --color-market: #ff5c00;
+  --color-study: #5b35d5;
 
   --destructive: oklch(0.577 0.245 27.325);
 
@@ -167,7 +171,7 @@
   50% { transform: translateX(60%); }
   100% { transform: translateX(160%); }
 }
--e 
+
 /* Hide scrollbars globally */
 *::-webkit-scrollbar { display: none; }
 

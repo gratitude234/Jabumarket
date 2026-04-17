@@ -1,4 +1,5 @@
 // app/listing/[id]/page.tsx
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
@@ -467,8 +468,13 @@ export default async function ListingPage({
               className="flex items-center gap-3 rounded-2xl border bg-white p-4 no-underline hover:bg-zinc-50 transition"
             >
               {avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                <Image
+                  src={avatarUrl}
+                  alt={vendor?.name ?? "Vendor"}
+                  width={44}
+                  height={44}
+                  className="h-11 w-11 shrink-0 rounded-xl object-cover"
+                />
               ) : (
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-zinc-100 text-sm font-bold text-zinc-600">
                   {vendorInitial}

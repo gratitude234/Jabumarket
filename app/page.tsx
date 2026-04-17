@@ -1,5 +1,6 @@
 // app/page.tsx
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
@@ -379,10 +380,11 @@ export default async function HomePage() {
                   className="group flex min-w-[220px] items-center gap-3 rounded-2xl border border-zinc-100 bg-white p-3.5 transition hover:border-zinc-200 hover:bg-zinc-50 sm:min-w-0"
                 >
                   {v.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={v.avatar_url}
-                      alt=""
+                      alt={v.name ?? "Vendor"}
+                      width={44}
+                      height={44}
                       className="h-11 w-11 shrink-0 rounded-xl object-cover"
                     />
                   ) : (
