@@ -20,7 +20,7 @@ type RateLimitRow = {
   last_called_at: string;
 };
 
-async function enforceRateLimit(
+async function checkRateLimit(
   admin: typeof adminSupabase,
   userId: string,
   endpoint: string,
@@ -53,22 +53,30 @@ async function enforceRateLimit(
     }
   }
 
+  return { allowed: true };
+}
+
+async function writeRateLimit(
+  admin: typeof adminSupabase,
+  userId: string,
+  endpoint: string
+): Promise<string | null> {
   const { error: upsertError } = await admin
     .from("ai_rate_limits")
     .upsert(
       {
         user_id: userId,
         endpoint,
-        last_called_at: new Date(now).toISOString(),
+        last_called_at: new Date().toISOString(),
       },
       { onConflict: "user_id,endpoint" }
     );
 
   if (upsertError) {
-    return { allowed: false, error: upsertError.message };
+    return upsertError.message;
   }
 
-  return { allowed: true };
+  return null;
 }
 
 // GET /api/ai/generate-questions — returns remaining cooldown seconds for the current user
@@ -137,19 +145,17 @@ export async function POST(req: NextRequest) {
   }
 
   const material = mat as StudyMaterialRow;
-  const fileUrl = material.file_url;
   const filePath = material.file_path;
 
   // PDF check
-  const urlStr = ((fileUrl ?? "") + " " + (filePath ?? "")).toLowerCase();
+  const urlStr = (filePath ?? "").toLowerCase();
   if (!urlStr.includes(".pdf")) {
     return NextResponse.json({ error: "Only PDF materials are supported." }, { status: 400 });
   }
 
   // Resolve download URL
-  let downloadUrl: string | null = fileUrl;
-
-  if (!downloadUrl && filePath) {
+  let downloadUrl: string | null = null;
+  if (filePath) {
     const { data: signed } = await admin.storage
       .from("study-materials")
       .createSignedUrl(filePath, 300);
@@ -160,7 +166,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "File URL not available." }, { status: 404 });
   }
 
-  const rateLimit = await enforceRateLimit(
+  const rateLimit = await checkRateLimit(
     admin,
     user.id,
     "generate-questions",
@@ -190,6 +196,13 @@ export async function POST(req: NextRequest) {
     pdfBuffer = await fetchRes.arrayBuffer();
   } catch {
     return NextResponse.json({ error: "Failed to fetch PDF file." }, { status: 502 });
+  }
+
+  if (pdfBuffer.byteLength > 15 * 1024 * 1024) {
+    return NextResponse.json(
+      { error: "This file is too large for AI question generation (max 15 MB). Try a shorter document." },
+      { status: 422 }
+    );
   }
 
   // Call Gemini with PDF inline data
@@ -284,6 +297,14 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       .replace(/```\s*$/i, "")
       .trim();
     const parsed = JSON.parse(clean) as { questions: unknown[] };
+    if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+    }
+    const rateLimitError = await writeRateLimit(admin, user.id, "generate-questions");
+    if (rateLimitError) {
+      console.error("[generate-questions] rate limit write error:", rateLimitError);
+      return NextResponse.json({ error: "Failed to update rate limit." }, { status: 500 });
+    }
     return NextResponse.json({ questions: parsed.questions });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";

@@ -9,6 +9,9 @@
 // ALTER TABLE public.study_quiz_sets
 //   ADD COLUMN IF NOT EXISTS due_at timestamptz
 //     DEFAULT (now() + interval '1 day');
+// ALTER TABLE public.study_quiz_sets
+//   ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'public'
+//   CHECK (visibility IN ('public', 'private', 'pending_review'));
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
@@ -57,6 +60,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
+  for (const question of questions) {
+    const optionKeys = ["A", "B", "C", "D"] as const;
+    const hasAllOptions = optionKeys.every((key) => {
+      const value = question.options?.[key];
+      return typeof value === "string" && value.trim().length > 0;
+    });
+    const validAnswer = optionKeys.includes(question.answer);
+    if (!hasAllOptions || !validAnswer) {
+      return NextResponse.json(
+        { error: "AI returned malformed questions. Please try generating again." },
+        { status: 422 }
+      );
+    }
+  }
+
   const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
@@ -79,6 +97,7 @@ export async function POST(req: NextRequest) {
       course_id: courseId,
       created_by: user.id,
       published: true,
+      visibility: "private",
       source_material_id: materialId,
       due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     } as any)
@@ -99,6 +118,7 @@ export async function POST(req: NextRequest) {
           course_id: courseId,
           created_by: user.id,
           published: true,
+          visibility: "private",
         } as any)
         .select("id")
         .single();
@@ -130,6 +150,13 @@ export async function POST(req: NextRequest) {
 
   if (questionsError || !insertedQuestions) {
     console.error("[save-generated-questions] question insert error:", questionsError);
+    const { error: rollbackError } = await admin
+      .from("study_quiz_sets")
+      .delete()
+      .eq("id", quizSet.id);
+    if (rollbackError) {
+      console.error("[save-generated-questions] question rollback error:", rollbackError);
+    }
     return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
   }
 
@@ -157,6 +184,20 @@ export async function POST(req: NextRequest) {
 
   if (optionPayload.length !== questions.length * 4) {
     console.error("[save-generated-questions] option payload build error");
+    const { error: questionRollbackError } = await admin
+      .from("study_quiz_questions")
+      .delete()
+      .eq("set_id", quizSet.id);
+    if (questionRollbackError) {
+      console.error("[save-generated-questions] option build question rollback error:", questionRollbackError);
+    }
+    const { error: setRollbackError } = await admin
+      .from("study_quiz_sets")
+      .delete()
+      .eq("id", quizSet.id);
+    if (setRollbackError) {
+      console.error("[save-generated-questions] option build set rollback error:", setRollbackError);
+    }
     return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
   }
 
@@ -166,7 +207,21 @@ export async function POST(req: NextRequest) {
 
   if (optionsError) {
     console.error("[save-generated-questions] options insert error:", optionsError);
-    return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });
+    const { error: questionRollbackError } = await admin
+      .from("study_quiz_questions")
+      .delete()
+      .eq("set_id", quizSet.id);
+    if (questionRollbackError) {
+      console.error("[save-generated-questions] options question rollback error:", questionRollbackError);
+    }
+    const { error: setRollbackError } = await admin
+      .from("study_quiz_sets")
+      .delete()
+      .eq("id", quizSet.id);
+    if (setRollbackError) {
+      console.error("[save-generated-questions] options set rollback error:", setRollbackError);
+    }
+    return NextResponse.json({ error: "Failed to save questions. Please try again." }, { status: 500 });
   }
 
   return NextResponse.json({ setId: quizSet.id });
