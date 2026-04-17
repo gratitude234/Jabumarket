@@ -1,4 +1,15 @@
 // app/study/leaderboard/page.tsx
+//
+// Migration: weekly leaderboard view
+// CREATE OR REPLACE VIEW public.study_leaderboard_weekly_v AS
+// SELECT
+//   user_id,
+//   SUM(points) AS total_points,
+//   COUNT(*) FILTER (WHERE did_practice) AS active_days
+// FROM public.study_daily_activity
+// WHERE activity_date >= date_trunc('week', now())
+// GROUP BY user_id;
+//
 // Scoped leaderboard: All / My Department / My Level
 // Scope is resolved server-side using the requesting user's study_preferences.
 // The page remains a Server Component; scope is passed via URL search param
@@ -28,6 +39,12 @@ type LeaderRow = {
   points: number;
 };
 
+type WeeklyLeaderRow = {
+  user_id: string;
+  total_points: number | null;
+  active_days: number | null;
+};
+
 type Scope = "all" | "dept" | "level" | "week";
 
 type UserPrefs = {
@@ -52,15 +69,6 @@ function initials(name: string): string {
   const a = parts[0]?.[0] ?? "?";
   const b = parts[1]?.[0] ?? "";
   return (a + b).toUpperCase();
-}
-
-function getWeekStartWAT(): string {
-  const now = new Date(Date.now() + 3_600_000);
-  const day = now.getUTCDay();
-  const daysFromMonday = day === 0 ? 6 : day - 1;
-  const monday = new Date(now);
-  monday.setUTCDate(monday.getUTCDate() - daysFromMonday);
-  return monday.toISOString().slice(0, 10);
 }
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
@@ -120,48 +128,78 @@ async function fetchLeaderboard(scope: Scope): Promise<{
 
   // Build the base leaderboard query
   if (scope === "week") {
-    const weekStart = getWeekStartWAT();
+    const weeklyResult = await supabase
+      .from("study_leaderboard_weekly_v")
+      .select("user_id,total_points,active_days")
+      .order("total_points", { ascending: false })
+      .limit(50);
 
-    const { data: weeklyActivity } = await supabase
-      .from("study_daily_activity")
-      .select("user_id, points, did_practice, activity_date")
-      .gte("activity_date", weekStart);
-
-    const weekMap = new Map<string, { points: number; days: number }>();
-    for (const row of (weeklyActivity ?? []) as Array<{
-      user_id: string | null;
-      points: number | null;
-      did_practice: boolean | null;
-      activity_date: string | null;
-    }>) {
-      const uid = row.user_id ?? "";
-      if (!uid) continue;
-      const existing = weekMap.get(uid) ?? { points: 0, days: 0 };
-      existing.points += typeof row.points === "number" ? row.points : 0;
-      if (row.did_practice) existing.days += 1;
-      weekMap.set(uid, existing);
+    if (weeklyResult.error) {
+      const viewMissing =
+        weeklyResult.error.code === "42P01" ||
+        weeklyResult.error.message.toLowerCase().includes("study_leaderboard_weekly_v");
+      if (viewMissing) {
+        return {
+          rows: [],
+          viewMissing: true,
+          currentUserId,
+          userPrefs,
+          scopeLabel: "This week",
+          outsideTopNRow: null,
+          profileMap: {},
+          repUserIds: new Set<string>(),
+          repRoleMap: new Map<string, string>(),
+        };
+      }
+      throw new Error(weeklyResult.error.message);
     }
 
-    const allWeekRows: LeaderRow[] = Array.from(weekMap.entries())
-      .map(([user_id, { points, days }]) => ({
-        user_id,
-        email: "",
-        questions: 0,
-        question_upvotes: 0,
-        answers: 0,
-        accepted: 0,
-        practice_points: points,
-        practice_days: days,
-        points,
-      }))
-      .sort((a, b) => b.points - a.points);
-
-    const rows = allWeekRows.slice(0, 50);
+    const rows: LeaderRow[] = ((weeklyResult.data ?? []) as WeeklyLeaderRow[]).map((row) => ({
+      user_id: row.user_id,
+      email: "",
+      questions: 0,
+      question_upvotes: 0,
+      answers: 0,
+      accepted: 0,
+      practice_points: row.total_points ?? 0,
+      practice_days: row.active_days ?? 0,
+      points: row.total_points ?? 0,
+    }));
     let outsideTopNRow: { row: LeaderRow; rank: number } | null = null;
     if (currentUserId) {
-      const myIndex = allWeekRows.findIndex((row) => row.user_id === currentUserId);
-      if (myIndex >= 50) {
-        outsideTopNRow = { row: allWeekRows[myIndex], rank: myIndex + 1 };
+      const { data: myWeeklyData, error: myWeeklyError } = await supabase
+        .from("study_leaderboard_weekly_v")
+        .select("user_id,total_points,active_days")
+        .eq("user_id", currentUserId)
+        .maybeSingle();
+
+      if (myWeeklyError) {
+        throw new Error(myWeeklyError.message);
+      }
+
+      if (myWeeklyData && !rows.some((row) => row.user_id === currentUserId)) {
+        const myRow: LeaderRow = {
+          user_id: myWeeklyData.user_id,
+          email: "",
+          questions: 0,
+          question_upvotes: 0,
+          answers: 0,
+          accepted: 0,
+          practice_points: myWeeklyData.total_points ?? 0,
+          practice_days: myWeeklyData.active_days ?? 0,
+          points: myWeeklyData.total_points ?? 0,
+        };
+
+        const { count, error: rankError } = await supabase
+          .from("study_leaderboard_weekly_v")
+          .select("*", { count: "exact", head: true })
+          .gt("total_points", myRow.points);
+
+        if (rankError) {
+          throw new Error(rankError.message);
+        }
+
+        outsideTopNRow = { row: myRow, rank: (count ?? 0) + 1 };
       }
     }
 
