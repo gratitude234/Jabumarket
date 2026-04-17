@@ -11,22 +11,32 @@
 //
 // REQUIRED ENV VARS
 // -----------------
-//   CRON_SECRET                — shared secret Vercel sends as Bearer token
-//   WHATSAPP_TOKEN             — Meta Cloud API permanent system-user access token
-//   WHATSAPP_PHONE_NUMBER_ID   — Meta Business phone number ID (from API dashboard)
+//   CRON_SECRET                - shared secret Vercel sends as Bearer token
+//   WHATSAPP_TOKEN             - Meta Cloud API permanent system-user access token
+//   WHATSAPP_PHONE_NUMBER_ID   - Meta Business phone number ID (from API dashboard)
 
 import { NextResponse } from "next/server";
+import pLimit from "p-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendUserPush } from "@/lib/webPush";
 
 const WHATSAPP_API_VERSION = "v19.0";
-const WHATSAPP_API_BASE    = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
+const WHATSAPP_API_BASE = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
 const SEND_LIMIT = 200;
 
 type DueRow = { user_id: string | null };
 type DailyActivityRow = { user_id: string };
 type PushSubscriptionRow = { user_id: string };
-type WhatsAppPrefRow = { user_id: string; whatsapp_phone: string; whatsapp_notify: boolean | null };
+type WhatsAppPrefRow = {
+  user_id: string;
+  whatsapp_phone: string;
+  whatsapp_notify: boolean | null;
+};
+type ReminderSendResult = {
+  pushSent: boolean;
+  whatsappSent: boolean;
+  errors: string[];
+};
 
 async function sendWhatsApp(
   phone: string,
@@ -58,7 +68,7 @@ async function sendWhatsApp(
 function buildMessage(to: string, count: number) {
   const plural = count === 1 ? "" : "s";
   const text =
-    `📚 You have ${count} spaced repetition card${plural} due today on ` +
+    `You have ${count} spaced repetition card${plural} due today on ` +
     `Jabumarket Study Hub.\n\nReview now to keep your learning on track: ` +
     `https://jabumarket.com/study/practice?due=1`;
 
@@ -68,6 +78,79 @@ function buildMessage(to: string, count: number) {
     type: "text",
     text: { body: text },
   };
+}
+
+async function sendReminderToUser({
+  admin,
+  userId,
+  count,
+  todayWAT,
+  pushEnabled,
+  waEnabled,
+  waToken,
+  waPhoneId,
+  whatsappPhone,
+}: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  userId: string;
+  count: number;
+  todayWAT: string;
+  pushEnabled: boolean;
+  waEnabled: boolean;
+  waToken: string;
+  waPhoneId: string;
+  whatsappPhone?: string;
+}): Promise<ReminderSendResult> {
+  const plural = count === 1 ? "" : "s";
+  const verb = count === 1 ? "is" : "are";
+  const title = "Cards due for review";
+  const body = `${count} question${plural} ${verb} due today - keep your learning on track!`;
+  const href = "/study/practice?due=1";
+  const result: ReminderSendResult = {
+    pushSent: false,
+    whatsappSent: false,
+    errors: [],
+  };
+
+  try {
+    if (pushEnabled) {
+      const { error: notifError } = await admin.from("notifications").insert({
+        user_id: userId,
+        type: "srs_due_reminder",
+        title,
+        body,
+        href,
+        is_read: false,
+      });
+
+      if (notifError) {
+        result.errors.push(`push:${userId}: ${notifError.message}`);
+      }
+
+      await sendUserPush(userId, {
+        title,
+        body,
+        href,
+        tag: `srs-due-${todayWAT}`,
+      });
+      result.pushSent = true;
+    }
+
+    if (waEnabled && whatsappPhone) {
+      const waResult = await sendWhatsApp(whatsappPhone, count, waToken, waPhoneId);
+      if (waResult.ok) {
+        result.whatsappSent = true;
+      } else {
+        result.errors.push(`wa:${userId}: ${waResult.error ?? "unknown"}`);
+      }
+    }
+  } catch (error: unknown) {
+    result.errors.push(
+      `user:${userId}: ${error instanceof Error ? error.message : "unknown"}`
+    );
+  }
+
+  return result;
 }
 
 export async function POST(req: Request) {
@@ -106,7 +189,13 @@ export async function POST(req: Request) {
   }
 
   if (!dueRows?.length) {
-    return NextResponse.json({ ok: true, targeted: 0, pushSent: 0, whatsappSent: 0, errors: [] });
+    return NextResponse.json({
+      ok: true,
+      targeted: 0,
+      pushSent: 0,
+      whatsappSent: 0,
+      errors: [],
+    });
   }
 
   const dueCounts = new Map<string, number>();
@@ -117,7 +206,13 @@ export async function POST(req: Request) {
 
   const userIds = Array.from(dueCounts.keys());
   if (!userIds.length) {
-    return NextResponse.json({ ok: true, targeted: 0, pushSent: 0, whatsappSent: 0, errors: [] });
+    return NextResponse.json({
+      ok: true,
+      targeted: 0,
+      pushSent: 0,
+      whatsappSent: 0,
+      errors: [],
+    });
   }
 
   const { data: reviewedRows, error: reviewedError } = await admin
@@ -134,11 +229,21 @@ export async function POST(req: Request) {
     );
   }
 
-  const reviewedToday = new Set((reviewedRows ?? []).map((row: DailyActivityRow) => row.user_id));
-  const dueUserIds = userIds.filter((userId) => !reviewedToday.has(userId)).slice(0, SEND_LIMIT);
+  const reviewedToday = new Set(
+    (reviewedRows ?? []).map((row: DailyActivityRow) => row.user_id)
+  );
+  const dueUserIds = userIds
+    .filter((userId) => !reviewedToday.has(userId))
+    .slice(0, SEND_LIMIT);
 
   if (!dueUserIds.length) {
-    return NextResponse.json({ ok: true, targeted: 0, pushSent: 0, whatsappSent: 0, errors: [] });
+    return NextResponse.json({
+      ok: true,
+      targeted: 0,
+      pushSent: 0,
+      whatsappSent: 0,
+      errors: [],
+    });
   }
 
   const [pushSubsRes, waPrefsRes] = await Promise.all([
@@ -156,89 +261,77 @@ export async function POST(req: Request) {
 
   if (pushSubsRes.error) {
     return NextResponse.json(
-      { ok: false, error: `Failed to query push subscriptions: ${pushSubsRes.error.message}` },
+      {
+        ok: false,
+        error: `Failed to query push subscriptions: ${pushSubsRes.error.message}`,
+      },
       { status: 500 }
     );
   }
 
   if (waPrefsRes.error) {
     return NextResponse.json(
-      { ok: false, error: `Failed to query WhatsApp preferences: ${waPrefsRes.error.message}` },
+      {
+        ok: false,
+        error: `Failed to query WhatsApp preferences: ${waPrefsRes.error.message}`,
+      },
       { status: 500 }
     );
   }
 
-  const pushUserIds = new Set((pushSubsRes.data ?? []).map((row: PushSubscriptionRow) => row.user_id));
+  const pushUserIds = new Set(
+    (pushSubsRes.data ?? []).map((row: PushSubscriptionRow) => row.user_id)
+  );
   const waPrefsByUser = new Map(
     ((waPrefsRes.data ?? []) as WhatsAppPrefRow[]).map((row) => [row.user_id, row])
   );
 
-  const targetUserIds = dueUserIds.filter((userId) => pushUserIds.has(userId) || waPrefsByUser.has(userId));
+  const targetUserIds = dueUserIds.filter(
+    (userId) => pushUserIds.has(userId) || waPrefsByUser.has(userId)
+  );
   if (!targetUserIds.length) {
-    return NextResponse.json({ ok: true, targeted: 0, pushSent: 0, whatsappSent: 0, errors: [] });
+    return NextResponse.json({
+      ok: true,
+      targeted: 0,
+      pushSent: 0,
+      whatsappSent: 0,
+      errors: [],
+    });
   }
 
-  const waToken   = process.env.WHATSAPP_TOKEN ?? "";
+  console.log(`[srs-reminder] Processing ${targetUserIds.length} users`);
+
+  const waToken = process.env.WHATSAPP_TOKEN ?? "";
   const waPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
   const waEnabled = Boolean(waToken && waPhoneId);
-
-  let pushSent = 0;
-  let whatsappSent = 0;
   const errors: string[] = [];
 
   if (!waEnabled) {
     errors.push("whatsapp: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID not set");
   }
 
-  for (const userId of targetUserIds) {
-    const count = dueCounts.get(userId) ?? 0;
-    const plural = count === 1 ? "" : "s";
-    const verb = count === 1 ? "is" : "are";
-    const title = "Cards due for review";
-    const body = `${count} question${plural} ${verb} due today — keep your learning on track!`;
-    const href = "/study/practice?due=1";
-
-    if (pushUserIds.has(userId)) {
-      try {
-        await admin.from("notifications").insert({
-          user_id: userId,
-          type: "srs_due_reminder",
-          title,
-          body,
-          href,
-          is_read: false,
-        });
-
-        await sendUserPush(userId, {
-          title,
-          body,
-          href,
-          tag: `srs-due-${todayWAT}`,
-        });
-        pushSent++;
-      } catch (e: unknown) {
-        errors.push(`push:${userId}: ${e instanceof Error ? e.message : "unknown"}`);
-      }
-    }
-
-    if (waEnabled) {
-      const waPref = waPrefsByUser.get(userId);
-      if (waPref?.whatsapp_phone) {
-        const result = await sendWhatsApp(
-          waPref.whatsapp_phone,
-          count,
+  const limit = pLimit(5);
+  const sendResults = await Promise.all(
+    targetUserIds.map((userId) =>
+      limit(() =>
+        sendReminderToUser({
+          admin,
+          userId,
+          count: dueCounts.get(userId) ?? 0,
+          todayWAT,
+          pushEnabled: pushUserIds.has(userId),
+          waEnabled,
           waToken,
-          waPhoneId
-        ).catch((e) => ({ ok: false as const, error: String(e instanceof Error ? e.message : e) }));
+          waPhoneId,
+          whatsappPhone: waPrefsByUser.get(userId)?.whatsapp_phone,
+        })
+      )
+    )
+  );
 
-        if (result.ok) {
-          whatsappSent++;
-        } else {
-          errors.push(`wa:${userId}: ${result.error ?? "unknown"}`);
-        }
-      }
-    }
-  }
+  const pushSent = sendResults.filter((result) => result.pushSent).length;
+  const whatsappSent = sendResults.filter((result) => result.whatsappSent).length;
+  errors.push(...sendResults.flatMap((result) => result.errors));
 
   return NextResponse.json({
     ok: true,

@@ -1,5 +1,19 @@
 // app/api/cron/stale-listings/route.ts
 //
+// Migration: auto-update updated_at on listings
+// CREATE OR REPLACE FUNCTION update_updated_at()
+// RETURNS TRIGGER LANGUAGE plpgsql AS $$
+// BEGIN
+//   NEW.updated_at = now();
+//   RETURN NEW;
+// END;
+// $$;
+//
+// DROP TRIGGER IF EXISTS listings_updated_at ON public.listings;
+// CREATE TRIGGER listings_updated_at
+//   BEFORE UPDATE ON public.listings
+//   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+//
 // Cron: notify sellers when their listing has been active for 30+ days with
 // no update. Sends an in-app notification + skips anyone already notified
 // in the last 25 days (prevents spam on listings that never get updated).
@@ -39,7 +53,7 @@ export async function POST(req: Request) {
     .from("listings")
     .select("id, title, vendor_id, vendors(id, user_id, name)")
     .eq("status", "active")
-    .lt("created_at", staleCutoff)
+    .lt("updated_at", staleCutoff)
     .not("vendor_id", "is", null)
     .limit(RUN_LIMIT);
 
