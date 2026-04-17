@@ -10,9 +10,14 @@ interface Props {
   vendorId: string;
   listingId: string;
   listingTitle?: string;
+  variant?: "full" | "compact";
 }
 
-export default function RequestCallbackButton({ vendorId, listingId }: Props) {
+export default function RequestCallbackButton({
+  vendorId,
+  listingId,
+  variant = "full",
+}: Props) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -27,12 +32,17 @@ export default function RequestCallbackButton({ vendorId, listingId }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vendor_id: vendorId, listing_id: listingId }),
       });
-      const json = (await res.json()) as { ok: boolean; message?: string; conversation_id?: string };
+      const json = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        conversation_id?: string;
+      };
       if (!json.ok) {
         setState("error");
         setErrMsg(json.message ?? "Couldn't send request. Try messaging instead.");
         return;
       }
+
       setState("done");
       setConversationId(json.conversation_id ?? null);
       void supabase.rpc("listing_stats_increment", {
@@ -53,13 +63,16 @@ export default function RequestCallbackButton({ vendorId, listingId }: Props) {
         onClick={handleRequest}
         disabled={state === "loading" || state === "done"}
         className={cn(
-          "inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
+          variant === "compact"
+            ? "inline-flex h-10 w-10 items-center justify-center rounded-full border transition"
+            : "inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition",
           state === "done"
             ? "border-emerald-300 bg-emerald-50 text-emerald-700 cursor-not-allowed"
             : state === "loading"
-            ? "border-zinc-200 bg-zinc-50 text-zinc-400 cursor-not-allowed"
-            : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50"
+              ? "border-zinc-200 bg-zinc-50 text-zinc-400 cursor-not-allowed"
+              : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50"
         )}
+        aria-label="Request a callback"
       >
         {state === "loading" ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -68,23 +81,25 @@ export default function RequestCallbackButton({ vendorId, listingId }: Props) {
         ) : (
           <Phone className="h-4 w-4" />
         )}
-        {state === "loading"
-          ? "Requesting..."
-          : state === "done"
-          ? "Callback requested ✓"
-          : "Request a callback"}
+        {variant === "full"
+          ? state === "loading"
+            ? "Requesting..."
+            : state === "done"
+              ? "Callback requested"
+              : "Request a callback"
+          : null}
       </button>
       {state === "error" && errMsg ? (
         <p className="text-center text-xs text-red-500">{errMsg}</p>
       ) : null}
-      {state === "done" && conversationId && (
+      {variant === "full" && state === "done" && conversationId ? (
         <Link
           href={`/inbox/${conversationId}`}
           className="block text-center text-xs font-medium text-zinc-600 underline"
         >
           Open chat →
         </Link>
-      )}
+      ) : null}
     </div>
   );
 }

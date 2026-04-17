@@ -145,7 +145,6 @@ export default async function HomePage() {
         .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
         .or("verified.eq.true,verification_status.eq.verified")
         .not("name", "is", null)
-        .order("avatar_url", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(18),
       supabase

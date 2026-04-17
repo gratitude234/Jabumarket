@@ -7,6 +7,7 @@ import type { ListingRow, VendorRow } from "@/lib/types";
 import OwnerActions from "@/components/listing/OwnerActions";
 import AskSellerButton from "@/components/listing/AskSellerButton";
 import BuyNowButton from "@/components/listing/BuyNowButton";
+import RequestCallbackButton from "@/components/listing/RequestCallbackButton";
 import SaveButton from "@/components/listing/SaveButton";
 import { VendorRatingBadge } from "@/components/vendor/VendorReviews";
 import BackButton from "@/components/listing/BackButton";
@@ -405,13 +406,13 @@ export default async function ListingPage({
                 </p>
                 {isLongDesc ? (
                   <details className="group">
+                    <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-900 hover:underline">
+                      <span className="group-open:hidden">Read more â†“</span>
+                      <span className="hidden group-open:inline">Show less â†‘</span>
+                    </summary>
                     <p className="text-sm leading-relaxed text-zinc-700 line-clamp-5 group-open:line-clamp-none">
                       {desc}
                     </p>
-                    <summary className="mt-2 cursor-pointer list-none text-xs font-semibold text-zinc-900 hover:underline">
-                      <span className="group-open:hidden">Read more ↓</span>
-                      <span className="hidden group-open:inline">Show less ↑</span>
-                    </summary>
                   </details>
                 ) : (
                   <p className="text-sm leading-relaxed text-zinc-700">{desc}</p>
@@ -610,6 +611,13 @@ export default async function ListingPage({
                   isSold={isSold}
                   variant="icon"
                 />
+                {vendor?.whatsapp ? (
+                  <RequestCallbackButton
+                    vendorId={listing.vendor_id}
+                    listingId={listing.id}
+                    variant="compact"
+                  />
+                ) : null}
                 <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
               </>
             ) : (
@@ -624,6 +632,13 @@ export default async function ListingPage({
                     isSold={isSold}
                   />
                 </div>
+                {vendor?.whatsapp ? (
+                  <RequestCallbackButton
+                    vendorId={listing.vendor_id}
+                    listingId={listing.id}
+                    variant="compact"
+                  />
+                ) : null}
                 <SaveButton listingId={listing.id} variant="icon" className="shrink-0" />
               </>
             )}
