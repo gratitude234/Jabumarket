@@ -429,6 +429,7 @@ export default async function ListingPage({
                   <BuyNowButton
                     listingId={listing.id}
                     vendorId={listing.vendor_id}
+                    vendorName={vendor?.name ?? undefined}
                     listingTitle={listing.title ?? undefined}
                     listingPrice={listing.price}
                     size="full"
@@ -598,6 +599,7 @@ export default async function ListingPage({
                   <BuyNowButton
                     listingId={listing.id}
                     vendorId={listing.vendor_id}
+                    vendorName={vendor?.name ?? undefined}
                     listingTitle={listing.title ?? undefined}
                     listingPrice={listing.price}
                   />

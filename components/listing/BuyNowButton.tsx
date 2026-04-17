@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 type Props = {
   listingId: string;
   vendorId: string;
+  vendorName?: string;
   listingTitle?: string;
   listingPrice?: number | null;
   size?: 'full' | 'compact';
@@ -24,12 +25,14 @@ function onlyDigits(s: string) {
 export default function BuyNowButton({
   listingId,
   vendorId,
+  vendorName,
   listingTitle,
   listingPrice,
   size = 'full',
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [priceDigits, setPriceDigits] = useState(listingPrice ? String(listingPrice) : '');
   const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'cash'>('transfer');
   const [note, setNote] = useState('');
@@ -68,6 +71,7 @@ export default function BuyNowButton({
 
       if (!user) {
         setAuthWall(true);
+        setConfirmOpen(false);
         setLoading(false);
         return;
       }
@@ -104,6 +108,17 @@ export default function BuyNowButton({
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleOpenConfirmation() {
+    const price = parseInt(priceDigits, 10);
+    if (!priceDigits || !Number.isFinite(price) || price <= 0) {
+      setError('Enter the price');
+      return;
+    }
+
+    setError(null);
+    setConfirmOpen(true);
   }
 
   // Auth wall
@@ -229,7 +244,7 @@ export default function BuyNowButton({
 
       <button
         type="button"
-        onClick={handleBuyNow}
+        onClick={handleOpenConfirmation}
         disabled={loading || !priceDigits}
         className={cn(
           'w-full rounded-2xl py-3 text-sm font-semibold text-white transition',
@@ -243,7 +258,7 @@ export default function BuyNowButton({
         ) : (
           <span className="flex items-center justify-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
-            Confirm order
+            Review order
           </span>
         )}
       </button>
@@ -251,6 +266,63 @@ export default function BuyNowButton({
       <p className="text-[11px] text-zinc-400 text-center">
         Creates an order and opens chat. No payment taken yet.
       </p>
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-zinc-900">Confirm order</p>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {listingTitle ?? "This listing"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-full p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+              <p className="text-lg font-bold text-zinc-900">
+                ₦{parseInt(priceDigits || "0", 10).toLocaleString("en-NG")}
+              </p>
+              <p className="mt-1 text-sm text-zinc-600">
+                {paymentMethod === "transfer" ? "Bank transfer" : "Cash on pickup"} to {vendorName ?? "seller"}
+              </p>
+              {note.trim() && (
+                <p className="mt-2 text-xs text-zinc-500">{note.trim()}</p>
+              )}
+            </div>
+
+            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="flex-1 rounded-2xl border border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBuyNow}
+                disabled={loading}
+                className={cn(
+                  "flex-1 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition",
+                  loading ? "bg-zinc-300 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-700"
+                )}
+              >
+                {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

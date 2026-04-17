@@ -227,7 +227,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
                     deliveryAddress: draft.state?.deliveryAddress ?? '',
                     pickupNote: draft.state?.pickupNote ?? '',
                   });
-                  restoredStep = draft.step;
+                  restoredStep = draft.step ?? '';
                   setDraftRestored(true);
                 } else {
                   removeMealDraft(currentDraftKey);
