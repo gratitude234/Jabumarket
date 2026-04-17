@@ -30,11 +30,33 @@ type OrderCard = {
   order_type: 'pickup' | 'delivery' | null;
   delivery_address: string | null;
   created_at: string;
+  eta_ready_at: string | null;
 };
 
 type Tab = 'live' | 'done';
 
 const ETA_OPTIONS = [10, 15, 20, 30] as const;
+const DECLINE_REASONS = ['Item sold out', 'Stall closing soon', 'Other'] as const;
+
+function toTimeInputValue(iso: string | null) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function buildEtaReadyAt(timeValue: string) {
+  const [hours, minutes] = timeValue.split(':').map(Number);
+  const etaDate = new Date();
+  etaDate.setSeconds(0, 0);
+  etaDate.setHours(hours, minutes, 0, 0);
+  if (etaDate.getTime() < Date.now()) {
+    etaDate.setDate(etaDate.getDate() + 1);
+  }
+  return etaDate.toISOString();
+}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -142,6 +164,8 @@ function OrderItem({
   onDecline,
   onReady,
   onDelivered,
+  onUpdateEta,
+  updatingEta,
   onVendorConfirmPayment,
   onPaymentDispute,
   confirmingPayment,
@@ -149,9 +173,11 @@ function OrderItem({
   order: OrderCard;
   acting: boolean;
   onAccept: () => void;
-  onDecline: () => void;
+  onDecline: (reason?: string) => void;
   onReady: () => void;
   onDelivered: () => void;
+  onUpdateEta: (etaReadyAt: string) => void;
+  updatingEta: boolean;
   onVendorConfirmPayment: () => void;
   onPaymentDispute: () => void;
   confirmingPayment: boolean;
@@ -169,6 +195,10 @@ function OrderItem({
   const [assigning, setAssigning] = useState(false);
   const [assigned, setAssigned] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [showDeclinePicker, setShowDeclinePicker] = useState(false);
+  const [declineReason, setDeclineReason] = useState<(typeof DECLINE_REASONS)[number]>('Item sold out');
+  const [showEtaEditor, setShowEtaEditor] = useState(false);
+  const [etaTime, setEtaTime] = useState(toTimeInputValue(order.eta_ready_at));
 
   async function loadRiders() {
     setRidersLoading(true);
@@ -206,6 +236,17 @@ function OrderItem({
     } finally {
       setAssigning(false);
     }
+  }
+
+  function confirmDecline() {
+    onDecline(declineReason);
+    setShowDeclinePicker(false);
+  }
+
+  function submitEtaUpdate() {
+    if (!etaTime) return;
+    onUpdateEta(buildEtaReadyAt(etaTime));
+    setShowEtaEditor(false);
   }
 
   return (
@@ -278,7 +319,7 @@ function OrderItem({
               <button
                 type="button"
                 disabled={acting}
-                onClick={onDecline}
+                onClick={() => setShowDeclinePicker((value) => !value)}
                 className="rounded-2xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
               >
                 Decline
@@ -304,16 +345,26 @@ function OrderItem({
         })()}
 
         {(order.status === 'confirmed' || order.status === 'preparing') && (
-          <button
-            type="button"
-            disabled={acting}
-            onClick={onReady}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {acting
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> Updating…</>
-              : <><Bell className="h-4 w-4" /> {order.order_type === 'delivery' ? 'Mark ready for delivery' : 'Mark ready for pickup'}</>}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={updatingEta}
+              onClick={() => setShowEtaEditor((value) => !value)}
+              className="rounded-2xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {updatingEta ? 'Updating ETA…' : 'Update ETA'}
+            </button>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={onReady}
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {acting
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Updating…</>
+                : <><Bell className="h-4 w-4" /> {order.order_type === 'delivery' ? 'Mark ready for delivery' : 'Mark ready for pickup'}</>}
+            </button>
+          </>
         )}
 
         {order.status === 'ready' && (
@@ -339,6 +390,73 @@ function OrderItem({
           </Link>
         )}
       </div>
+
+      {showDeclinePicker && order.status === 'pending' && (
+        <div className="mt-3 space-y-2 rounded-2xl border border-red-200 bg-red-50 p-3">
+          <p className="text-xs font-semibold text-red-800">Why are you declining this order?</p>
+          <div className="space-y-2">
+            {DECLINE_REASONS.map((reason) => (
+              <label key={reason} className="flex items-center gap-2 text-sm text-red-900">
+                <input
+                  type="radio"
+                  name={`decline-${order.id}`}
+                  checked={declineReason === reason}
+                  onChange={() => setDeclineReason(reason)}
+                />
+                {reason}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDeclinePicker(false)}
+              className="flex-1 rounded-xl border border-red-200 bg-white py-2 text-xs font-medium text-red-700 hover:bg-red-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmDecline}
+              disabled={acting}
+              className="flex-1 rounded-xl bg-red-600 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Confirm decline
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showEtaEditor && ['confirmed', 'preparing'].includes(order.status) && (
+        <div className="mt-3 space-y-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-3">
+          <label className="block text-xs font-semibold text-zinc-700">
+            New ready time
+          </label>
+          <input
+            type="time"
+            value={etaTime}
+            onChange={(e) => setEtaTime(e.target.value)}
+            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowEtaEditor(false)}
+              className="flex-1 rounded-xl border border-zinc-200 bg-white py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submitEtaUpdate}
+              disabled={updatingEta || !etaTime}
+              className="flex-1 rounded-xl bg-zinc-900 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {updatingEta ? 'Saving…' : 'Save ETA'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Payment confirmation — shown when buyer claims they've transferred */}
       {order.payment_status === 'buyer_confirmed' && (
@@ -656,11 +774,44 @@ export default function VendorOrdersPage() {
   const [historyMore, setHistoryMore]   = useState(false);
   const [historyLoading, setHistLoading]= useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState<string | null>(null);
+  const [updatingEtaOrderId, setUpdatingEtaOrderId] = useState<string | null>(null);
+  const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playNewOrderAlert = useCallback(() => {
+    if (!audioAlertsEnabled) return;
+    try {
+      if (!audioCtxRef.current) {
+        const windowWithWebkitAudio = window as typeof window & {
+          webkitAudioContext?: typeof AudioContext;
+        };
+        const AudioCtor = window.AudioContext ?? windowWithWebkitAudio.webkitAudioContext;
+        if (!AudioCtor) return;
+        audioCtxRef.current = new AudioCtor();
+      }
+      const ctx = audioCtxRef.current;
+      [0, 200].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0, ctx.currentTime + delay / 1000);
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + delay / 1000 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay / 1000 + 0.18);
+        osc.start(ctx.currentTime + delay / 1000);
+        osc.stop(ctx.currentTime + delay / 1000 + 0.2);
+      });
+    } catch (error) {
+      console.error('[vendor/orders] audio alert failed:', error);
+    }
+  }, [audioAlertsEnabled]);
 
   const loadOrders = useCallback(async (vid: string) => {
     const { data } = await supabase
       .from('orders')
-      .select('id, conversation_id, buyer_id, items, total, status, payment_status, payment_method, receipt_url, pickup_note, order_type, delivery_address, created_at')
+      .select('id, conversation_id, buyer_id, items, total, status, payment_status, payment_method, receipt_url, pickup_note, order_type, delivery_address, created_at, eta_ready_at')
       .eq('vendor_id', vid)
       .in('status', ['pending', 'confirmed', 'preparing', 'ready'])
       .order('created_at', { ascending: false });
@@ -672,7 +823,7 @@ export default function VendorOrdersPage() {
     const PAGE = 20;
     const { data } = await supabase
       .from('orders')
-      .select('id, conversation_id, buyer_id, items, total, status, payment_status, payment_method, receipt_url, pickup_note, order_type, delivery_address, created_at')
+      .select('id, conversation_id, buyer_id, items, total, status, payment_status, payment_method, receipt_url, pickup_note, order_type, delivery_address, created_at, eta_ready_at')
       .eq('vendor_id', vid)
       .in('status', ['delivered', 'cancelled'])
       .order('created_at', { ascending: false })
@@ -705,6 +856,11 @@ export default function VendorOrdersPage() {
     })();
   }, [loadOrders]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setAudioAlertsEnabled(localStorage.getItem('vendor-audio-alerts') !== 'false');
+  }, []);
+
   // Realtime — live order updates + new order alerts
   useEffect(() => {
     if (!vendorId) return;
@@ -716,28 +872,21 @@ export default function VendorOrdersPage() {
         { event: '*', schema: 'public', table: 'orders', filter: `vendor_id=eq.${vendorId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setOrders((prev) => [payload.new as OrderCard, ...prev]);
-            setNewAlert(true);
-            // Double-beep: no external assets, Web Audio API
-            try {
-              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-              [0, 200].forEach((delay) => {
-                const osc  = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.type = 'sine';
-                osc.frequency.value = 880;
-                gain.gain.setValueAtTime(0, ctx.currentTime + delay / 1000);
-                gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + delay / 1000 + 0.01);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay / 1000 + 0.18);
-                osc.start(ctx.currentTime + delay / 1000);
-                osc.stop(ctx.currentTime + delay / 1000 + 0.2);
-              });
-            } catch { /* audio not available — visual alert still fires */ }
+            const newOrder = payload.new as OrderCard;
+            setOrders((prev) => {
+              if (prev.some((order) => order.id === newOrder.id)) return prev;
+              return [newOrder, ...prev].filter((order) => !['delivered', 'cancelled'].includes(order.status));
+            });
+            if (!['delivered', 'cancelled'].includes(newOrder.status)) {
+              setNewAlert(true);
+              playNewOrderAlert();
+            }
           } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as OrderCard;
             setOrders((prev) =>
-              prev.map((o) => (o.id === (payload.new as OrderCard).id ? (payload.new as OrderCard) : o))
+              prev
+                .map((o) => (o.id === updated.id ? updated : o))
+                .filter((o) => !['delivered', 'cancelled'].includes(o.status))
             );
           }
         }
@@ -745,7 +894,7 @@ export default function VendorOrdersPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [vendorId]);
+  }, [playNewOrderAlert, vendorId]);
 
   useEffect(() => {
     if (!newAlert) return;
@@ -753,7 +902,16 @@ export default function VendorOrdersPage() {
     return () => clearTimeout(t);
   }, [newAlert]);
 
-  async function updateStatus(orderId: string, status: string, etaMinutes?: number) {
+  useEffect(() => {
+    return () => {
+      const audioCtx = audioCtxRef.current;
+      if (audioCtx) {
+        void audioCtx.close().catch(() => undefined);
+      }
+    };
+  }, []);
+
+  async function updateStatus(orderId: string, status: string, etaMinutes?: number, reason?: string) {
     setActing(orderId);
     setOrders((prev) =>
       prev.map((o) => o.id === orderId ? { ...o, status: status as OrderStatus } : o)
@@ -762,7 +920,11 @@ export default function VendorOrdersPage() {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, ...(etaMinutes ? { eta_minutes: etaMinutes } : {}) }),
+        body: JSON.stringify({
+          status,
+          ...(etaMinutes ? { eta_minutes: etaMinutes } : {}),
+          ...(reason ? { reason } : {}),
+        }),
       });
       const json = await res.json();
       if (!json.ok && vendorIdRef.current) await loadOrders(vendorIdRef.current);
@@ -770,6 +932,33 @@ export default function VendorOrdersPage() {
       if (vendorIdRef.current) await loadOrders(vendorIdRef.current);
     } finally {
       setActing(null);
+    }
+  }
+
+  async function updateEta(orderId: string, etaReadyAt: string) {
+    setUpdatingEtaOrderId(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/update-eta`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eta_ready_at: etaReadyAt }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error ?? 'Failed to update ETA');
+      }
+      setOrders((prev) =>
+        prev.map((order) => (
+          order.id === orderId
+            ? { ...order, eta_ready_at: etaReadyAt }
+            : order
+        ))
+      );
+    } catch (error) {
+      console.error('[vendor/orders] update ETA failed:', error);
+      if (vendorIdRef.current) await loadOrders(vendorIdRef.current);
+    } finally {
+      setUpdatingEtaOrderId(null);
     }
   }
 
@@ -853,13 +1042,26 @@ export default function VendorOrdersPage() {
       )}
 
       <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
-        <div>
-          <h1 className="text-xl font-bold text-zinc-900">Orders</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {pendingCount > 0
-              ? `${pendingCount} order${pendingCount === 1 ? '' : 's'} waiting for you`
-              : 'No pending orders right now'}
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-zinc-900">Orders</h1>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              {pendingCount > 0
+                ? `${pendingCount} order${pendingCount === 1 ? '' : 's'} waiting for you`
+                : 'No pending orders right now'}
+            </p>
+          </div>
+          <label className="flex items-center gap-2 pt-1 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={audioAlertsEnabled}
+              onChange={(e) => {
+                setAudioAlertsEnabled(e.target.checked);
+                localStorage.setItem('vendor-audio-alerts', String(e.target.checked));
+              }}
+            />
+            Audio alerts
+          </label>
         </div>
 
         {/* Push notification opt-in */}
@@ -926,9 +1128,11 @@ export default function VendorOrdersPage() {
                   order={order}
                   acting={acting === order.id}
                   onAccept={() => setEtaTarget(order.id)}
-                  onDecline={() => updateStatus(order.id, 'cancelled')}
+                  onDecline={(reason) => updateStatus(order.id, 'cancelled', undefined, reason)}
                   onReady={() => updateStatus(order.id, 'ready')}
                   onDelivered={() => updateStatus(order.id, 'delivered')}
+                  onUpdateEta={(etaReadyAt) => updateEta(order.id, etaReadyAt)}
+                  updatingEta={updatingEtaOrderId === order.id}
                   onVendorConfirmPayment={() => handleVendorConfirm(order.id)}
                   onPaymentDispute={() => handlePaymentDispute(order.id)}
                   confirmingPayment={confirmingPayment === order.id}
@@ -954,9 +1158,11 @@ export default function VendorOrdersPage() {
                   order={order}
                   acting={acting === order.id}
                   onAccept={() => setEtaTarget(order.id)}
-                  onDecline={() => updateStatus(order.id, 'cancelled')}
+                  onDecline={(reason) => updateStatus(order.id, 'cancelled', undefined, reason)}
                   onReady={() => updateStatus(order.id, 'ready')}
                   onDelivered={() => updateStatus(order.id, 'delivered')}
+                  onUpdateEta={(etaReadyAt) => updateEta(order.id, etaReadyAt)}
+                  updatingEta={updatingEtaOrderId === order.id}
                   onVendorConfirmPayment={() => handleVendorConfirm(order.id)}
                   onPaymentDispute={() => handlePaymentDispute(order.id)}
                   confirmingPayment={confirmingPayment === order.id}
