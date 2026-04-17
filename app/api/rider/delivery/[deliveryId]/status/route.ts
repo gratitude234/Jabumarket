@@ -1,10 +1,11 @@
 // app/api/rider/delivery/[deliveryId]/status/route.ts
-// PATCH { status } — authenticated rider updates delivery status.
+// PATCH { status } - authenticated rider updates delivery status.
 // Notifies buyer at each step.
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications';
 import { sendUserPush } from '@/lib/webPush';
 
 function jsonError(msg: string, status = 400, code?: string) {
@@ -12,22 +13,22 @@ function jsonError(msg: string, status = 400, code?: string) {
 }
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  accepted:  ['picked_up', 'cancelled'],
+  accepted: ['picked_up', 'cancelled'],
   picked_up: ['delivered'],
 };
 
 const STATUS_MESSAGES: Record<string, { title: string; body: string }> = {
   picked_up: {
     title: 'Your order has been picked up',
-    body:  'Your rider has collected the item and is on the way.',
+    body: 'Your rider has collected the item and is on the way.',
   },
   delivered: {
     title: 'Order delivered!',
-    body:  'Your item has been delivered. Enjoy!',
+    body: 'Your item has been delivered. Enjoy!',
   },
   cancelled: {
     title: 'Delivery cancelled',
-    body:  'Your rider had to cancel. Contact support if needed.',
+    body: 'Your rider had to cancel. Contact support if needed.',
   },
 };
 
@@ -39,10 +40,12 @@ export async function PATCH(
     const { deliveryId } = await params;
 
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
 
-    const body = await req.json().catch(() => null) as { status?: string } | null;
+    const body = (await req.json().catch(() => null)) as { status?: string } | null;
     const newStatus = body?.status;
 
     if (!newStatus || !['picked_up', 'delivered', 'cancelled'].includes(newStatus)) {
@@ -51,7 +54,6 @@ export async function PATCH(
 
     const admin = createSupabaseAdminClient();
 
-    // Verify caller is the assigned rider
     const { data: rider } = await admin
       .from('riders')
       .select('id')
@@ -69,7 +71,6 @@ export async function PATCH(
     if (fetchErr || !delivery) return jsonError('Delivery not found', 404, 'not_found');
     if (delivery.rider_id !== rider.id) return jsonError('Forbidden', 403, 'forbidden');
 
-    // Validate transition
     const allowed = VALID_TRANSITIONS[delivery.status];
     if (!allowed || !allowed.includes(newStatus)) {
       return jsonError(
@@ -86,28 +87,41 @@ export async function PATCH(
 
     if (updateErr) return jsonError(updateErr.message, 500, 'update_failed');
 
-    // Notify buyer
     const msg = STATUS_MESSAGES[newStatus];
     if (msg && delivery.buyer_id) {
-      try {
-        await admin.from('notifications').insert({
+      await insertNotificationBestEffort(
+        admin,
+        {
           user_id: delivery.buyer_id,
-          type:    'delivery_status',
-          title:   msg.title,
-          body:    msg.body,
-          href:    '/delivery/requests',
-        });
+          type: 'delivery_status',
+          title: msg.title,
+          body: msg.body,
+          href: '/delivery/requests',
+        },
+        {
+          route: '/api/rider/delivery/[deliveryId]/status',
+          userId: delivery.buyer_id,
+          type: 'delivery_status',
+        }
+      );
+
+      try {
         await sendUserPush(delivery.buyer_id, {
           title: msg.title,
-          body:  msg.body,
-          href:  '/delivery/requests',
-          tag:   `delivery-${deliveryId}`,
+          body: msg.body,
+          href: '/delivery/requests',
+          tag: `delivery-${deliveryId}`,
         });
-      } catch { /* non-critical */ }
+      } catch {
+        // Push failure must never crash the request.
+      }
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }

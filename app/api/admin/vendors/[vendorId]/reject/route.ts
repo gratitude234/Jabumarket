@@ -1,9 +1,10 @@
 // app/api/admin/vendors/[vendorId]/reject/route.ts
-// Admin-only endpoint — rejects a food vendor application
+// Admin-only endpoint - rejects a food vendor application
 
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/requireAdmin';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications';
 
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
@@ -16,12 +17,12 @@ export async function POST(
   try {
     const { vendorId } = await params;
 
-    // ── Admin auth ────────────────────────────────────────────
     let adminUser: { userId: string };
     try {
       adminUser = await requireAdmin();
-    } catch (e: any) {
-      return jsonError(e?.message ?? 'Forbidden', e?.status ?? 403, 'forbidden');
+    } catch (error: unknown) {
+      const adminError = error as { message?: string; status?: number };
+      return jsonError(adminError.message ?? 'Forbidden', adminError.status ?? 403, 'forbidden');
     }
 
     const body = (await req.json().catch(() => null)) as { reason?: string } | null;
@@ -30,7 +31,6 @@ export async function POST(
 
     const admin = createSupabaseAdminClient();
 
-    // ── Fetch vendor ──────────────────────────────────────────
     const { data: vendor, error: vendorErr } = await admin
       .from('vendors')
       .select('id, user_id, name, verification_status')
@@ -39,7 +39,6 @@ export async function POST(
 
     if (vendorErr || !vendor) return jsonError('Vendor not found', 404, 'not_found');
 
-    // ── Reject vendor ─────────────────────────────────────────
     const { error: updateErr } = await admin
       .from('vendors')
       .update({
@@ -54,19 +53,29 @@ export async function POST(
 
     if (updateErr) return jsonError(updateErr.message, 500, 'update_failed');
 
-    // ── Notify vendor user ────────────────────────────────────
     if (vendor.user_id) {
-      await admin.from('notifications').insert({
-        user_id: vendor.user_id,
-        type: 'vendor_rejected',
-        title: 'Vendor application update',
-        body: `Your vendor application was not approved. Reason: ${reason}`,
-        href: '/vendor',
-      });
+      await insertNotificationBestEffort(
+        admin,
+        {
+          user_id: vendor.user_id,
+          type: 'vendor_rejected',
+          title: 'Vendor application update',
+          body: `Your vendor application was not approved. Reason: ${reason}`,
+          href: '/vendor',
+        },
+        {
+          route: '/api/admin/vendors/[vendorId]/reject',
+          userId: vendor.user_id,
+          type: 'vendor_rejected',
+        }
+      );
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }

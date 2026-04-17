@@ -1,31 +1,35 @@
-// app/api/marketplace/price-drop-notify/route.ts
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications';
 
 export async function POST(req: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ ok: false, message: 'Unauthenticated' }, { status: 401 });
     }
 
-    const body = await req.json() as { listing_id: string; old_price: number; new_price: number };
+    const body = (await req.json()) as {
+      listing_id: string;
+      old_price: number;
+      new_price: number;
+    };
     const { listing_id, old_price, new_price } = body;
 
     if (!listing_id || typeof old_price !== 'number' || typeof new_price !== 'number') {
       return NextResponse.json({ ok: false, message: 'Missing fields' }, { status: 400 });
     }
 
-    // Only notify on price drops
     if (new_price >= old_price) {
       return NextResponse.json({ ok: true, notified: 0 });
     }
 
     const admin = createSupabaseAdminClient();
 
-    // Fetch listing title + saves at higher price (cap at 50)
     const [titleRes, savesRes] = await Promise.all([
       admin.from('listings').select('title').eq('id', listing_id).maybeSingle(),
       admin
@@ -44,23 +48,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, notified: 0 });
     }
 
-    const notifications = savers.map((s) => ({
-      user_id: s.user_id,
+    const notifications = savers.map((saver) => ({
+      user_id: saver.user_id,
       type: 'price_drop',
       title: 'Price drop on a saved listing',
       body: `"${listingTitle}" dropped from ₦${old_price.toLocaleString()} to ₦${new_price.toLocaleString()}`,
       href: `/listing/${listing_id}`,
     }));
 
-    try {
-      await admin.from('notifications').insert(notifications);
-    } catch {
-      // Notification failure is non-fatal
-    }
+    await insertNotificationBestEffort(admin, notifications, {
+      route: '/api/marketplace/price-drop-notify',
+      type: 'price_drop',
+    });
 
     return NextResponse.json({ ok: true, notified: notifications.length });
-  } catch (e: unknown) {
-    const err = e as { message?: string };
-    return NextResponse.json({ ok: false, message: err?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }

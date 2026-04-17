@@ -1,10 +1,11 @@
 // app/api/orders/create-marketplace/route.ts
 // Buyer finalizes a marketplace deal: creates a lightweight order record
-// tied to a conversation. No menu validation — price is user-agreed.
+// tied to a conversation. No menu validation - price is user-agreed.
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications';
 import { sendVendorPush } from '@/lib/webPush';
 
 function jsonError(message: string, status: number, code?: string) {
@@ -14,10 +15,12 @@ function jsonError(message: string, status: number, code?: string) {
 export async function POST(req: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
 
-    const body = await req.json() as {
+    const body = (await req.json()) as {
       conversation_id: string;
       listing_id: string;
       vendor_id: string;
@@ -37,7 +40,6 @@ export async function POST(req: Request) {
 
     const admin = createSupabaseAdminClient();
 
-    // Verify conversation belongs to this buyer
     const { data: conv } = await admin
       .from('conversations')
       .select('buyer_id, vendor_id, order_id')
@@ -49,7 +51,6 @@ export async function POST(req: Request) {
     if (conv.vendor_id !== vendor_id) return jsonError('Vendor mismatch', 400, 'vendor_mismatch');
     if (conv.order_id) return jsonError('This conversation already has an order', 400, 'order_exists');
 
-    // Fetch listing title for the order payload
     const { data: listing } = await admin
       .from('listings')
       .select('title, price, category')
@@ -58,7 +59,6 @@ export async function POST(req: Request) {
 
     if (!listing) return jsonError('Listing not found', 404, 'listing_not_found');
 
-    // Fetch vendor bank details for transfer orders
     const { data: vendor } = await admin
       .from('vendors')
       .select('user_id, name, bank_name, bank_account_number, bank_account_name')
@@ -68,7 +68,11 @@ export async function POST(req: Request) {
     if (!vendor) return jsonError('Vendor not found', 404, 'vendor_not_found');
 
     if (payment_method === 'transfer') {
-      const hasBank = !!(vendor.bank_account_number && vendor.bank_account_name && vendor.bank_name);
+      const hasBank = !!(
+        vendor.bank_account_number &&
+        vendor.bank_account_name &&
+        vendor.bank_name
+      );
       if (!hasBank) {
         return jsonError(
           'This seller has not set up bank transfer details yet. Ask them to add their bank details in their profile, or use cash payment.',
@@ -78,25 +82,25 @@ export async function POST(req: Request) {
       }
     }
 
-    // Build a lightweight order payload compatible with OrderBubble
     const orderPayload = {
-      lines: [{
-        item_id: listing_id,
-        name: listing.title ?? 'Item',
-        emoji: '🏷️',
-        category: listing.category ?? 'Item',
-        qty: 1,
-        unit_name: 'piece',
-        price_per_unit: agreed_price,
-        line_total: agreed_price,
-      }],
+      lines: [
+        {
+          item_id: listing_id,
+          name: listing.title ?? 'Item',
+          emoji: '🏷️',
+          category: listing.category ?? 'Item',
+          qty: 1,
+          unit_name: 'piece',
+          price_per_unit: agreed_price,
+          line_total: agreed_price,
+        },
+      ],
       total: agreed_price,
       order_type: 'pickup' as const,
     };
 
     const textBody = `🏷️ Marketplace order — ${listing.title ?? 'Item'} — ₦${agreed_price.toLocaleString()}`;
 
-    // Insert order message
     const { data: msg, error: msgErr } = await admin
       .from('messages')
       .insert({
@@ -111,7 +115,6 @@ export async function POST(req: Request) {
 
     if (msgErr) return jsonError(msgErr.message, 500, 'msg_insert_failed');
 
-    // Insert order record
     const { data: order, error: orderErr } = await admin
       .from('orders')
       .insert({
@@ -130,7 +133,6 @@ export async function POST(req: Request) {
 
     if (orderErr) return jsonError(orderErr.message, 500, 'order_insert_failed');
 
-    // Link order to conversation + update preview
     await admin
       .from('conversations')
       .update({
@@ -140,27 +142,40 @@ export async function POST(req: Request) {
       })
       .eq('id', conversation_id);
 
-    // Notify vendor
     if (vendor.user_id) {
-      try {
-        await admin.from('notifications').insert({
+      await insertNotificationBestEffort(
+        admin,
+        {
           user_id: vendor.user_id,
           type: 'new_order',
           title: 'New marketplace order',
           body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
           href: `/inbox/${conversation_id}`,
-        });
+        },
+        {
+          route: '/api/orders/create-marketplace',
+          userId: vendor.user_id,
+          type: 'new_order',
+        }
+      );
+
+      try {
         void sendVendorPush(vendor_id, {
           title: 'New order from buyer',
           body: `₦${agreed_price.toLocaleString()} — ${listing.title ?? 'Item'}`,
           href: `/inbox/${conversation_id}`,
           tag: `order-${order.id}`,
         });
-      } catch (_) {}
+      } catch {
+        // Push failure must never crash order creation.
+      }
     }
 
     return NextResponse.json({ ok: true, message: msg, order });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }

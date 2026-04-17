@@ -1,10 +1,11 @@
 // app/api/vendor/register/route.ts
-// POST  — creates a new food vendor application
-// PATCH — resubmits a rejected application (updates fields + resets to pending)
+// POST  - creates a new food vendor application
+// PATCH - resubmits a rejected application (updates fields + resets to pending)
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { insertNotificationBestEffort } from '@/lib/notifications';
 
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
@@ -26,27 +27,33 @@ type VendorBody = {
 export async function POST(req: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
 
     const admin = createSupabaseAdminClient();
 
-    // Guard: already has a vendor row
     const { data: existing } = await admin
-      .from('vendors').select('id').eq('user_id', user.id).maybeSingle();
+      .from('vendors')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
     if (existing) return jsonError('You already have a vendor account', 409, 'already_exists');
 
     const body = (await req.json().catch(() => null)) as VendorBody | null;
 
-    if (!body?.name?.trim())     return jsonError('Business name is required', 400, 'missing_name');
+    if (!body?.name?.trim()) return jsonError('Business name is required', 400, 'missing_name');
     if (!body?.location?.trim()) return jsonError('Location is required', 400, 'missing_location');
+    const vendorName = body.name.trim();
+    const vendorLocation = body.location.trim();
 
     const { data: vendor, error: vendorErr } = await admin
       .from('vendors')
       .insert({
         user_id: user.id,
-        name: body.name.trim(),
-        location: body.location.trim(),
+        name: vendorName,
+        location: vendorLocation,
         phone: body.phone?.trim() || null,
         whatsapp: body.whatsapp?.trim() || null,
         description: body.description?.trim() || null,
@@ -66,36 +73,43 @@ export async function POST(req: Request) {
       return jsonError(vendorErr?.message ?? 'Failed to create vendor', 500, 'insert_failed');
     }
 
-    // Notify all admins
     const { data: admins } = await admin.from('admins').select('user_id');
     if (admins && admins.length > 0) {
-      await admin.from('notifications').insert(
-        admins.map((a: { user_id: string }) => ({
-          user_id: a.user_id,
+      await insertNotificationBestEffort(
+        admin,
+        admins.map((adminRow: { user_id: string }) => ({
+          user_id: adminRow.user_id,
           type: 'vendor_application',
           title: 'New food vendor application',
-          body: `${body.name!.trim()} — ${body.location!.trim()}`,
+          body: `${vendorName} — ${vendorLocation}`,
           href: '/admin/vendors',
-        }))
+        })),
+        {
+          route: '/api/vendor/register',
+          type: 'vendor_application',
+        }
       );
     }
 
     return NextResponse.json({ ok: true, vendor_id: vendor.id }, { status: 201 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }
 
-// ── PATCH — resubmit a rejected application ──────────────────────────────────
 export async function PATCH(req: Request) {
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return jsonError('Unauthenticated', 401, 'unauthenticated');
 
     const admin = createSupabaseAdminClient();
 
-    // Must have an existing rejected vendor row
     const { data: existing } = await admin
       .from('vendors')
       .select('id, verification_status, name')
@@ -108,49 +122,53 @@ export async function PATCH(req: Request) {
     }
 
     const body = (await req.json().catch(() => null)) as VendorBody | null;
-    if (!body?.name?.trim())     return jsonError('Business name is required', 400, 'missing_name');
+    if (!body?.name?.trim()) return jsonError('Business name is required', 400, 'missing_name');
     if (!body?.location?.trim()) return jsonError('Location is required', 400, 'missing_location');
+    const vendorName = body.name.trim();
+    const vendorLocation = body.location.trim();
 
     const { error: updateErr } = await admin
       .from('vendors')
       .update({
-        name:                body.name.trim(),
-        location:            body.location.trim(),
-        phone:               body.phone?.trim() || null,
-        whatsapp:            body.whatsapp?.trim() || null,
-        description:         body.description?.trim() || null,
-        opens_at:            body.opens_at || null,
-        closes_at:           body.closes_at || null,
-        // Reset rejection state
+        name: vendorName,
+        location: vendorLocation,
+        phone: body.phone?.trim() || null,
+        whatsapp: body.whatsapp?.trim() || null,
+        description: body.description?.trim() || null,
+        opens_at: body.opens_at || null,
+        closes_at: body.closes_at || null,
         verification_status: 'pending',
-        rejection_reason:    null,
-        rejected_at:         null,
-        reviewed_by:         null,
+        rejection_reason: null,
+        rejected_at: null,
+        reviewed_by: null,
       })
       .eq('id', existing.id);
 
     if (updateErr) return jsonError(updateErr.message, 500, 'update_failed');
 
-    // Notify admins of resubmission
     const { data: admins } = await admin.from('admins').select('user_id');
     if (admins && admins.length > 0) {
-      try {
-        await admin.from('notifications').insert(
-          admins.map((a: { user_id: string }) => ({
-            user_id: a.user_id,
-            type: 'vendor_application',
-            title: 'Vendor resubmitted application',
-            body: `${body.name!.trim()} updated and resubmitted`,
-            href: '/admin/vendors',
-          }))
-        );
-      } catch {
-        // non-critical — don't fail the resubmission if notification fails
-      }
+      await insertNotificationBestEffort(
+        admin,
+        admins.map((adminRow: { user_id: string }) => ({
+          user_id: adminRow.user_id,
+          type: 'vendor_application',
+          title: 'Vendor resubmitted application',
+          body: `${vendorName} updated and resubmitted`,
+          href: '/admin/vendors',
+        })),
+        {
+          route: '/api/vendor/register',
+          type: 'vendor_application',
+        }
+      );
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { ok: false, message: error instanceof Error ? error.message : 'Server error' },
+      { status: 500 }
+    );
   }
 }
