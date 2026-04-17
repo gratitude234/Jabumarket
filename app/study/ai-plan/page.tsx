@@ -1,4 +1,14 @@
 // app/study/ai-plan/page.tsx
+// Migration
+// CREATE TABLE IF NOT EXISTS public.study_plans (
+//   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+//   user_id uuid NOT NULL REFERENCES auth.users(id),
+//   plan jsonb NOT NULL,
+//   created_at timestamptz NOT NULL DEFAULT now()
+// );
+// CREATE INDEX IF NOT EXISTS study_plans_user_id_created_at_idx
+//   ON public.study_plans (user_id, created_at DESC);
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -30,9 +40,12 @@ type StudyPreferencesRow = {
   department: string | null;
   department_id: string | null;
   faculty: string | null;
-  last_study_plan: unknown;
   last_study_plan_at: string | null;
   last_study_plan_progress: unknown;
+};
+type StudyPlanRow = {
+  plan: unknown;
+  created_at: string | null;
 };
 
 function parseStoredPlan(value: unknown): StudyPlan | null {
@@ -498,44 +511,34 @@ export default function AiStudyPlanPage() {
         if (!user || cancelled) return;
 
         setUserId(user.id);
-        const savedRaw: string | null = null; // Plan restore now comes from study_preferences.
-        if (savedRaw) {
-          try {
-            const saved = JSON.parse(savedRaw) as {
-              plan: StudyPlan;
-              generatedAt: string;
-              courses: string[];
-            };
-            const age = Date.now() - new Date(saved.generatedAt).getTime();
-            if (age < 7 * 24 * 60 * 60 * 1000 && saved.plan) {
-              setPlan(saved.plan);
-              setSavedPlan(saved.plan);
-              setSavedPlanAt(saved.generatedAt);
-              if (saved.courses?.length) setCourses(saved.courses);
-              const progRaw = localStorage.getItem(`jabu_study_plan_progress:${user.id}`);
-              if (progRaw) setProgress(JSON.parse(progRaw));
-              if (!cancelled) setPrefilling(false);
-              return;
-            }
-          } catch {
-            // corrupted — ignore
-          }
-        }
-
-        // Fetch study preferences
-        const { data: prefs } = await supabase
-          .from("study_preferences")
-          .select("level, department, department_id, faculty, last_study_plan, last_study_plan_at, last_study_plan_progress")
-          .eq("user_id", user.id)
-          .maybeSingle();
+        // Fetch study preferences + latest saved plan
+        const [{ data: prefs }, { data: latestPlan, error: latestPlanError }] = await Promise.all([
+          supabase
+            .from("study_preferences")
+            .select("level, department, department_id, faculty, last_study_plan_at, last_study_plan_progress")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("study_plans")
+            .select("plan, created_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
 
         if (cancelled) return;
 
         const prefsData = (prefs as StudyPreferencesRow | null) ?? null;
-        const restoredPlan = parseStoredPlan(prefsData?.last_study_plan);
+        const latestPlanMissingTable =
+          latestPlanError?.code === "42P01" ||
+          latestPlanError?.message?.includes("does not exist");
+        const restoredPlan = latestPlanMissingTable
+          ? null
+          : parseStoredPlan((latestPlan as StudyPlanRow | null)?.plan);
         if (restoredPlan) {
           setSavedPlan(restoredPlan);
-          setSavedPlanAt(prefsData?.last_study_plan_at ?? null);
+          setSavedPlanAt((latestPlan as StudyPlanRow | null)?.created_at ?? prefsData?.last_study_plan_at ?? null);
         }
 
         if (
@@ -780,17 +783,27 @@ export default function AiStudyPlanPage() {
           try {
             localStorage.removeItem(`jabu_study_plan_progress:${userId}`);
           } catch {}
-          await supabase
-            .from("study_preferences")
-            .upsert(
-              {
-                user_id: userId,
-                last_study_plan: JSON.stringify(parsed),
-                last_study_plan_at: generatedAt,
-                last_study_plan_progress: null,
-              },
-              { onConflict: "user_id" }
-            );
+          const { error: planInsertError } = await supabase
+            .from("study_plans")
+            .insert({ user_id: userId, plan: parsed });
+          if (
+            planInsertError &&
+            planInsertError.code !== "42P01" &&
+            !planInsertError.message?.includes("does not exist")
+          ) {
+            console.error("[study-plan] failed to persist plan:", planInsertError.message);
+          } else if (!planInsertError) {
+            await supabase
+              .from("study_preferences")
+              .upsert(
+                {
+                  user_id: userId,
+                  last_study_plan_at: generatedAt,
+                  last_study_plan_progress: null,
+                },
+                { onConflict: "user_id" }
+              );
+          }
         }
       } catch {
         setError("The AI response was too long or malformed. Try fewer weeks or fewer courses.");
@@ -819,6 +832,8 @@ export default function AiStudyPlanPage() {
         );
     }
     setPlan(null);
+    setSavedPlan(null);
+    setSavedPlanAt(null);
     setProgress({});
   }
 
