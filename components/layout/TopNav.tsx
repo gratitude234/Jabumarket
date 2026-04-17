@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import InboxNavIcon from "@/components/layout/InboxNavIcon";
 import { supabase } from "@/lib/supabase";
+import { usePostDraftBadge } from "@/hooks/usePostDraftBadge";
 
 const links = [
   { href: "/", label: "Home" },
@@ -59,6 +60,7 @@ export default function TopNav() {
   const router = useRouter();
   const sp = useSearchParams();
   const [isVendor, setIsVendor] = useState(false);
+  const hasPostDraft = usePostDraftBadge();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -189,8 +191,11 @@ export default function TopNav() {
             </form>
           ) : null}
 
-          <Link href="/post" className="btn-primary">
+          <Link href="/post" className="btn-primary relative">
             Post Listing
+            {hasPostDraft ? (
+              <span className="absolute right-2 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
+            ) : null}
           </Link>
 
           <InboxNavIcon />

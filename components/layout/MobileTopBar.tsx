@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { usePostDraftBadge } from "@/hooks/usePostDraftBadge";
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   const copy = new URLSearchParams(sp.toString());
@@ -33,6 +34,7 @@ export default function MobileTopBar() {
   const pathname = usePathname();
   const router = useRouter();
   const sp = useSearchParams();
+  const hasPostDraft = usePostDraftBadge();
 
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
 
@@ -130,9 +132,12 @@ export default function MobileTopBar() {
                 Upload
               </Link>
             ) : (
-              <Link href="/post" className="btn-primary">
+              <Link href="/post" className="btn-primary relative">
                 <Plus className="h-4 w-4" />
                 Post
+                {hasPostDraft ? (
+                  <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />
+                ) : null}
               </Link>
             )}
           </div>

@@ -7,6 +7,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
+  clearPostDraft,
+  hasPostDraftContent,
+  POST_DRAFT_KEY,
+  savePostDraft,
+} from "@/lib/postDraft";
+import {
   AlertTriangle,
   ArrowLeft,
   Camera,
@@ -62,7 +68,6 @@ const CONDITIONS: { value: ListingCondition; label: string; hint: string }[] = [
   { value: "for_parts",   label: "For parts",    hint: "Faulty or incomplete" },
 ];
 
-const DRAFT_KEY = "jm_post_draft_v1";
 const MAX_IMAGE_MB = 5;
 const MIN_TITLE = 8;
 const MIN_DESC_SERVICE = 20;
@@ -207,6 +212,7 @@ export default function PostPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Vendor setup modal — shown inline when user has no vendor profile
+  const [vendorCheckLoading, setVendorCheckLoading] = useState(true);
   const [vendorSetupOpen, setVendorSetupOpen] = useState(false);
   const [setupName, setSetupName] = useState("");
   const [setupPhone, setSetupPhone] = useState("");
@@ -243,8 +249,7 @@ export default function PostPage() {
   const photoRef = useRef<HTMLElement>(null);
   const priceRef = useRef<HTMLElement>(null);
 
-  const [progress, setProgress] = useState(0);
-  const progressTimerRef = useRef<number | null>(null);
+  const [uploadStatusText, setUploadStatusText] = useState<string | null>(null);
 
   const [postedId, setPostedId] = useState<string | null>(null);
   const [published, setPublished] = useState<{
@@ -278,23 +283,27 @@ export default function PostPage() {
 
   useEffect(() => {
     async function checkVendor() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return; // not logged in — let publish() handle redirect
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return; // not logged in — let publish() handle redirect
 
-      const { data: vendor } = await supabase
-        .from('vendors')
-        .select('id, vendor_type')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        const { data: vendor } = await supabase
+          .from('vendors')
+          .select('id, vendor_type')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-      if (!vendor) {
-        setVendorSetupOpen(true);
-      } else if (vendor.vendor_type === 'food') {
-        router.replace('/vendor/menu');
+        if (!vendor) {
+          setVendorSetupOpen(true);
+        } else if (vendor.vendor_type === 'food') {
+          router.replace('/vendor/menu');
+        }
+      } finally {
+        setVendorCheckLoading(false);
       }
     }
     checkVendor();
-  }, []);
+  }, [router]);
 
   const previewUrl = previewUrls[0] ?? null;
 
@@ -317,30 +326,6 @@ export default function PostPage() {
 
   function openFilePicker() {
     fileInputRef.current?.click();
-  }
-
-  function stopProgressTimer() {
-    if (progressTimerRef.current) {
-      window.clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
-  }
-
-  function startFakeProgress() {
-    stopProgressTimer();
-    setProgress(5);
-    progressTimerRef.current = window.setInterval(() => {
-      setProgress((p) => {
-        if (p >= 90) return p;
-        return Math.min(90, p + (p < 30 ? 6 : 2));
-      });
-    }, 220);
-  }
-
-  function finishProgress() {
-    stopProgressTimer();
-    setProgress(100);
-    window.setTimeout(() => setProgress(0), 600);
   }
 
   function onDrop(e: React.DragEvent) {
@@ -593,11 +578,9 @@ export default function PostPage() {
       const imgUrls: string[] = [];
       if (imageFiles.length > 0) {
         setUploading(true);
-        startFakeProgress();
         try {
           for (let i = 0; i < imageFiles.length; i++) {
-            // Nudge the fake progress bar toward completion as each file finishes.
-            setProgress(Math.round(10 + (i / imageFiles.length) * 80));
+            setUploadStatusText(`Uploading image ${i + 1} of ${imageFiles.length}...`);
             const { path, url } = await uploadOneImage(imageFiles[i], user.id);
             uploadedPaths.push(path);
             imgUrls.push(url);
@@ -608,7 +591,7 @@ export default function PostPage() {
           throw uploadErr;
         } finally {
           setUploading(false);
-          finishProgress();
+          setUploadStatusText(null);
         }
       }
 
@@ -645,7 +628,7 @@ export default function PostPage() {
       }
 
       try {
-        window.localStorage.removeItem(DRAFT_KEY);
+        clearPostDraft();
         window.localStorage.setItem('jm_has_listed', '1');
       } catch {}
 
@@ -757,7 +740,7 @@ export default function PostPage() {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(DRAFT_KEY);
+      const raw = window.localStorage.getItem(POST_DRAFT_KEY);
       if (!raw) return;
 
       const parsed = JSON.parse(raw) as {
@@ -773,14 +756,7 @@ export default function PostPage() {
         negotiable?: boolean;
       };
 
-      const hasContent =
-        !!parsed?.title?.trim() ||
-        !!parsed?.description?.trim() ||
-        !!parsed?.priceDigits?.trim() ||
-        !!parsed?.priceLabel?.trim() ||
-        !!parsed?.location?.trim();
-
-      if (!hasContent) return;
+      if (!hasPostDraftContent(parsed)) return;
 
       draftRef.current = parsed;
       setDraftFound(true);
@@ -795,7 +771,7 @@ export default function PostPage() {
 
     const t = window.setTimeout(() => {
       try {
-        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draftPayload));
+        savePostDraft(draftPayload);
       } catch {
         //
       }
@@ -836,7 +812,7 @@ export default function PostPage() {
 
   function discardDraft() {
     try {
-      window.localStorage.removeItem(DRAFT_KEY);
+      clearPostDraft();
     } catch {}
 
     draftRef.current = null;
@@ -883,7 +859,7 @@ export default function PostPage() {
           <button
             type="button"
             onClick={() => {
-              try { window.localStorage.removeItem(DRAFT_KEY); } catch {}
+              try { clearPostDraft(); } catch {}
               resetForm();
             }}
             className="rounded-2xl border bg-white px-4 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
@@ -898,6 +874,19 @@ export default function PostPage() {
         >
           Manage all listings
         </Link>
+      </div>
+    );
+  }
+
+  if (vendorCheckLoading) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4 pb-24">
+        <div className="animate-pulse space-y-4">
+          <div className="h-20 rounded-3xl bg-zinc-100" />
+          <div className="h-56 rounded-3xl bg-zinc-100" />
+          <div className="h-56 rounded-3xl bg-zinc-100" />
+          <div className="h-64 rounded-3xl bg-zinc-100" />
+        </div>
       </div>
     );
   }
@@ -1013,7 +1002,7 @@ export default function PostPage() {
         </div>
       </Modal>
 
-      <Modal open={showDraftModal} title="Restore your draft?">
+      <Modal open={showDraftModal && !vendorSetupOpen} title="Restore your draft?">
         <p className="text-sm text-zinc-700">
           We found an unfinished post. Do you want to restore it? (Photo can’t be
           restored.)
@@ -1036,6 +1025,8 @@ export default function PostPage() {
         </div>
       </Modal>
 
+      {!vendorSetupOpen ? (
+        <>
       <div className="sticky top-0 z-10 -mx-4 border-b bg-white/90 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <button
@@ -1051,9 +1042,9 @@ export default function PostPage() {
             <p className="truncate text-sm font-semibold text-zinc-900">Post a listing</p>
             <p className="text-xs text-zinc-500">
               {publishing
-                ? "Publishing…"
+                ? "Publishing..."
                 : uploading
-                  ? `Uploading photo${imageFiles.length > 1 ? "s" : ""}…`
+                  ? (uploadStatusText ?? `Uploading image 1 of ${imageFiles.length}...`)
                   : "Fill in the details below"}
             </p>
           </div>
@@ -1070,22 +1061,14 @@ export default function PostPage() {
             ) : (
               <Save className="h-4 w-4" />
             )}
-            {publishing ? "Publishing…" : uploading ? "Uploading…" : "Publish"}
+            {publishing ? "Publishing..." : uploading ? "Uploading..." : "Publish"}
           </button>
         </div>
 
-        {(uploading || publishing) && progress > 0 ? (
-          <div className="mt-3">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-              <div
-                className="h-full rounded-full bg-black transition-[width] duration-200"
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-zinc-500">
-              {uploading
-                ? `Optimizing & uploading photo${imageFiles.length > 1 ? "s" : ""}…`
-                : "Publishing…"}
+        {(uploading || publishing) ? (
+          <div className="mt-3 rounded-2xl border bg-zinc-50 px-3 py-2">
+            <p className="text-[11px] text-zinc-500">
+              {publishing ? "Publishing listing..." : uploadStatusText ?? "Uploading images..."}
             </p>
           </div>
         ) : null}
@@ -1747,7 +1730,7 @@ export default function PostPage() {
           ) : (
             <Save className="h-4 w-4" />
           )}
-          {publishing ? "Publishing…" : uploading ? "Uploading…" : "Publish"}
+          {publishing ? "Publishing..." : uploading ? "Uploading..." : "Publish"}
         </button>
       </div>
 
@@ -1784,7 +1767,7 @@ export default function PostPage() {
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                Post
+                {publishing ? "Publishing..." : uploading ? "Uploading..." : "Post"}
               </button>
               {!canPublish && !publishing && (
                 <p className="text-[10px] text-zinc-500 text-center">
@@ -1815,6 +1798,8 @@ export default function PostPage() {
           ) : null}
         </div>
       </div>
+        </>
+      ) : null}
 
     </div>
   );
