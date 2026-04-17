@@ -274,6 +274,34 @@ export default async function ExplorePage({
       return minute === "00" ? `${display}${suffix}` : `${display}:${minute}${suffix}`;
     }
 
+    function minutesUntilWATTime(time: string | null | undefined): number | null {
+      if (!time) return null;
+      const [h, m] = time.split(":");
+      const openMinutes = parseInt(h, 10) * 60 + parseInt(m ?? "0", 10);
+      const now = new Date();
+      const watMinutes = ((now.getUTCHours() + 1) * 60 + now.getUTCMinutes()) % (24 * 60);
+      let diff = openMinutes - watMinutes;
+      if (diff < 0) diff += 24 * 60;
+      return diff;
+    }
+
+    function getVendorStatusMeta(open: boolean | null, opensAt: string | null) {
+      if (open === true) {
+        return { label: "Open", tone: "open" as const };
+      }
+      if (open === false && opensAt) {
+        const minutesUntilOpen = minutesUntilWATTime(opensAt);
+        if (minutesUntilOpen !== null && minutesUntilOpen <= 120) {
+          return { label: `Opens at ${formatHour(opensAt)}`, tone: "soon" as const };
+        }
+        return { label: "Closed", tone: "closed" as const };
+      }
+      if (open === false) {
+        return { label: "Closed", tone: "closed" as const };
+      }
+      return { label: null, tone: null };
+    }
+
     return (
       <div className="space-y-4">
         <ExploreTabs active="food" />
@@ -310,11 +338,14 @@ export default async function ExplorePage({
               const rating = ratingsMap[v.id];
               const menuItems = menuMap[v.id] ?? [];
               const open = isOpenNow(v);
+              const status = getVendorStatusMeta(open, v.opens_at);
               const hours = v.opens_at && v.closes_at ? `${formatHour(v.opens_at)} – ${formatHour(v.closes_at)}` : null;
               return {
                 id: v.id, user_id: (v as any).user_id ?? null, name: v.name, description: v.description,
                 avatar_url: v.avatar_url, opens_at: v.opens_at, closes_at: v.closes_at,
                 open, hours, rating: rating ?? null, menuItems,
+                statusLabel: status.label,
+                statusTone: status.tone,
                 day_schedule: (v as any).day_schedule ?? null,
                 accepts_delivery: (v as any).accepts_delivery ?? null,
               } satisfies FoodVendorData;
