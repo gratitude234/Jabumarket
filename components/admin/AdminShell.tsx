@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { clearMealDrafts } from "@/lib/mealDraft";
 import {
   LayoutDashboard,
   Store,
@@ -48,6 +49,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }, [pathname]);
 
   async function signOut() {
+    clearMealDrafts();
     await supabase.auth.signOut();
     router.replace("/login?next=/admin");
   }

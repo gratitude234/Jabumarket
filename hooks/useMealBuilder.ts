@@ -15,6 +15,8 @@ import {
   isOptionalStep,
   BUILDER_INITIAL_STATE,
 } from '@/types/meal-builder';
+import { supabase } from '@/lib/supabase';
+import { getMealDraftKey, removeMealDraft } from '@/lib/mealDraft';
 
 type Status = 'idle' | 'loading' | 'ready' | 'sending' | 'sent' | 'error';
 
@@ -26,10 +28,6 @@ type UseMealBuilderOptions = {
 
 const DRAFT_TTL = 30 * 60 * 1000; // 30 minutes
 
-function draftKey(vendorId: string) {
-  return `meal-draft-${vendorId}`;
-}
-
 export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealBuilderOptions) {
   const [categories, setCategories] = useState<MenuCategoryInfo[]>([]);
   const [itemsById, setItemsById] = useState<Record<string, VendorMenuItem>>({});
@@ -38,15 +36,19 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
   const [state, setState] = useState<BuilderState>(BUILDER_INITIAL_STATE);
   const [step, setStep] = useState<string>('');
   const [draftRestored, setDraftRestored] = useState(false);
+  const [draftUserId, setDraftUserId] = useState<string | null>(null);
+  const [draftIdentityResolved, setDraftIdentityResolved] = useState(false);
   // true when vendor flips accepts_orders off while builder is open
   const [vendorClosed,   setVendorClosed]   = useState(false);
   const [deliveryFee,    setDeliveryFee]    = useState(0);
+  const [reviewFeeLoading, setReviewFeeLoading] = useState(false);
   const [acceptsDelivery, setAcceptsDelivery] = useState(true);
   const [vendorBank,     setVendorBank]     = useState<{
     bank_name: string;
     bank_account_number: string;
     bank_account_name: string;
   } | null>(null);
+  const currentDraftKey = draftUserId ? getMealDraftKey(draftUserId, vendorId) : null;
 
   // All step keys in order: category names → fulfillment → review
   const steps = useMemo(
@@ -62,6 +64,36 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
       setStep(categories[0].name);
     }
   }, [categories, step]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadDraftIdentity() {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!active) return;
+        if (error) {
+          console.error('[meal-builder] failed to resolve draft identity:', error);
+          setDraftUserId(null);
+          return;
+        }
+        setDraftUserId(data.user?.id ?? null);
+      } finally {
+        if (active) setDraftIdentityResolved(true);
+      }
+    }
+
+    void loadDraftIdentity();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (vendorId && !draftIdentityResolved) {
+      setStatus('loading');
+    }
+  }, [draftIdentityResolved, vendorId]);
 
   // Subscribe to accepts_orders changes via Supabase Realtime.
   // If the vendor closes while the builder is open, surface a banner immediately
@@ -111,7 +143,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
 
   // Fetch menu from API
   useEffect(() => {
-    if (!vendorId) return;
+    if (!vendorId || !draftIdentityResolved) return;
     setStatus('loading');
     fetch(`/api/vendors/${vendorId}/menu`)
       .then((r) => r.json())
@@ -119,6 +151,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
         if (!json.ok) throw new Error(json.error ?? 'Failed to load menu');
         const cats: MenuCategoryInfo[] = json.categories ?? [];
         if (cats.length === 0) throw new Error('This vendor has no menu items yet');
+        setDraftRestored(false);
         setCategories(cats);
         const map: Record<string, VendorMenuItem> = {};
         for (const cat of cats) for (const item of cat.items) map[item.id] = item;
@@ -166,27 +199,42 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
         // Try to restore a saved draft before setting state
         let restoredStep = '';
         try {
-          const raw = localStorage.getItem(draftKey(vendorId));
-          if (raw) {
-            const draft = JSON.parse(raw);
-            const loadedSteps = [...cats.map((c) => c.name), 'fulfillment', 'review'];
-            const draftCatKeys = Object.keys(draft.state?.categories ?? {});
-            const compatible =
-              draft.vendorId === vendorId &&
-              Date.now() - draft.savedAt < DRAFT_TTL &&
-              draftCatKeys.length > 0 &&
-              draftCatKeys.every((k: string) => cats.some((c) => c.name === k)) &&
-              loadedSteps.includes(draft.step);
+          if (currentDraftKey) {
+            const raw = localStorage.getItem(currentDraftKey);
+            if (raw) {
+              const loadedSteps = [...cats.map((c) => c.name), 'fulfillment', 'review'];
+              try {
+                const draft = JSON.parse(raw) as {
+                  vendorId?: string;
+                  savedAt?: number;
+                  step?: string;
+                  state?: Partial<BuilderState>;
+                };
+                const draftCatKeys = Object.keys(draft.state?.categories ?? {});
+                const compatible =
+                  draft.vendorId === vendorId &&
+                  typeof draft.savedAt === 'number' &&
+                  Date.now() - draft.savedAt < DRAFT_TTL &&
+                  typeof draft.step === 'string' &&
+                  draftCatKeys.length > 0 &&
+                  draftCatKeys.every((k) => cats.some((c) => c.name === k)) &&
+                  loadedSteps.includes(draft.step);
 
-            if (compatible) {
-              setState({
-                categories: { ...initCats, ...draft.state.categories },
-                orderType: draft.state.orderType ?? 'pickup',
-                deliveryAddress: draft.state.deliveryAddress ?? '',
-                pickupNote: draft.state.pickupNote ?? '',
-              });
-              restoredStep = draft.step;
-              setDraftRestored(true);
+                if (compatible) {
+                  setState({
+                    categories: { ...initCats, ...(draft.state?.categories ?? {}) },
+                    orderType: draft.state?.orderType ?? 'pickup',
+                    deliveryAddress: draft.state?.deliveryAddress ?? '',
+                    pickupNote: draft.state?.pickupNote ?? '',
+                  });
+                  restoredStep = draft.step;
+                  setDraftRestored(true);
+                } else {
+                  removeMealDraft(currentDraftKey);
+                }
+              } catch {
+                removeMealDraft(currentDraftKey);
+              }
             }
           }
         } catch { /* localStorage unavailable or malformed — start fresh */ }
@@ -201,27 +249,29 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
         setError(e.message);
         setStatus('error');
       });
-  }, [vendorId]);
+  }, [currentDraftKey, draftIdentityResolved, initialLines, vendorId]);
 
   // Persist draft to localStorage on every selection change
   useEffect(() => {
-    if (status !== 'ready' || !step) return;
+    if (status !== 'ready' || !step || !currentDraftKey || !draftIdentityResolved) return;
     try {
-      localStorage.setItem(draftKey(vendorId), JSON.stringify({
+      localStorage.setItem(currentDraftKey, JSON.stringify({
         vendorId, savedAt: Date.now(), state, step,
       }));
     } catch { /* ignore write failures */ }
-  }, [state, step, status, vendorId]);
+  }, [currentDraftKey, draftIdentityResolved, state, step, status, vendorId]);
 
   // Clear draft when order is successfully placed
   useEffect(() => {
-    if (status === 'sent') {
-      try { localStorage.removeItem(draftKey(vendorId)); } catch {}
+    if (status === 'sent' && currentDraftKey) {
+      try { localStorage.removeItem(currentDraftKey); } catch {}
     }
-  }, [status, vendorId]);
+  }, [currentDraftKey, status]);
 
   const discardDraft = useCallback(() => {
-    try { localStorage.removeItem(draftKey(vendorId)); } catch {}
+    if (currentDraftKey) {
+      try { localStorage.removeItem(currentDraftKey); } catch {}
+    }
     const initCats: Record<string, CategoryState> = {};
     for (const cat of categories) initCats[cat.name] = defaultCategoryState();
     setState({ ...BUILDER_INITIAL_STATE, categories: initCats });
@@ -229,7 +279,43 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
     setStatus('ready');
     setError(null);
     setDraftRestored(false);
-  }, [vendorId, categories]);
+  }, [categories, currentDraftKey]);
+
+  useEffect(() => {
+    if (step !== 'review' || state.orderType !== 'delivery') {
+      setReviewFeeLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    async function refreshDeliveryFee() {
+      setReviewFeeLoading(true);
+      const { data, error } = await supabase
+        .from('vendors')
+        .select('delivery_fee')
+        .eq('id', vendorId)
+        .maybeSingle();
+
+      if (!active) return;
+
+      if (error) {
+        console.error('[meal-builder] failed to refresh delivery fee:', error);
+        setReviewFeeLoading(false);
+        return;
+      }
+
+      if (typeof data?.delivery_fee === 'number') {
+        setDeliveryFee(data.delivery_fee);
+      }
+      setReviewFeeLoading(false);
+    }
+
+    void refreshDeliveryFee();
+    return () => {
+      active = false;
+    };
+  }, [state.orderType, step, vendorId]);
 
   // Running total
   const total = useMemo(() => {
@@ -415,6 +501,7 @@ export function useMealBuilder({ vendorId, onOrderSent, initialLines }: UseMealB
     // Vendor status
     vendorClosed,
     deliveryFee,
+    reviewFeeLoading,
     acceptsDelivery,
     vendorBank,
     // Mutations

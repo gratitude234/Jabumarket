@@ -491,7 +491,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
     categories, status, error, state, step, stepIndex, steps, total, canAdvance,
     goNext, goBack, goToStep, selectSingle, setSingleQty, setMultiQty,
     toggleMultiItem, skipCategory, setOrderType, setDeliveryAddress, submitOrder,
-    draftRestored, discardDraft, vendorClosed, deliveryFee, acceptsDelivery,
+    draftRestored, discardDraft, vendorClosed, deliveryFee, reviewFeeLoading, acceptsDelivery,
   } = builder;
 
   const [draftBannerDismissed, setDraftBannerDismissed] = useState(false);
@@ -523,7 +523,7 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
     return cat ? cat.label : s;
   };
 
-  if (status === 'loading') {
+  if (status === 'loading' || status === 'idle') {
     return (
       <div className="rounded-3xl border border-zinc-200 bg-white p-5">
         <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -647,7 +647,16 @@ export default function MealBuilder({ vendorId, vendorName, onClose, onOrderSent
           />
         )}
 
-        {step === 'review' && (
+        {step === 'review' && reviewFeeLoading && (
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+            <div className="flex items-center gap-2 text-sm text-zinc-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Updating delivery fee…
+            </div>
+          </div>
+        )}
+
+        {step === 'review' && !reviewFeeLoading && (
           <ReviewStep
             builder={builder}
             onSend={submitOrder}

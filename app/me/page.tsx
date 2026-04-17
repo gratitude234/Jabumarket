@@ -17,6 +17,7 @@ import AccountTab from "./_components/AccountTab";
 import QuickActions from "./_components/QuickActions";
 import type { TabKey, Me, Vendor, StudyMeResponse, RoleFlags } from "./_components/types";
 import { initials } from "./_components/utils";
+import { clearMealDrafts } from "@/lib/mealDraft";
 
 /* ─── Loading skeleton ─────────────────────────────────────── */
 
@@ -220,6 +221,7 @@ function MeInner() {
   }
 
   async function signOut() {
+    clearMealDrafts();
     await supabase.auth.signOut();
     router.replace("/login");
   }
