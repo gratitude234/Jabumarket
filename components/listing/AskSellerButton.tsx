@@ -26,6 +26,11 @@ function onlyDigits(s: string) {
   return s.replace(/[^\d]/g, "");
 }
 
+type OpenConversationResult = {
+  conversationId: string;
+  created: boolean;
+};
+
 export default function AskSellerButton({
   listingId,
   vendorId,
@@ -51,50 +56,31 @@ export default function AskSellerButton({
 
   // ── Core: open or find conversation ───────────────────────────────────────
 
-  async function openConversation(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser();
+  async function openConversation(): Promise<OpenConversationResult | null> {
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr) {
+      throw new Error(userErr.message);
+    }
     if (!user) {
       window.location.href = `/login?next=/listing/${listingId}`;
       return null;
     }
 
-    const { data: existing } = await supabase
-      .from("conversations")
-      .select("id")
-      .eq("listing_id", listingId)
-      .eq("buyer_id", user.id)
-      .maybeSingle();
-
-    if (existing?.id) return existing.id;
-
-    const { data: created, error: insertErr } = await supabase
-      .from("conversations")
-      .insert({ listing_id: listingId, buyer_id: user.id, vendor_id: vendorId })
-      .select("id")
-      .single();
-
-    if (insertErr || !created) {
-      const { data: retry } = await supabase
-        .from("conversations")
-        .select("id")
-        .eq("listing_id", listingId)
-        .eq("buyer_id", user.id)
-        .maybeSingle();
-      return retry?.id ?? null;
-    }
-
-    // Fire-and-forget: notify seller of first contact (new conversation only)
-    void fetch("/api/marketplace/notify-seller", {
+    const res = await fetch("/api/conversations/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversation_id: created.id,
-        listing_id: listingId,
-        vendor_id: vendorId,
-      }),
-    }).catch(() => {});
-
-    return created.id;
+      body: JSON.stringify({ listingId, vendorId }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { conversationId?: string; created?: boolean; error?: string }
+      | null;
+    if (!res.ok || !json?.conversationId) {
+      throw new Error(json?.error ?? "Couldn't open chat. Please try again.");
+    }
+    return { conversationId: json.conversationId, created: json.created === true };
   }
 
   // ── Message seller (plain) ────────────────────────────────────────────────
@@ -104,20 +90,31 @@ export default function AskSellerButton({
     setLoading(true);
     setError(null);
     try {
-      const convId = await openConversation();
-      if (convId) {
+      const opened = await openConversation();
+      if (opened?.conversationId) {
+        if (opened.created) {
+          void fetch("/api/marketplace/notify-seller", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversation_id: opened.conversationId,
+              listing_id: listingId,
+              vendor_id: vendorId,
+            }),
+          }).catch(() => {});
+        }
         // Fire-and-forget: count this as a contact click for ranking
         void supabase.rpc("listing_stats_increment", {
           p_listing_id: listingId,
           p_event: "contact_click",
           p_amount: 1,
         }).then(null, () => {});
-        router.push(`/inbox/${convId}`);
+        router.push(`/inbox/${opened.conversationId}`);
       } else {
         setError("Couldn't open chat. Please try again.");
       }
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -133,16 +130,35 @@ export default function AskSellerButton({
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+      if (userErr) {
+        throw new Error(userErr.message);
+      }
       if (!user) {
         window.location.href = `/login?next=/listing/${listingId}`;
         return;
       }
 
-      const convId = await openConversation();
-      if (!convId) {
+      const opened = await openConversation();
+      if (!opened?.conversationId) {
         setError("Couldn't open chat. Please try again.");
         return;
+      }
+      const convId = opened.conversationId;
+
+      if (opened.created) {
+        void fetch("/api/marketplace/notify-seller", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: convId,
+            listing_id: listingId,
+            vendor_id: vendorId,
+          }),
+        }).catch(() => {});
       }
 
       // Build the offer message
@@ -153,27 +169,53 @@ export default function AskSellerButton({
         `Hi! I'd like to offer ${formatNaira(offerAmount)} for ${titlePart}${askingPart}.` +
         notePart;
 
-      await supabase.from("messages").insert({
+      const { error: messageErr } = await supabase.from("messages").insert({
         conversation_id: convId,
         sender_id: user.id,
         body,
         type: "text",
       });
+      if (messageErr) {
+        throw new Error(messageErr.message);
+      }
 
       // Update conversation preview
-      await supabase
+      const { error: conversationErr } = await supabase
         .from("conversations")
         .update({
           last_message_at: new Date().toISOString(),
           last_message_preview: body.slice(0, 120),
-          vendor_unread: 1,
         })
         .eq("id", convId);
+      if (conversationErr) {
+        throw new Error(conversationErr.message);
+      }
+
+      const { error: unreadErr } = await supabase.rpc("increment_vendor_unread", {
+        convo_id: convId,
+      });
+      if (unreadErr) {
+        throw new Error(unreadErr.message);
+      }
+
+      const buyerName =
+        typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
+          ? user.user_metadata.full_name.trim()
+          : user.email?.split("@")[0]?.trim() || "A buyer";
+      void fetch("/api/marketplace/notify-offer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: convId,
+          listingTitle,
+          buyerName,
+        }),
+      }).catch(() => {});
 
       setOfferOpen(false);
       router.push(`/inbox/${convId}`);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally {
       setOfferLoading(false);
     }

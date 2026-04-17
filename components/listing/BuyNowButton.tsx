@@ -37,34 +37,19 @@ export default function BuyNowButton({
   const [error, setError] = useState<string | null>(null);
   const [authWall, setAuthWall] = useState(false);
 
-  async function getOrCreateConversation(userId: string): Promise<string | null> {
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('listing_id', listingId)
-      .eq('buyer_id', userId)
-      .maybeSingle();
-
-    if (existing?.id) return existing.id;
-
-    const { data: created, error: insertErr } = await supabase
-      .from('conversations')
-      .insert({ listing_id: listingId, buyer_id: userId, vendor_id: vendorId })
-      .select('id')
-      .single();
-
-    if (insertErr || !created) {
-      // Race: try fetching again
-      const { data: retry } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('listing_id', listingId)
-        .eq('buyer_id', userId)
-        .maybeSingle();
-      return retry?.id ?? null;
+  async function openConversation(): Promise<string> {
+    const res = await fetch('/api/conversations/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listingId, vendorId }),
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { conversationId?: string; error?: string }
+      | null;
+    if (!res.ok || !json?.conversationId) {
+      throw new Error(json?.error ?? 'Could not open conversation');
     }
-
-    return created.id;
+    return json.conversationId;
   }
 
   async function handleBuyNow() {
@@ -87,8 +72,7 @@ export default function BuyNowButton({
         return;
       }
 
-      const conversationId = await getOrCreateConversation(user.id);
-      if (!conversationId) throw new Error('Could not open conversation');
+      const conversationId = await openConversation();
 
       const res = await fetch('/api/orders/create-marketplace', {
         method: 'POST',
@@ -108,13 +92,14 @@ export default function BuyNowButton({
 
       // Navigate to inbox where the OrderBubble + payment flow is ready
       router.push(`/inbox/${conversationId}`);
-    } catch (err: any) {
-      if (err.message?.includes('bank transfer details')) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong. Try again.';
+      if (message.includes('bank transfer details')) {
         setError("This seller hasn't added their bank account yet. Try cash payment or message them instead.");
-      } else if (err.message?.includes('already has an order')) {
+      } else if (message.includes('already has an order')) {
         setError('You already have an active order for this item. Check your inbox.');
       } else {
-        setError(err.message ?? 'Something went wrong. Try again.');
+        setError(message);
       }
     } finally {
       setLoading(false);
