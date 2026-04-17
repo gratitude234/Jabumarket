@@ -40,7 +40,11 @@ type Props = {
   onBuyerConfirm?:         () => Promise<void>;
   // Vendor-side actions
   onVendorConfirmPayment?: () => Promise<void>;
-  onPaymentDispute?:       () => void;
+  onPaymentDispute?:       () => Promise<void>;
+  buyerConfirmLoading?: boolean;
+  vendorConfirmLoading?: boolean;
+  paymentDisputeLoading?: boolean;
+  paymentActionError?: string | null;
   orderLabel?: string;
 };
 
@@ -137,6 +141,8 @@ function BuyerPaymentPanel({
   orderId,
   initialReceiptUploaded,
   onBuyerConfirm,
+  buyerConfirmLoading = false,
+  paymentActionError,
 }: {
   total: number;
   paymentStatus?: string;
@@ -145,8 +151,9 @@ function BuyerPaymentPanel({
   orderId?: string;
   initialReceiptUploaded?: boolean;
   onBuyerConfirm?: () => Promise<void>;
+  buyerConfirmLoading?: boolean;
+  paymentActionError?: string | null;
 }) {
-  const [loading,        setLoading]        = useState(false);
   const [copied,         setCopied]         = useState(false);
   const [done,           setDone]           = useState(false);
   const [uploading,      setUploading]      = useState(false);
@@ -182,13 +189,10 @@ function BuyerPaymentPanel({
   // Unpaid — show bank details and action
   async function handleConfirm() {
     if (!onBuyerConfirm) return;
-    setLoading(true);
     try {
       await onBuyerConfirm();
       setDone(true);
-    } finally {
-      setLoading(false);
-    }
+    } catch {}
   }
 
   function copyAccount() {
@@ -286,26 +290,29 @@ function BuyerPaymentPanel({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={loading || !receiptUploaded}
-            className={cn(
-              'w-full rounded-xl py-2 text-xs font-semibold transition-all',
-              loading
-                ? 'bg-zinc-400 text-white cursor-wait'
-                : !receiptUploaded
-                ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed border border-zinc-200'
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={buyerConfirmLoading || !receiptUploaded}
+              className={cn(
+                'w-full rounded-xl py-2 text-xs font-semibold transition-all',
+                buyerConfirmLoading
+                  ? 'bg-zinc-400 text-white cursor-wait'
+                  : !receiptUploaded
+                  ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed border border-zinc-200'
                 : 'bg-zinc-900 text-white hover:bg-zinc-700'
             )}
-          >
-            {loading
-              ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
-              : !receiptUploaded
-              ? 'Upload receipt to confirm'
-              : "I've paid"}
-          </button>
-        </>
+            >
+              {buyerConfirmLoading
+                ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
+                : !receiptUploaded
+                ? 'Upload receipt to confirm'
+                : "I've paid"}
+            </button>
+            {paymentActionError && (
+              <p className="text-sm text-red-500">{paymentActionError}</p>
+            )}
+          </>
       ) : (
         <p className="text-[11px] text-amber-700">
           This vendor hasn&apos;t set up bank details yet. Contact them via chat to arrange payment.
@@ -323,15 +330,19 @@ function VendorPaymentPanel({
   receiptUrl,
   onVendorConfirmPayment,
   onPaymentDispute,
+  vendorConfirmLoading = false,
+  paymentDisputeLoading = false,
+  paymentActionError,
 }: {
   total: number;
   paymentStatus?: string;
   receiptUrl?: string | null;
   onVendorConfirmPayment?: () => Promise<void>;
-  onPaymentDispute?: () => void;
+  onPaymentDispute?: () => Promise<void>;
+  vendorConfirmLoading?: boolean;
+  paymentDisputeLoading?: boolean;
+  paymentActionError?: string | null;
 }) {
-  const [loading, setLoading] = useState(false);
-
   if (paymentStatus === 'vendor_confirmed') {
     return (
       <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-2.5">
@@ -343,8 +354,16 @@ function VendorPaymentPanel({
   if (paymentStatus === 'buyer_confirmed') {
     async function handleConfirm() {
       if (!onVendorConfirmPayment) return;
-      setLoading(true);
-      try { await onVendorConfirmPayment(); } finally { setLoading(false); }
+      try {
+        await onVendorConfirmPayment();
+      } catch {}
+    }
+
+    async function handleDispute() {
+      if (!onPaymentDispute) return;
+      try {
+        await onPaymentDispute();
+      } catch {}
     }
 
     return (
@@ -375,24 +394,27 @@ function VendorPaymentPanel({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={onPaymentDispute}
-            disabled={loading}
+            onClick={handleDispute}
+            disabled={vendorConfirmLoading || paymentDisputeLoading}
             className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
           >
-            Not received
+            {paymentDisputeLoading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Not received'}
           </button>
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={loading}
+            disabled={vendorConfirmLoading || paymentDisputeLoading}
             className={cn(
               'flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-all',
-              loading ? 'bg-zinc-400' : 'bg-emerald-600 hover:bg-emerald-700'
+              vendorConfirmLoading ? 'bg-zinc-400' : 'bg-emerald-600 hover:bg-emerald-700'
             )}
           >
-            {loading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Confirm payment'}
+            {vendorConfirmLoading ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : 'Confirm payment'}
           </button>
         </div>
+        {paymentActionError && (
+          <p className="text-sm text-red-500">{paymentActionError}</p>
+        )}
       </div>
     );
   }
@@ -424,6 +446,10 @@ export default function OrderBubble({
   onBuyerConfirm,
   onVendorConfirmPayment,
   onPaymentDispute,
+  buyerConfirmLoading,
+  vendorConfirmLoading,
+  paymentDisputeLoading,
+  paymentActionError,
   orderLabel,
 }: Props) {
   const st = status && STATUS_STYLES[status] ? STATUS_STYLES[status] : STATUS_STYLES.pending;
@@ -475,6 +501,8 @@ export default function OrderBubble({
             orderId={orderId}
             initialReceiptUploaded={!!receiptUrl}
             onBuyerConfirm={onBuyerConfirm}
+            buyerConfirmLoading={buyerConfirmLoading}
+            paymentActionError={paymentActionError}
           />
         )}
 
@@ -485,6 +513,9 @@ export default function OrderBubble({
             receiptUrl={receiptUrl}
             onVendorConfirmPayment={onVendorConfirmPayment}
             onPaymentDispute={onPaymentDispute}
+            vendorConfirmLoading={vendorConfirmLoading}
+            paymentDisputeLoading={paymentDisputeLoading}
+            paymentActionError={paymentActionError}
           />
         )}
 

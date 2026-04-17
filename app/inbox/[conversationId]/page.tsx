@@ -94,6 +94,8 @@ export default function ConversationPage() {
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
   const [receiptUrl,   setReceiptUrl]   = useState<string | null>(null);
+  const [paymentActionLoading, setPaymentActionLoading] = useState<"buyer-confirm" | "vendor-confirm-payment" | "payment-dispute" | null>(null);
+  const [paymentActionError, setPaymentActionError] = useState<string | null>(null);
   const [vendorBank, setVendorBank] = useState<{
     bank_name: string;
     bank_account_number: string;
@@ -294,38 +296,85 @@ export default function ConversationPage() {
 
   // Auto-scroll on new messages
   useEffect(() => {
-    scrollToBottom(messages.length <= 1 ? "instant" : "smooth");
+    scrollToBottom(messages.length <= 1 ? "auto" : "smooth");
   }, [messages.length]);
 
     // ── Payment action handlers ───────────────────────────────────────────────────
   async function handleBuyerConfirmFromChat() {
     if (!meta?.order_id) return;
-    const res = await fetch(`/api/orders/${meta.order_id}/buyer-confirm`, { method: "POST" });
-    const json = await res.json();
-    if (json.ok) {
+    setPaymentActionError(null);
+    setPaymentActionLoading("buyer-confirm");
+    try {
+      const res = await fetch(`/api/orders/${meta.order_id}/buyer-confirm`, { method: "POST" });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string } | null;
+      if (!res.ok || !json?.ok) {
+        const errorMessage = json?.error ?? json?.message ?? "Something went wrong. Please try again.";
+        setPaymentActionError(errorMessage);
+        throw new Error(errorMessage);
+      }
       setPaymentStatus("buyer_confirmed");
       setPaymentMethod("transfer");
-    } else {
-      console.error("[inbox] buyer-confirm failed:", json.message);
+    } catch (error) {
+      console.error("[inbox] buyer-confirm failed:", error);
+      const errorMessage = error instanceof Error && error.message
+        ? error.message
+        : "Something went wrong. Please try again.";
+      setPaymentActionError(errorMessage);
+      throw error;
+    } finally {
+      setPaymentActionLoading(null);
     }
   }
 
   async function handleVendorConfirmFromChat() {
     if (!meta?.order_id) return;
-    const res = await fetch(`/api/orders/${meta.order_id}/vendor-confirm-payment`, { method: "POST" });
-    const json = await res.json();
-    if (json.ok) {
+    setPaymentActionError(null);
+    setPaymentActionLoading("vendor-confirm-payment");
+    try {
+      const res = await fetch(`/api/orders/${meta.order_id}/vendor-confirm-payment`, { method: "POST" });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string } | null;
+      if (!res.ok || !json?.ok) {
+        const errorMessage = json?.error ?? json?.message ?? "Something went wrong. Please try again.";
+        setPaymentActionError(errorMessage);
+        throw new Error(errorMessage);
+      }
       setPaymentStatus("vendor_confirmed");
       setOrderStatus("preparing");
-    } else {
-      console.error("[inbox] vendor-confirm-payment failed:", json.message);
+    } catch (error) {
+      console.error("[inbox] vendor-confirm-payment failed:", error);
+      const errorMessage = error instanceof Error && error.message
+        ? error.message
+        : "Something went wrong. Please try again.";
+      setPaymentActionError(errorMessage);
+      throw error;
+    } finally {
+      setPaymentActionLoading(null);
     }
   }
 
   async function handlePaymentDisputeFromChat() {
     if (!meta?.order_id) return;
-    await fetch(`/api/orders/${meta.order_id}/payment-dispute`, { method: "POST" });
-    setPaymentStatus("unpaid");
+    setPaymentActionError(null);
+    setPaymentActionLoading("payment-dispute");
+    try {
+      const res = await fetch(`/api/orders/${meta.order_id}/payment-dispute`, { method: "POST" });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string } | null;
+      if (!res.ok || !json?.ok) {
+        const errorMessage = json?.error ?? json?.message ?? "Something went wrong. Please try again.";
+        setPaymentActionError(errorMessage);
+        throw new Error(errorMessage);
+      }
+      setPaymentStatus("unpaid");
+    } catch (error) {
+      console.error("[inbox] payment-dispute failed:", error);
+      const errorMessage = error instanceof Error && error.message
+        ? error.message
+        : "Something went wrong. Please try again.";
+      setPaymentActionError(errorMessage);
+      throw error;
+    } finally {
+      setPaymentActionLoading(null);
+    }
   }
 
   async function send(chipText?: string) {
@@ -362,29 +411,18 @@ export default function ConversationPage() {
         prev.map((m) => (m.id === optimisticId ? (inserted as Message) : m))
       );
 
-      // FIX (Bug 1): Read the current unread value from metaRef (which we keep
-      // up to date below) so consecutive sends accumulate correctly, not reset to 1.
-      const currentMeta = metaRef.current!;
-      const unreadField = isVendorSide ? "buyer_unread" : "vendor_unread";
-      const currentOtherUnread = isVendorSide ? currentMeta.buyer_unread : currentMeta.vendor_unread;
-      const newOtherUnread = currentOtherUnread + 1;
-
-      await supabase
+      const { error: conversationError } = await supabase
         .from("conversations")
         .update({
           last_message_preview: text.length > 80 ? text.slice(0, 80) + "…" : text,
           last_message_at: new Date().toISOString(),
-          [unreadField]: newOtherUnread,
         })
         .eq("id", conversationId);
+      if (conversationError) throw conversationError;
 
-      // FIX (Bug 1): Keep metaRef in sync so the next send reads the updated count.
-      const updatedMeta: ConversationMeta = {
-        ...currentMeta,
-        [unreadField]: newOtherUnread,
-      };
-      setMeta(updatedMeta);
-      metaRef.current = updatedMeta;
+      const rpcName = isVendorSide ? "increment_buyer_unread" : "increment_vendor_unread";
+      const { error: unreadError } = await supabase.rpc(rpcName, { conversation_id: conversationId });
+      if (unreadError) throw unreadError;
 
       // Send in-app notification to other party
       const otherUserId = isVendorSide
@@ -594,6 +632,10 @@ export default function ConversationPage() {
                       onBuyerConfirm={handleBuyerConfirmFromChat}
                       onVendorConfirmPayment={handleVendorConfirmFromChat}
                       onPaymentDispute={handlePaymentDisputeFromChat}
+                      buyerConfirmLoading={paymentActionLoading === "buyer-confirm"}
+                      vendorConfirmLoading={paymentActionLoading === "vendor-confirm-payment"}
+                      paymentDisputeLoading={paymentActionLoading === "payment-dispute"}
+                      paymentActionError={paymentActionError}
                       orderLabel={vendor?.vendor_type !== 'food' ? '🏷️ Marketplace Order' : undefined}
                     />
                   ) : (
