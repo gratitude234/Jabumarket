@@ -417,6 +417,15 @@ export default function PracticeTakeClient() {
     const a = Math.max(0, stats.answered || 0);
     return t ? Math.round((a / t) * 100) : 0;
   }, [stats.answered, total]);
+  const totalMs =
+    typeof meta?.time_limit_minutes === "number" && Number.isFinite(meta.time_limit_minutes)
+      ? meta.time_limit_minutes * 60_000
+      : null;
+  const timeIsLow = typeof timeLeftMs === "number" && timeLeftMs > 0 && timeLeftMs <= 60_000;
+  const timeProgressPct =
+    totalMs && typeof timeLeftMs === "number"
+      ? Math.max(0, Math.min(100, (timeLeftMs / totalMs) * 100))
+      : null;
 
   // Auto-submit when time hits 0
   const prevLeft = useRef<number | null>(null);
@@ -425,8 +434,8 @@ export default function PracticeTakeClient() {
     if (typeof timeLeftMs !== "number") return;
     const was = prevLeft.current;
     prevLeft.current = timeLeftMs;
-    if (was !== null && was > 0 && timeLeftMs <= 0) setSubmitted(true);
-  }, [timeLeftMs, submitted, setSubmitted]);
+    if (was !== null && was > 0 && timeLeftMs <= 0) void finalizeAttempt("timeup");
+  }, [timeLeftMs, submitted, finalizeAttempt]);
 
   // Finalize attempt when submitted
   useEffect(() => {
@@ -617,20 +626,33 @@ if (err || !meta) {
                 Study
               </span>
             ) : typeof timeLeftMs === "number" ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
-                  timeLeftMs <= 30_000 && "animate-pulse",
-                  timeLeftMs <= 30_000
-                    ? "border-rose-300/40 bg-rose-100/40 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
-                    : timeLeftMs <= 120_000
-                    ? "border-amber-300/40 bg-amber-100/40 text-foreground dark:bg-amber-950/30"
-                    : "border-border bg-background text-foreground"
-                )}
-              >
-                <Timer className="h-4 w-4" />
-                <span className="tabular-nums">{msToClock(timeLeftMs)}</span>
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs font-extrabold",
+                    timeIsLow && "animate-pulse text-red-500",
+                    timeIsLow
+                      ? "border-rose-300/40 bg-rose-100/40 dark:bg-rose-950/30 dark:text-rose-300"
+                      : timeLeftMs <= 120_000
+                      ? "border-amber-300/40 bg-amber-100/40 text-foreground dark:bg-amber-950/30"
+                      : "border-border bg-background text-foreground"
+                  )}
+                >
+                  <Timer className="h-4 w-4" />
+                  <span className="tabular-nums">{msToClock(timeLeftMs)}</span>
+                </span>
+                {timeProgressPct !== null ? (
+                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-border/70">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all",
+                        timeIsLow ? "bg-red-500" : "bg-[#5B35D5]"
+                      )}
+                      style={{ width: `${timeProgressPct}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <span className="inline-flex items-center rounded-full border border-border bg-background px-2.5 py-2 text-xs font-extrabold text-muted-foreground">
                 Untimed

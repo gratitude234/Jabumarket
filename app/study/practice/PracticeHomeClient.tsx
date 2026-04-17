@@ -76,6 +76,8 @@ type QuizSetRow = {
 
   published?: boolean | null;
   approved?: boolean | null;
+  visibility?: "public" | "private" | "pending_review" | null;
+  created_by?: string | null;
 
   questions_count?: number | null;
   total_questions?: number | null;
@@ -449,11 +451,13 @@ function QuizSetCard({
   onStart,
   onPreview,
   summary,
+  currentUserId,
 }: {
   s: QuizSetRow;
   onStart: () => void;
   onPreview: () => void;
   summary?: SetAttemptSummary | null;
+  currentUserId?: string | null;
 }) {
   const title = (s.title ?? "Untitled set").trim() || "Untitled set";
   const code = (s.course_code ?? "").toString().trim().toUpperCase();
@@ -474,6 +478,7 @@ function QuizSetCard({
   const hasSubmitted  = (summary?.attemptCount ?? 0) > 0;
   const bestPct       = summary?.bestPct ?? null;
   const isMastered    = bestPct != null && bestPct >= 70;
+  const isPrivate = s.visibility === "private" && s.created_by === currentUserId;
 
   return (
     <Card className={cn(
@@ -496,11 +501,18 @@ function QuizSetCard({
           {/* Title + mastered badge */}
           <div className="flex min-w-0 items-start justify-between gap-2">
             <p className="truncate text-base font-semibold text-foreground">{title}</p>
-            {isMastered && (
-              <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-300/40 bg-emerald-100/30 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
-                ✓ Mastered
-              </span>
-            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {isPrivate && (
+                <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-100/30 px-2 py-0.5 text-[10px] font-extrabold text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                  Private
+                </span>
+              )}
+              {isMastered && (
+                <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-100/30 px-2 py-0.5 text-[10px] font-extrabold text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
+                  ✓ Mastered
+                </span>
+              )}
+            </div>
           </div>
 
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
@@ -951,7 +963,7 @@ export default function PracticeHomeClient() {
 }
 
 function PracticeHomeInner() {
-  const { hasPrefs } = useStudyPrefs();
+  const { hasPrefs, userId: authedUserId } = useStudyPrefs();
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -1094,8 +1106,9 @@ function PracticeHomeInner() {
       sortParam,
       publishedOnly ? "p1" : "p0",
       viewParam,
+      authedUserId ?? "anon",
     ].join("|");
-  }, [qParam, courseParam, levelParam, semesterParam, sortParam, publishedOnly, viewParam]);
+  }, [qParam, courseParam, levelParam, semesterParam, difficultyParam, sortParam, publishedOnly, viewParam, authedUserId]);
 
   useEffect(() => setQ(qParam), [qParam]);
 
@@ -1379,7 +1392,7 @@ function PracticeHomeInner() {
 
     try {
       const selectFields =
-        "id,title,description,course_code,level,semester,time_limit_minutes,difficulty,published,questions_count,created_at";
+        "id,title,description,course_code,level,semester,time_limit_minutes,difficulty,published,questions_count,created_at,visibility,created_by";
 
       let query = supabase.from("study_quiz_sets").select(selectFields, { count: "exact" });
 
@@ -1387,8 +1400,26 @@ function PracticeHomeInner() {
       query = query.eq("published", true);
 
       const qNorm = normalizeQuery(qParam);
-      if (qNorm) {
-        query = query.or(`title.ilike.%${qNorm}%,description.ilike.%${qNorm}%,course_code.ilike.%${qNorm}%`);
+      if (authedUserId) {
+        if (qNorm) {
+          query = query.or(
+            [
+              `and(visibility.eq.public,title.ilike.%${qNorm}%)`,
+              `and(visibility.eq.public,description.ilike.%${qNorm}%)`,
+              `and(visibility.eq.public,course_code.ilike.%${qNorm}%)`,
+              `and(created_by.eq.${authedUserId},title.ilike.%${qNorm}%)`,
+              `and(created_by.eq.${authedUserId},description.ilike.%${qNorm}%)`,
+              `and(created_by.eq.${authedUserId},course_code.ilike.%${qNorm}%)`,
+            ].join(",")
+          );
+        } else {
+          query = query.or(`visibility.eq.public,created_by.eq.${authedUserId}`);
+        }
+      } else {
+        query = query.eq("visibility", "public");
+        if (qNorm) {
+          query = query.or(`title.ilike.%${qNorm}%,description.ilike.%${qNorm}%,course_code.ilike.%${qNorm}%`);
+        }
       }
 
       const course = courseParam.trim().toUpperCase();
@@ -1426,6 +1457,7 @@ function PracticeHomeInner() {
 
         if (
           msg.includes("published") ||
+          msg.includes("visibility") ||
           msg.includes("approved") ||
           msg.includes("questions_count") ||
           msg.includes("time_limit_minutes") ||
@@ -1631,6 +1663,7 @@ function PracticeHomeInner() {
         .from("study_quiz_sets")
         .select("id, title, questions_count, total_questions, level, semester")
         .eq("published", true)
+        .eq("visibility", "public")
         .gt("questions_count", 4);
 
       if (typeof level === "number") query = query.eq("level", level);
@@ -1650,6 +1683,7 @@ function PracticeHomeInner() {
         .from("study_quiz_sets")
         .select("id")
         .eq("published", true)
+        .eq("visibility", "public")
         .gt("questions_count", 4)
         .limit(20);
 
@@ -2070,6 +2104,7 @@ function PracticeHomeInner() {
                   onStart={() => startSet(s.id)}
                   onPreview={() => openPreview(s)}
                   summary={setAttemptMap[s.id] ?? null}
+                  currentUserId={authedUserId}
                 />
               ))
             )}

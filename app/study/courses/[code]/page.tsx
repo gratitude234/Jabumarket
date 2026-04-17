@@ -234,6 +234,7 @@ export default function CourseHubPage() {
           .from("study_quiz_sets")
           .select("id,title,description,course_code,level,time_limit_minutes,questions_count,created_at")
           .eq("published", true)
+          .eq("visibility", "public")
           .ilike("course_code", `${code}%`)
           .order("created_at", { ascending: false })
           .limit(8),

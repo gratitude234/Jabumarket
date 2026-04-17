@@ -35,6 +35,9 @@ export async function GET(req: Request) {
 
   try {
     const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     const [matRes, courseRes, qRes, quizRes] = await Promise.all([
       // Materials: title or course_code ilike
@@ -70,14 +73,33 @@ export async function GET(req: Request) {
         .limit(6),
 
       // Quiz sets: title or course_code ilike
-      supabase
-        .from("study_quiz_sets")
-        .select(
-          "id,title,course_code,level,semester,questions_count,created_at"
-        )
-        .or(`title.ilike.${pat},course_code.ilike.${pat}`)
-        .order("created_at", { ascending: false })
-        .limit(6),
+      user?.id
+        ? supabase
+            .from("study_quiz_sets")
+            .select(
+              "id,title,course_code,level,semester,questions_count,created_at"
+            )
+            .eq("published", true)
+            .or(
+              [
+                `and(visibility.eq.public,title.ilike.${pat})`,
+                `and(visibility.eq.public,course_code.ilike.${pat})`,
+                `and(created_by.eq.${user.id},title.ilike.${pat})`,
+                `and(created_by.eq.${user.id},course_code.ilike.${pat})`,
+              ].join(",")
+            )
+            .order("created_at", { ascending: false })
+            .limit(6)
+        : supabase
+            .from("study_quiz_sets")
+            .select(
+              "id,title,course_code,level,semester,questions_count,created_at"
+            )
+            .eq("published", true)
+            .eq("visibility", "public")
+            .or(`title.ilike.${pat},course_code.ilike.${pat}`)
+            .order("created_at", { ascending: false })
+            .limit(6),
     ]);
 
     return NextResponse.json({

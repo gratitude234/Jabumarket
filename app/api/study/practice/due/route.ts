@@ -76,9 +76,10 @@ export async function GET() {
 
     const { data: setRows, error: setError } = await supabase
       .from("study_quiz_sets")
-      .select("id, title, course_code")
+      .select("id, title, course_code, created_by, visibility")
       .in("id", setIds)
-      .eq("published", true);
+      .eq("published", true)
+      .or(`visibility.eq.public,created_by.eq.${userId}`);
 
     if (setError) throw setError;
 

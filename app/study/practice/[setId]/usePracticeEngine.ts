@@ -159,7 +159,7 @@ export function usePracticeEngine({
 
         const setReq = supabase
           .from("study_quiz_sets")
-          .select("id,title,description,course_code,level,time_limit_minutes,source_material_id,published")
+          .select("id,title,description,course_code,level,time_limit_minutes,source_material_id,published,created_by,visibility")
           .eq("id", setId)
           .maybeSingle();
 
@@ -197,14 +197,22 @@ export function usePracticeEngine({
         if (!setRes.data) throw new Error("Practice set not found");
         if (qRes.error) throw qRes.error;
 
-        // Block unpublished sets for non-privileged users
-        if (!(setRes.data as any).published) {
+        const setData = setRes.data as {
+          published?: boolean | null;
+          created_by?: string | null;
+          visibility?: string | null;
+        };
+        const isAuthor = Boolean(setData.created_by && setData.created_by === user?.id);
+        const isPublic = (setData.visibility ?? "public") === "public";
+
+        // Block unpublished or private sets for non-privileged non-authors
+        if (!setData.published || !isPublic) {
           const [repRow, adminRow] = await Promise.all([
             supabase.from("study_reps").select("id").eq("user_id", user?.id ?? "").maybeSingle(),
             supabase.from("study_admins").select("id").eq("user_id", user?.id ?? "").maybeSingle(),
           ]);
           const isPrivileged = Boolean(repRow.data?.id || adminRow.data?.id);
-          if (!isPrivileged) throw new Error("This practice set is not available yet.");
+          if (!isPrivileged && !isAuthor) throw new Error("This practice set is not available yet.");
         }
 
         // Unpack the nested options from each question row
@@ -662,7 +670,7 @@ export function usePracticeEngine({
             user_id: userId,
             question_id: q.id,
             miss_count: existing.miss_count,
-            last_missed_at: existingMap[q.id]?.last_missed_at ?? submittedIso,
+            last_missed_at: existingMap[q.id]?.last_missed_at ?? null,
             next_due_at: computeNextDue(existing.miss_count, submittedIso),
             correct_streak: newStreak,
             graduated_at: graduated ? submittedIso : null,
