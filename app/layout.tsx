@@ -3,6 +3,7 @@ import "./globals.css";
 import AppChrome from "@/components/layout/AppChrome";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import PWAInstallProvider from "@/components/PWAInstallProvider";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -87,7 +88,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <PWAInstallProvider>
-          <AppChrome>{children}</AppChrome>
+          <AuthProvider>
+            <AppChrome>{children}</AppChrome>
+          </AuthProvider>
         </PWAInstallProvider>
         <ServiceWorkerRegister />
       </body>

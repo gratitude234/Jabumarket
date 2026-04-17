@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import TopNav from "@/components/layout/TopNav";
+
 import BottomNav from "@/components/layout/BottomNav";
 import MobileTopBar from "@/components/layout/MobileTopBar";
-import { subscribeToPush } from "@/components/ServiceWorkerRegister";
+import TopNav from "@/components/layout/TopNav";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
+import { subscribeToPush } from "@/components/ServiceWorkerRegister";
+import { useAuth } from "@/contexts/AuthContext";
+import { NavProvider } from "@/contexts/NavContext";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { supabase } from "@/lib/supabase";
 
@@ -32,13 +35,13 @@ type ActiveOrdersResponse = {
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user, loading: authLoading } = useAuth();
   const isAdmin = pathname?.startsWith("/admin") || pathname?.startsWith("/study-admin");
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname ?? "");
   const hideActiveOrderBanner = pathname === "/my-orders";
 
   const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
-  const [buyerId, setBuyerId] = useState<string | null>(null);
   const [activeOrderSummary, setActiveOrderSummary] = useState<ActiveOrderSummary | null>(null);
 
   useEffect(() => {
@@ -91,25 +94,10 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) {
-      console.error("[app-chrome] failed to load active orders user:", authError);
-      setBuyerId(null);
-      setActiveOrderSummary(null);
-      return;
-    }
-
     if (!user) {
-      setBuyerId(null);
       setActiveOrderSummary(null);
       return;
     }
-
-    setBuyerId(user.id);
 
     const res = await fetch("/api/orders/my?filter=active&limit=5", { cache: "no-store" });
     const json = (await res.json().catch(() => null)) as ActiveOrdersResponse | null;
@@ -126,41 +114,41 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const firstVendorName = orders[0]?.vendor?.name?.trim() || "your vendor";
     setActiveOrderSummary({
-      vendorName: firstVendorName,
+      vendorName: orders[0]?.vendor?.name?.trim() || "your vendor",
       extraCount: Math.max(0, orders.length - 1),
     });
-  }, [hideActiveOrderBanner, isAdmin]);
+  }, [hideActiveOrderBanner, isAdmin, user]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadActiveOrders();
-  }, [loadActiveOrders, pathname]);
+  }, [authLoading, loadActiveOrders, pathname]);
 
   useEffect(() => {
-    if (!buyerId || isAdmin || hideActiveOrderBanner) return;
+    if (!user?.id || isAdmin || hideActiveOrderBanner) return;
 
     const channel = supabase
-      .channel(`active-orders:${buyerId}`)
+      .channel(`active-orders:${user.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "orders", filter: `buyer_id=eq.${buyerId}` },
+        { event: "*", schema: "public", table: "orders", filter: `buyer_id=eq.${user.id}` },
         () => {
           void loadActiveOrders();
-        }
+        },
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [buyerId, hideActiveOrderBanner, isAdmin, loadActiveOrders]);
+  }, [hideActiveOrderBanner, isAdmin, loadActiveOrders, user?.id]);
 
   if (isAdmin) return <>{children}</>;
 
   return (
     <NotificationsProvider>
-      <>
+      <NavProvider>
         <Suspense fallback={null}>
           <MobileTopBar />
         </Suspense>
@@ -186,18 +174,20 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className={isConversationPage ? "" : [APP_CONTAINER, "py-6 md:py-8", "pb-20 md:pb-8"].join(" ")}>
+        <main
+          className={
+            isConversationPage ? "" : [APP_CONTAINER, "py-6 md:py-8", "pb-20 md:pb-8"].join(" ")
+          }
+        >
           {children}
         </main>
 
         <BottomNav />
 
         {updateWorker && (
-          <div className="fixed bottom-20 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-none fixed bottom-20 left-0 right-0 z-50 flex justify-center px-4">
             <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
-              <p className="text-sm font-semibold text-foreground">
-                App updated
-              </p>
+              <p className="text-sm font-semibold text-foreground">App updated</p>
               <button
                 onClick={() => {
                   updateWorker.postMessage({ type: "SKIP_WAITING" });
@@ -218,18 +208,13 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
             <div className="flex w-full max-w-sm items-start gap-3 rounded-2xl border border-border bg-card p-3 shadow-lg">
               <div className="text-xl">🔔</div>
               <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">
-                  Get notified instantly
-                </p>
+                <p className="text-sm font-semibold text-foreground">Get notified instantly</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Know when buyers message you or prices drop.
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
-                <button
-                  onClick={dismissNotificationPrompt}
-                  className="text-xs text-muted-foreground"
-                >
+                <button onClick={dismissNotificationPrompt} className="text-xs text-muted-foreground">
                   Not now
                 </button>
                 <button
@@ -242,7 +227,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         )}
-      </>
+      </NavProvider>
     </NotificationsProvider>
   );
 }

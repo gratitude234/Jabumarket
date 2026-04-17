@@ -26,12 +26,31 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  // IMPORTANT: this refreshes the session and sets cookies when needed
-  await supabase.auth.getUser();
+  await supabase.auth.getSession();
 
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    "/me/:path*",
+    "/saved/:path*",
+    "/post/:path*",
+    "/my-orders/:path*",
+    "/my-listings/:path*",
+    "/vendor/:path*",
+    "/rider/:path*",
+    "/inbox/:path*",
+    "/delivery/requests/:path*",
+    "/listing/:id/edit",
+    "/study/materials/upload/:path*",
+    "/study/materials/my/:path*",
+    "/study/history/:path*",
+    "/study/onboarding/:path*",
+    "/study/apply-rep/:path*",
+    "/study/tutors/apply/:path*",
+    "/study/gpa/:path*",
+    "/admin/:path*",
+    "/study-admin/:path*",
+  ],
 };

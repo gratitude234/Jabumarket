@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import NotificationBell from "@/components/notifications/NotificationBell";
 import InboxNavIcon from "@/components/layout/InboxNavIcon";
-import { supabase } from "@/lib/supabase";
+import { useNavContext } from "@/contexts/NavContext";
 import { usePostDraftBadge } from "@/hooks/usePostDraftBadge";
 
 const links = [
@@ -59,21 +59,8 @@ export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const sp = useSearchParams();
-  const [isVendor, setIsVendor] = useState(false);
+  const { isVendor } = useNavContext();
   const hasPostDraft = usePostDraftBadge();
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return;
-      supabase
-        .from('vendors')
-        .select('id')
-        .eq('user_id', data.user.id)
-        .eq('vendor_type', 'food')
-        .maybeSingle()
-        .then(({ data: v }) => setIsVendor(!!v));
-    });
-  }, []);
 
   const showSearch =
     pathname === "/" ||
