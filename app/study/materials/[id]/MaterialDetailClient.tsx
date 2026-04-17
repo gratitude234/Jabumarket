@@ -80,7 +80,7 @@ type Material = {
 };
 
 function detectKind(m: Material): "pdf" | "image" | "other" {
-  const src = ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase();
+  const src = (m.file_path ?? "").toLowerCase();
   if (src.includes(".pdf")) return "pdf";
   if (src.match(/\.(png|jpg|jpeg|webp|gif)/)) return "image";
   return "other";
@@ -89,7 +89,7 @@ function detectKind(m: Material): "pdf" | "image" | "other" {
 function fileTypeBadge(kind: "pdf" | "image" | "other", m: Material) {
   if (kind === "pdf") return "PDF";
   if (kind === "image") return "IMAGE";
-  const src = ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase();
+  const src = (m.file_path ?? "").toLowerCase();
   if (src.match(/\.(ppt|pptx)/)) return "PPT";
   if (src.match(/\.(doc|docx)/)) return "WORD";
   return "FILE";
@@ -468,7 +468,7 @@ export default function MaterialDetailClient({
   const badge = fileTypeBadge(kind, m);
   const course = m.study_courses;
   const title = (m.title ?? course?.course_code ?? "Untitled material").trim();
-  const fileUrl = m.file_url ?? "";
+  const fileUrl = m.file_path ? `/api/study/materials/${m.id}/download` : "";
   const hasFile = fileUrl.length > 0;
 
   const [saved, setSaved] = useState(initialSaved);
@@ -658,11 +658,6 @@ export default function MaterialDetailClient({
 
   async function handleDownload() {
     setDownloads((d) => d + 1);
-    try {
-      await supabase.rpc("increment_material_downloads", { material_id: m.id });
-    } catch {
-      setDownloads((d) => Math.max(0, d - 1));
-    }
     showToast("Download started");
   }
 

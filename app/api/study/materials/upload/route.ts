@@ -1,6 +1,11 @@
 // app/api/study/materials/upload/route.ts
 // Creates a pending material row + returns a signed upload token for Supabase Storage.
 // Open to any authenticated student — uploads are queued as approved=false for rep/admin review.
+//
+// Migration: add upload_status to study_materials
+// ALTER TABLE public.study_materials
+//   ADD COLUMN IF NOT EXISTS upload_status text NOT NULL DEFAULT 'pending_upload'
+//   CHECK (upload_status IN ('pending_upload', 'live', 'broken'));
 
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -103,7 +108,6 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     const autoApprove = isRep || !!adminRow;
-    const nowIso = new Date().toISOString();
 
     // 1) Verify course exists
     const { data: courseRow, error: courseErr } = await admin
@@ -145,9 +149,10 @@ export async function POST(req: Request) {
         course_id,
         title,
         session,
-        approved: autoApprove,
-        approved_by: autoApprove ? userId : null,
-        approved_at: autoApprove ? nowIso : null,
+        approved: false,
+        approved_by: null,
+        approved_at: null,
+        upload_status: "pending_upload",
         material_type,
         downloads: 0,
         file_hash: file_hash || null,
@@ -184,9 +189,10 @@ export async function POST(req: Request) {
           course_id,
           title,
           session,
-          approved: autoApprove,
-          approved_by: autoApprove ? userId : null,
-          approved_at: autoApprove ? nowIso : null,
+          approved: false,
+          approved_by: null,
+          approved_at: null,
+          upload_status: "pending_upload",
           uploader_id: userId,
           uploader_email: uploader_email,
           material_type: material_type || null,

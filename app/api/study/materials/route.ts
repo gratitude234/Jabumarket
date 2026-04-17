@@ -101,6 +101,7 @@ export async function GET(req: Request) {
     const to = from + pageSize - 1;
 
     const supabase = await createSupabaseServerClient();
+    const scope = await getUserScope(supabase);
 
     if (mineOnly) {
       const { data: authData } = await supabase.auth.getUser();
@@ -173,7 +174,8 @@ export async function GET(req: Request) {
          study_courses:course_id(id,faculty,department,level,semester,course_code,course_title,faculty_id,department_id)`,
         { count: "exact" }
       )
-      .eq("approved", true);
+      .eq("approved", true)
+      .eq("upload_status", "live");
 
     if (q) {
       // PostgREST `.or()` logic strings are whitespace-sensitive.
@@ -197,6 +199,8 @@ export async function GET(req: Request) {
     if (level) {
       const lv = Number(level);
       if (Number.isFinite(lv)) query = query.eq("level", String(lv));
+    } else if (scope?.level != null) {
+      query = query.eq("level", String(scope.level));
     }
 
     if (semester) {
@@ -206,8 +210,10 @@ export async function GET(req: Request) {
 
     if (faculty_id) query = query.eq("faculty_id", faculty_id);
     else if (faculty) query = query.eq("faculty", faculty);
+    else if (scope?.faculty_id) query = query.eq("faculty_id", scope.faculty_id);
     if (dept_id) query = query.eq("department_id", dept_id);
     else if (dept) query = query.eq("department", dept);
+    else if (scope?.department_id) query = query.eq("department_id", scope.department_id);
     if (course) query = query.eq("course_code", course.trim().toUpperCase());
     if (session) query = query.ilike("session", `%${session}%`);
     if (type && type !== "all") query = query.eq("material_type", type);

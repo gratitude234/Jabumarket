@@ -26,6 +26,7 @@ const getMaterial = cache(async (id: string) => {
     )
     .eq("id", id)
     .eq("approved", true)
+    .eq("upload_status", "live")
     .maybeSingle();
 
   if (error || !data) return null;
@@ -80,6 +81,7 @@ export default async function MaterialDetailPage({ params }: Props) {
           .from("study_materials")
           .select("id,title,material_type,downloads,up_votes,file_path,created_at,study_courses:course_id(course_code)")
           .eq("approved", true)
+          .eq("upload_status", "live")
           .eq("course_id", courseId)
           .neq("id", id)
           .order("downloads", { ascending: false })

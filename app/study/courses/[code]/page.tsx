@@ -42,7 +42,6 @@ type Material = {
   id: string;
   title: string | null;
   description: string | null;
-  file_url: string | null;
   file_path: string | null;
   level: string | null;
   semester: string | null;
@@ -112,7 +111,7 @@ function MaterialRow({
   onOpen: (m: Material) => void;
 }) {
   const title = normalize(String(m.title ?? "Untitled material")) || "Untitled material";
-  const href = m.file_url || "#";
+  const href = m.file_path ? `/api/study/materials/${m.id}/download` : "#";
   const unavailable = href === "#";
 
   const typeColor: Record<string, string> = {
@@ -223,8 +222,9 @@ export default function CourseHubPage() {
       const [mRes, pRes, qRes] = await Promise.all([
         supabase
           .from("study_materials")
-          .select("id,title,description,file_url,file_path,level,session,semester,created_at,downloads,material_type")
+          .select("id,title,description,file_path,level,session,semester,created_at,downloads,material_type")
           .eq("approved", true)
+          .eq("upload_status", "live")
           .eq("course_id", courseRow.id)
           .order("downloads", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
@@ -326,7 +326,7 @@ export default function CourseHubPage() {
 
   const firstPdfMaterial = useMemo(() => {
     return materials.find((m) => {
-      const url = ((m.file_url ?? "") + " " + (m.file_path ?? "")).toLowerCase();
+      const url = (m.file_path ?? "").toLowerCase();
       return url.includes(".pdf");
     }) ?? null;
   }, [materials]);
@@ -334,17 +334,8 @@ export default function CourseHubPage() {
   const topPractice = practiceSets[0]?.id ? `/study/practice/${encodeURIComponent(String(practiceSets[0].id))}` : `/study/practice?course=${encodeURIComponent(code)}`;
 
   async function onOpenMaterial(m: Material) {
-    const href = m.file_url || "#";
+    const href = m.file_path ? `/api/study/materials/${m.id}/download` : "#";
     if (href === "#") return;
-
-    // best-effort downloads increment (don’t block opening)
-    try {
-      const nextDownloads = Number(m.downloads ?? 0) + 1;
-      setMaterials((prev) => prev.map((x) => (x.id === m.id ? { ...x, downloads: nextDownloads } : x)));
-      await supabase.from("study_materials").update({ downloads: nextDownloads }).eq("id", m.id);
-    } catch {
-      // ignore
-    }
 
     window.open(href, "_blank", "noopener,noreferrer");
   }

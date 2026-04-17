@@ -1,6 +1,11 @@
 // app/api/study/materials/upload/complete/route.ts
 // Marks an uploaded material as "upload completed" after the client successfully uploads to Supabase Storage.
 // Hardened: verifies the object exists in Storage and flags broken uploads for moderators (without losing file_path).
+//
+// Migration: add upload_status to study_materials
+// ALTER TABLE public.study_materials
+//   ADD COLUMN IF NOT EXISTS upload_status text NOT NULL DEFAULT 'pending_upload'
+//   CHECK (upload_status IN ('pending_upload', 'live', 'broken'));
 
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -94,17 +99,33 @@ export async function POST(req: Request) {
     const patch: any = { updated_at: nowIso };
 
     if (exists) {
-      const { data: signedData } = await admin.storage
-        .from("study-materials")
-        .createSignedUrl(file_path as string, 60 * 60 * 24 * 365);
-      if (signedData?.signedUrl) {
-        patch.file_url = signedData.signedUrl;
-      }
+      const { data: repRow } = await admin
+        .from("study_reps")
+        .select("user_id")
+        .eq("user_id", uid)
+        .eq("active", true)
+        .maybeSingle();
+      const { data: adminRow } = await admin
+        .from("study_admins")
+        .select("user_id")
+        .eq("user_id", uid)
+        .maybeSingle();
+      const autoApprove = Boolean(repRow || adminRow);
+      patch.upload_status = "live";
+      patch.approved = autoApprove;
+      patch.approved_by = autoApprove ? uid : null;
+      patch.approved_at = autoApprove ? nowIso : null;
+      patch.file_url = null;
     } else {
       const prior = (row as any).description as string | null;
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
       const note = `[BROKEN_UPLOAD ${stamp}] Client reported completion but file not found in storage.`;
       patch.description = prior ? `${prior}\n\n${note}` : note;
+      patch.upload_status = "broken";
+      patch.approved = false;
+      patch.approved_by = null;
+      patch.approved_at = null;
+      patch.file_url = null;
       // keep file_path intact so moderators can re-check storage later
     }
 

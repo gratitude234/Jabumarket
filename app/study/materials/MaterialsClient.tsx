@@ -682,7 +682,8 @@ export default function MaterialsClient() {
   const mineOnly = useMemo(() => {
     if (mineExplicitOn) return true;
     if (mineExplicitOff) return false;
-    return false;
+    if (!prefsLoaded) return false;
+    return myBadge ? true : false;
   }, [mineExplicitOn, mineExplicitOff, prefsLoaded, myBadge]);
 
   const filtersKey = useMemo(() => {
@@ -1224,19 +1225,9 @@ export default function MaterialsClient() {
   }
 
   async function bumpDownloads(materialId: string) {
-    // Optimistic update — immediately reflects in the UI
     setMaterials((prev) =>
       prev.map((m) => (m.id === materialId ? { ...m, downloads: (m.downloads ?? 0) + 1 } : m))
     );
-    try {
-      // Atomic increment via DB function — no race condition, bypasses RLS
-      await supabase.rpc("increment_material_downloads", { p_id: materialId });
-    } catch {
-      // Roll back the optimistic update if the RPC fails
-      setMaterials((prev) =>
-        prev.map((m) => (m.id === materialId ? { ...m, downloads: Math.max(0, (m.downloads ?? 1) - 1) } : m))
-      );
-    }
   }
 
   const hasAnyFilters = Boolean(

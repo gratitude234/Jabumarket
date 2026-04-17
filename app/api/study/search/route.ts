@@ -44,6 +44,7 @@ export async function GET(req: Request) {
           "id,title,material_type,downloads,created_at,course_code,level,semester"
         )
         .eq("approved", true)
+        .eq("upload_status", "live")
         .or(`title.ilike.${pat},course_code.ilike.${pat}`)
         .order("downloads", { ascending: false, nullsFirst: false })
         .limit(8),

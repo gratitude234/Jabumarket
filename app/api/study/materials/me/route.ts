@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("study_materials")
       .select(
-        "id, title, material_type, session, approved, created_at, updated_at, file_url, file_path, description, study_courses:course_id(course_code, course_title, level, semester)"
+        "id, title, material_type, session, approved, upload_status, created_at, updated_at, file_url, file_path, description, study_courses:course_id(course_code, course_title, level, semester)"
       )
       .eq("uploader_id", uid)
       .order("created_at", { ascending: false })

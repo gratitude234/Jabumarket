@@ -37,7 +37,7 @@ type Material = {
   id: string;
   title: string | null;
   description: string | null;
-  file_url: string | null;
+  file_path: string | null;
   created_at: string | null;
   downloads: number | null;
 };
@@ -484,7 +484,7 @@ export default function LibraryClient() {
     if (materialIds.length) {
       const { data, error } = await supabase
         .from("study_materials")
-        .select("id,title,description,file_url,created_at,downloads")
+        .select("id,title,description,file_path,created_at,downloads")
         .in("id", materialIds);
 
       if (!error) {
@@ -895,7 +895,7 @@ export default function LibraryClient() {
 
                     <div className="mt-4 flex items-center gap-2">
                       <GhostButton href="/study/materials">Materials</GhostButton>
-                      {m?.file_url ? (
+                      {m?.file_path ? (
                         <a
                           href={`/api/study/materials/${m.id}/download`}
                           target="_blank"
