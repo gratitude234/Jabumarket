@@ -18,7 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { summarizeOrderLines } from '@/types/meal-builder';
-import type { OrderPayload, OrderLine } from '@/types/meal-builder';
+import type { OrderPayload, OrderLine, VendorMenuItem } from '@/types/meal-builder';
 import MealBuilder from '@/components/chat/MealBuilder';
 import {
   Loader2, MessageCircle, UtensilsCrossed, ArrowLeft, Bell, X, RefreshCw, RotateCcw, XCircle,
@@ -265,7 +265,7 @@ function CancelButton({
 // ── Reorder flow ──────────────────────────────────────────────────────────────
 // Validates items are still active, then opens MealBuilder pre-filled.
 
-type ReorderState = 'idle' | 'validating' | 'ready' | 'partial' | 'unavailable';
+type ReorderState = 'idle' | 'validating' | 'ready' | 'unavailable';
 
 function ReorderFlow({
   order,
@@ -276,36 +276,69 @@ function ReorderFlow({
 }) {
   const [state, setState]         = useState<ReorderState>('idle');
   const [validLines, setValid]    = useState<OrderLine[]>([]);
-  const [badItems, setBad]        = useState<string[]>([]);
   const [showBuilder, setBuilder] = useState(false);
+  const [notice, setNotice]       = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  function normalizeName(value: string) {
+    return value.trim().toLowerCase();
+  }
 
   async function start() {
     setState('validating');
+    setNotice(null);
     const lines: OrderLine[] = order.items?.lines ?? [];
     if (lines.length === 0) { setState('unavailable'); return; }
 
     try {
       // Ask the menu API for the vendor's current active items
-      const res  = await fetch(`/api/vendors/${order.vendor_id}/menu`);
-      const json = await res.json();
-      const activeIds = new Set<string>(
-        (json.categories ?? []).flatMap((c: any) => c.items.map((i: any) => i.id))
-      );
+      const res = await fetch(`/api/vendors/${order.vendor_id}/menu`);
+      if (!res.ok) {
+        setState('idle');
+        return;
+      }
+      const json: { ok?: boolean; categories?: Array<{ items: VendorMenuItem[] }> } = await res.json();
+      if (!json.ok) {
+        setState('idle');
+        return;
+      }
+      const activeItems = (json.categories ?? []).flatMap((category) => category.items);
+      const itemsById = new Map(activeItems.map((item) => [item.id, item]));
+      const itemsByName = new Map(activeItems.map((item) => [normalizeName(item.name), item]));
 
       const good: OrderLine[] = [];
-      const bad:  string[]    = [];
+      let missingCount = 0;
       for (const line of lines) {
-        if (activeIds.has(line.item_id)) good.push(line);
-        else bad.push(line.name);
+        const activeItem = itemsById.get(line.item_id) ?? itemsByName.get(normalizeName(line.name));
+        if (!activeItem) {
+          missingCount += 1;
+          continue;
+        }
+        good.push({
+          ...line,
+          item_id: activeItem.id,
+          name: activeItem.name,
+          emoji: activeItem.emoji,
+          unit_name: activeItem.unit_name,
+          price_per_unit: activeItem.price_per_unit,
+          line_total: activeItem.price_per_unit * line.qty,
+          category: activeItem.category,
+        });
       }
 
-      setBad(bad);
       setValid(good);
 
       if (good.length === 0)   { setState('unavailable'); return; }
-      if (bad.length > 0)      { setState('partial'); return; }
+      if (missingCount > 0) {
+        setNotice('Some items are no longer available.');
+      }
       setState('ready');
-      setBuilder(true); // all items OK — open directly
+      setBuilder(true);
     } catch {
       setState('idle');
     }
@@ -313,7 +346,13 @@ function ReorderFlow({
 
   if (showBuilder) {
     return (
-      <div className="mt-3 rounded-2xl border border-zinc-200 overflow-hidden">
+      <div className="mt-3 space-y-2">
+        {notice ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800">
+            {notice}
+          </div>
+        ) : null}
+        <div className="rounded-2xl border border-zinc-200 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-50 border-b border-zinc-100">
           <p className="text-xs font-semibold text-zinc-700">Reorder from {order.vendor.name}</p>
           <button type="button" onClick={() => { setBuilder(false); setState('idle'); onDone(); }}
@@ -328,29 +367,6 @@ function ReorderFlow({
           onClose={() => { setBuilder(false); setState('idle'); }}
           onOrderSent={onDone}
         />
-      </div>
-    );
-  }
-
-  if (state === 'partial') {
-    return (
-      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2">
-        <p className="text-xs font-semibold text-amber-800">
-          {badItems.length} item{badItems.length > 1 ? 's' : ''} no longer available
-        </p>
-        <p className="text-xs text-amber-700">
-          {badItems.join(', ')} {badItems.length > 1 ? 'are' : 'is'} sold out or removed.
-          The rest will be pre-filled.
-        </p>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setState('idle')}
-            className="flex-1 rounded-xl border border-amber-300 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100">
-            Cancel
-          </button>
-          <button type="button" onClick={() => setBuilder(true)}
-            className="flex-1 rounded-xl bg-zinc-900 py-2 text-xs font-semibold text-white hover:bg-zinc-700">
-            Continue anyway
-          </button>
         </div>
       </div>
     );
@@ -369,17 +385,24 @@ function ReorderFlow({
   }
 
   return (
-    <button
-      type="button"
-      onClick={start}
-      disabled={state === 'validating'}
-      className="mt-3 inline-flex items-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-    >
-      {state === 'validating'
-        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        : <RotateCcw className="h-3.5 w-3.5" />}
-      Reorder
-    </button>
+    <div className="mt-3 space-y-2">
+      {notice ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800">
+          {notice}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        onClick={start}
+        disabled={state === 'validating'}
+        className="inline-flex items-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+      >
+        {state === 'validating'
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : <RotateCcw className="h-3.5 w-3.5" />}
+        Reorder
+      </button>
+    </div>
   );
 }
 

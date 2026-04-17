@@ -19,6 +19,8 @@ export type FoodVendorData = {
   closes_at: string | null;
   open: boolean | null;
   hours: string | null;
+  statusLabel: string | null;
+  statusTone: 'open' | 'soon' | 'closed' | null;
   rating: { avg: number; count: number } | null;
   menuItems: { name: string; emoji: string; stock_count: number | null }[];
   day_schedule?: import('@/lib/vendorSchedule').DayEntry[] | null;
@@ -71,16 +73,23 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
                   <p className="truncate text-sm font-semibold text-zinc-900">
                     {v.name ?? 'Vendor'}
                   </p>
-                  {v.open === true && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Open
-                    </span>
-                  )}
-                  {v.open === false && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
-                      <Circle className="h-3 w-3" />
-                      Closed
+                  {v.statusLabel && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]',
+                        v.statusTone === 'open'
+                          ? 'border-emerald-200 bg-emerald-50 font-semibold text-emerald-700'
+                          : v.statusTone === 'soon'
+                            ? 'border-amber-200 bg-amber-50 font-semibold text-amber-700'
+                            : 'border-zinc-200 bg-zinc-100 font-medium text-zinc-500'
+                      )}
+                    >
+                      {v.statusTone === 'open' ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : (
+                        <Circle className="h-3 w-3" />
+                      )}
+                      {v.statusLabel}
                     </span>
                   )}
                   {v.accepts_delivery === true && v.open === true && (
