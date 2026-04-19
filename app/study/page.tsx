@@ -67,7 +67,7 @@ async function fetchStaticData(): Promise<{
           )
           .eq("approved", true)
           .order("downloads", { ascending: false, nullsFirst: false })
-          .limit(6),
+          .limit(2),
       ]);
 
     return {
@@ -115,7 +115,6 @@ function StudyHomeFallback() {
         <div className="h-28 animate-pulse rounded-3xl bg-muted" />
         <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
         <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
-        <div className="h-28 animate-pulse rounded-3xl border border-border bg-card shadow-sm" />
       </div>
 
       {/* Content skeletons */}
@@ -131,8 +130,8 @@ function StudyHomeFallback() {
 // ─── Async data → client bridge ───────────────────────────────────────────────
 
 async function StudyHomeWithData() {
-  const { counts, trending } = await fetchStaticData();
-  return <StudyHomeClient initialCounts={counts} initialTrending={trending} />;
+  const { trending } = await fetchStaticData();
+  return <StudyHomeClient initialTrending={trending} />;
 }
 
 // ─── Page export ──────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { trackHomeCta } from "@/lib/studyAnalytics";
 
 const SEARCH_LAUNCHED_AT = "2026-04-13";
 
@@ -27,10 +28,7 @@ export default function CourseSearch() {
 
   useEffect(() => {
     const term = query.trim();
-    if (!term) {
-      setResults([]);
-      return;
-    }
+    if (!term) return;
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
@@ -53,10 +51,29 @@ export default function CourseSearch() {
 
   const showDropdown = focused && query.trim().length > 0 && results.length > 0;
   const showNewBadge = shouldShowNewBadge() && query.trim().length === 0;
+  const trimmedQuery = query.trim();
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    trackHomeCta("course_search_submit", {
+      query_length: trimmedQuery.length,
+      position: 1,
+    });
+    if (!trimmedQuery) return;
+    const exactMatch = results.find(
+      (result) => result.course_code.trim().toUpperCase() === trimmedQuery
+    );
+    if (!exactMatch) return;
+    setFocused(false);
+    setResults([]);
+    setQuery("");
+    router.push(`/study/courses/${encodeURIComponent(exactMatch.course_code)}`);
+  }
 
   return (
-    <div
+    <form
       className="relative"
+      onSubmit={handleSubmit}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
@@ -64,7 +81,11 @@ export default function CourseSearch() {
       <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3">
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value.toUpperCase())}
+          onChange={(event) => {
+            const nextQuery = event.target.value.toUpperCase();
+            setQuery(nextQuery);
+            if (!nextQuery.trim()) setResults([]);
+          }}
           onFocus={() => setFocused(true)}
           placeholder="Search by course code…"
           className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -103,6 +124,6 @@ export default function CourseSearch() {
           ))}
         </div>
       ) : null}
-    </div>
+    </form>
   );
 }

@@ -1,37 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowRight, UserCircle, X } from "lucide-react";
 
 interface SetupNudgeProps {
   onDismiss: () => void;
+  onAction?: () => void;
 }
 
 const DISMISS_KEY = "jabu:setupNudgeDismissed";
 
-export default function SetupNudge({ onDismiss }: SetupNudgeProps) {
-  const [dismissed, setDismissed] = useState(false);
-  const [resolved, setResolved] = useState(false);
-
-  useEffect(() => {
+export default function SetupNudge({ onDismiss, onAction }: SetupNudgeProps) {
+  const [state, setState] = useState(() => {
+    if (typeof window === "undefined") {
+      return { dismissed: false, resolved: false };
+    }
     try {
-      if (localStorage.getItem(DISMISS_KEY) === "1") {
-        setDismissed(true);
-      }
+      return {
+        dismissed: localStorage.getItem(DISMISS_KEY) === "1",
+        resolved: true,
+      };
     } catch {}
-    setResolved(true);
-  }, []);
+    return { dismissed: false, resolved: true };
+  });
 
   function handleDismiss() {
     try {
       localStorage.setItem(DISMISS_KEY, "1");
     } catch {}
-    setDismissed(true);
+    setState({ dismissed: true, resolved: true });
     onDismiss();
   }
 
-  if (!resolved || dismissed) return null;
+  if (!state.resolved || state.dismissed) return null;
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-[#AFA9EC] bg-[#EEEDFE] px-4 py-3.5 dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10">
@@ -49,6 +51,7 @@ export default function SetupNudge({ onDismiss }: SetupNudgeProps) {
 
         <Link
           href="/study/onboarding"
+          onClick={onAction}
           className="mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-extrabold text-white no-underline transition hover:bg-[#4526B8]"
         >
           Set up now

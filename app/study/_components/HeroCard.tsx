@@ -5,11 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { trackHomeCta, type StudyHomeHeroState } from "@/lib/studyAnalytics";
 import {
   getInProgressAttempts,
+  getLatestAttempt,
   getPracticeStreak,
   type PracticeAttemptRow,
 } from "@/lib/studyPractice";
+import DayOneHero from "./DayOneHero";
 
 type DueCourseRow = {
   // Assumption: Supabase may return the nested relation as either an object or
@@ -30,16 +33,23 @@ export function HeroCard({
   displayName,
   userId,
   loading,
+  onHeroStateResolved,
 }: {
   displayName: string | null;
   userId: string | null;
   loading: boolean;
+  onHeroStateResolved?: (payload: {
+    heroState: StudyHomeHeroState;
+    dueCount: number;
+    streak: number;
+  }) => void;
 }) {
   const [streak, setStreak] = useState(0);
-  const [activeDays, setActiveDays] = useState<Set<string>>(new Set());
   const [dueCount, setDueCount] = useState<number | null>(null);
   const [dueCourses, setDueCourses] = useState<string[]>([]);
   const [continueAttempt, setContinueAttempt] = useState<PracticeAttemptRow | null>(null);
+  const [hasPracticeHistory, setHasPracticeHistory] = useState(false);
+  const [totalAttempts, setTotalAttempts] = useState<number | null>(null);
   const [streakLoading, setStreakLoading] = useState(true);
   const [ctaResolved, setCtaResolved] = useState(false);
 
@@ -52,32 +62,11 @@ export function HeroCard({
       } finally {
         if (!cancelled) setStreakLoading(false);
       }
-
-      if (!userId) return;
-      try {
-        const since = new Date(Date.now() + 3_600_000 - 28 * 86_400_000)
-          .toISOString()
-          .slice(0, 10);
-        const { data } = await supabase
-          .from("study_daily_activity")
-          .select("activity_date,did_practice")
-          .eq("user_id", userId)
-          .gte("activity_date", since);
-        if (!cancelled && data) {
-          const nextDays = new Set<string>();
-          for (const row of data as { activity_date: string; did_practice: boolean }[]) {
-            if (row?.did_practice === true && row?.activity_date) nextDays.add(String(row.activity_date));
-          }
-          setActiveDays(nextDays);
-        }
-      } catch {
-        // non-critical
-      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -86,6 +75,8 @@ export function HeroCard({
       setDueCount(0);
       setDueCourses([]);
       setContinueAttempt(null);
+      setHasPracticeHistory(false);
+      setTotalAttempts(1);
       setCtaResolved(true);
       return;
     }
@@ -96,7 +87,7 @@ export function HeroCard({
     (async () => {
       try {
         const now = new Date().toISOString();
-        const [countRes, coursesRes, inProgress] = await Promise.all([
+        const [countRes, coursesRes, inProgress, latestAttempt, submittedRes] = await Promise.all([
           supabase
             .from("study_weak_questions")
             .select("user_id", { count: "exact", head: true })
@@ -111,6 +102,12 @@ export function HeroCard({
             .is("graduated_at", null)
             .limit(10),
           getInProgressAttempts(1).catch(() => []),
+          getLatestAttempt().catch(() => null),
+          supabase
+            .from("study_practice_attempts")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .eq("status", "submitted"),
         ]);
 
         if (cancelled) return;
@@ -132,11 +129,15 @@ export function HeroCard({
         }
 
         setContinueAttempt(inProgress[0] ?? null);
+        setHasPracticeHistory(Boolean(latestAttempt));
+        setTotalAttempts(!submittedRes.error ? submittedRes.count ?? 0 : 0);
       } catch {
         if (!cancelled) {
           setDueCount(0);
           setDueCourses([]);
           setContinueAttempt(null);
+          setHasPracticeHistory(false);
+          setTotalAttempts(0);
         }
       } finally {
         if (!cancelled) setCtaResolved(true);
@@ -148,12 +149,34 @@ export function HeroCard({
     };
   }, [loading, userId]);
 
-  const now = new Date(Date.now() + 3_600_000);
-  const todayStr = now.toISOString().slice(0, 10);
-  const dotDays: string[] = [];
-  for (let i = 27; i >= 0; i--) {
-    dotDays.push(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10));
-  }
+  useEffect(() => {
+    if (!ctaResolved || streakLoading || dueCount === null || totalAttempts === null || totalAttempts === 0) {
+      return;
+    }
+    const heroState: StudyHomeHeroState =
+      dueCount > 0
+        ? "due_cards"
+        : continueAttempt
+        ? "continue"
+        : hasPracticeHistory
+        ? "idle"
+        : "new_user";
+
+    onHeroStateResolved?.({
+      heroState,
+      dueCount,
+      streak,
+    });
+  }, [
+    ctaResolved,
+    streakLoading,
+    dueCount,
+    totalAttempts,
+    continueAttempt,
+    hasPracticeHistory,
+    onHeroStateResolved,
+    streak,
+  ]);
 
   const streakColor =
     streak >= 7 ? "text-orange-500" : streak >= 3 ? "text-amber-500" : "text-muted-foreground";
@@ -170,6 +193,22 @@ export function HeroCard({
   const answeredCount = typeof continueAttempt?.score === "number" ? continueAttempt.score : 0;
   const totalCount = typeof continueAttempt?.total_questions === "number" ? continueAttempt.total_questions : 0;
 
+  if (!ctaResolved || totalAttempts === null) {
+    return (
+      <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+        <div className="p-5 pb-4">
+          <div className="h-6 w-1/2 animate-pulse rounded bg-secondary/70" />
+          <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-secondary/70" />
+          <div className="mt-4 h-[72px] animate-pulse rounded-2xl bg-secondary/70" />
+        </div>
+      </div>
+    );
+  }
+
+  if (totalAttempts === 0) {
+    return <DayOneHero displayName={displayName} loading={loading} />;
+  }
+
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
       <div className="p-5 pb-4">
@@ -181,17 +220,31 @@ export function HeroCard({
             </p>
           </div>
 
-          <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 shadow-sm">
-            <Flame className={cn("h-4 w-4", streakLoading ? "text-muted-foreground" : streakColor)} />
-            <span className="text-sm font-extrabold text-foreground">{streakLoading ? "0" : streak}</span>
-          </div>
+          <Link
+            href="/study/history"
+            onClick={() =>
+              trackHomeCta("hero_streak_chip", {
+                streak,
+                position: 2,
+              })
+            }
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-background px-2 py-1 shadow-sm no-underline"
+          >
+            <Flame className={cn("h-3.5 w-3.5", streakLoading ? "text-muted-foreground" : streakColor)} />
+            <span className="text-xs font-extrabold text-foreground">{streakLoading ? "0" : streak}</span>
+          </Link>
         </div>
-
-        {!ctaResolved ? (
-          <div className="mt-4 h-[72px] animate-pulse rounded-2xl bg-secondary/70" />
-        ) : dueCount !== null && dueCount > 0 ? (
+        {dueCount !== null && dueCount > 0 ? (
           <Link
             href="/study/practice?due=1"
+            onClick={() =>
+              trackHomeCta("hero_primary", {
+                variant: "due",
+                due_count: dueCount,
+                continue_attempt_id: continueAttempt?.id ?? null,
+                position: 1,
+              })
+            }
             className={cn(
               "mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 no-underline shadow-sm transition",
               "bg-[#5B35D5] text-white hover:bg-[#4526B8]",
@@ -211,6 +264,14 @@ export function HeroCard({
         ) : continueAttempt ? (
           <Link
             href={`/study/practice/${encodeURIComponent(continueAttempt.set_id)}?attempt=${encodeURIComponent(continueAttempt.id)}`}
+            onClick={() =>
+              trackHomeCta("hero_primary", {
+                variant: "continue",
+                due_count: dueCount ?? 0,
+                continue_attempt_id: continueAttempt.id,
+                position: 1,
+              })
+            }
             className={cn(
               "mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 no-underline transition",
               "hover:bg-secondary/40",
@@ -231,6 +292,14 @@ export function HeroCard({
         ) : (
           <Link
             href="/study/practice"
+            onClick={() =>
+              trackHomeCta("hero_primary", {
+                variant: "start",
+                due_count: dueCount ?? 0,
+                continue_attempt_id: null,
+                position: 1,
+              })
+            }
             className={cn(
               "mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 no-underline transition",
               "hover:bg-secondary/40",
@@ -244,33 +313,38 @@ export function HeroCard({
             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Link>
         )}
-      </div>
 
-      <div className="border-t border-border px-5 py-3">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          28-day activity
-        </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(14, 1fr)", gap: "4px" }}>
-          {dotDays.map((day) => {
-            const isToday = day === todayStr;
-            const practiced = activeDays.has(day);
-            return (
-              <div
-                key={day}
-                title={day}
-                className={cn(
-                  "h-2 rounded-sm",
-                  isToday
-                    ? practiced
-                      ? "bg-[#5B35D5] ring-2 ring-[#5B35D5]/35 ring-offset-1"
-                      : "bg-muted ring-2 ring-[#5B35D5]/30 ring-offset-1"
-                    : practiced
-                    ? "bg-[#5B35D5]/60"
-                    : "bg-secondary"
-                )}
-              />
-            );
-          })}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link
+            href="/study/practice"
+            onClick={() =>
+              trackHomeCta("hero_secondary", {
+                variant: "fresh",
+              })
+            }
+            className={cn(
+              "inline-flex items-center justify-center rounded-2xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground no-underline transition",
+              "hover:bg-secondary/20",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            Fresh session
+          </Link>
+          <Link
+            href="/study/history"
+            onClick={() =>
+              trackHomeCta("hero_secondary", {
+                variant: "resume",
+              })
+            }
+            className={cn(
+              "inline-flex items-center justify-center rounded-2xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground no-underline transition",
+              "hover:bg-secondary/20",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            Resume
+          </Link>
         </div>
       </div>
     </div>

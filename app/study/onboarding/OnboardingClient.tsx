@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { track } from "@/lib/studyAnalytics";
 import {
   ArrowRight,
   BookOpen,
@@ -1080,15 +1081,29 @@ export default function OnboardingClient() {
                 {/* Primary CTA — dynamic based on available content */}
                 <div className="mt-6">
                   {(step4Data?.quizSets ?? 0) > 0 ? (
-                    <Link
-                      href="/study/practice"
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        track("study_onboarding_first_set_started");
+                        try {
+                          const response = await fetch("/api/study/first-set-pick", {
+                            credentials: "same-origin",
+                          });
+                          const payload = await response.json();
+                          if (payload?.ok && payload.set?.id) {
+                            router.replace(`/study/practice/${encodeURIComponent(payload.set.id)}`);
+                          } else {
+                            router.replace("/study/practice");
+                          }
+                        } catch {
+                          router.replace("/study/practice");
+                        }
+                      }}
                       className="flex w-full items-center gap-3 rounded-2xl bg-secondary px-5 py-4 hover:opacity-90 transition"
                     >
                       <Zap className="h-5 w-5 text-foreground" />
-                      <p className="text-sm font-extrabold text-foreground">
-                        Start practising ({step4Data!.quizSets} sets available)
-                      </p>
-                    </Link>
+                      <p className="text-sm font-extrabold text-foreground">Start your first set</p>
+                    </button>
                   ) : (step4Data?.materials ?? 0) > 0 ? (
                     <Link
                       href="/study/materials"
@@ -1129,7 +1144,11 @@ export default function OnboardingClient() {
                 </div>
 
                 <div className="mt-4 text-center">
-                  <Link href="/study" className="text-sm font-semibold text-muted-foreground hover:text-foreground">
+                  <Link
+                    href="/study"
+                    onClick={() => track("study_onboarding_first_set_skipped")}
+                    className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+                  >
                     Go to Study Hub →
                   </Link>
                 </div>
