@@ -1,10 +1,15 @@
 // app/api/ai/generate-questions/route.ts
 // POST /api/ai/generate-questions
-// Generates 15 MCQ practice questions from a PDF material using Gemini.
+// Generates MCQ practice questions from a study material using Gemini.
+// Supports: PDF, JPG/PNG/WEBP images, DOCX, PPTX.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { adminSupabase } from "@/lib/supabase/admin";
+import {
+  extractMaterialContent,
+  truncateText,
+} from "@/lib/extractMaterialContent";
 
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -16,6 +21,7 @@ type StudyMaterialRow = {
   file_path: string | null;
   material_type: string | null;
 };
+
 type RateLimitRow = {
   last_called_at: string;
 };
@@ -37,22 +43,16 @@ async function checkRateLimit(
     .eq("endpoint", endpoint)
     .maybeSingle();
 
-  if (error) {
-    return { allowed: false, error: error.message };
-  }
+  if (error) return { allowed: false, error: error.message };
 
   const row = data as RateLimitRow | null;
   const now = Date.now();
   if (row?.last_called_at) {
     const nextAllowedAt = new Date(row.last_called_at).getTime() + cooldownMs;
     if (Number.isFinite(nextAllowedAt) && nextAllowedAt > now) {
-      return {
-        allowed: false,
-        retryAfterSeconds: Math.ceil((nextAllowedAt - now) / 1000),
-      };
+      return { allowed: false, retryAfterSeconds: Math.ceil((nextAllowedAt - now) / 1000) };
     }
   }
-
   return { allowed: true };
 }
 
@@ -61,36 +61,22 @@ async function writeRateLimit(
   userId: string,
   endpoint: string
 ): Promise<string | null> {
-  const { error: upsertError } = await admin
+  const { error } = await admin
     .from("ai_rate_limits")
     .upsert(
-      {
-        user_id: userId,
-        endpoint,
-        last_called_at: new Date().toISOString(),
-      },
+      { user_id: userId, endpoint, last_called_at: new Date().toISOString() },
       { onConflict: "user_id,endpoint" }
     );
-
-  if (upsertError) {
-    return upsertError.message;
-  }
-
-  return null;
+  return error?.message ?? null;
 }
 
-// GET /api/ai/generate-questions — returns remaining cooldown seconds for the current user
+// GET — returns remaining cooldown seconds for the current user
 export async function GET(_req: NextRequest) {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ retryAfterSeconds: 0 });
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ retryAfterSeconds: 0 });
 
-  const admin = adminSupabase;
-  const { data } = await admin
+  const { data } = await adminSupabase
     .from("ai_rate_limits")
     .select("last_called_at")
     .eq("user_id", user.id)
@@ -101,25 +87,18 @@ export async function GET(_req: NextRequest) {
   if (row?.last_called_at) {
     const nextAllowedAt = new Date(row.last_called_at).getTime() + 5 * 60 * 1000;
     const remaining = nextAllowedAt - Date.now();
-    if (remaining > 0) {
-      return NextResponse.json({ retryAfterSeconds: Math.ceil(remaining / 1000) });
-    }
+    if (remaining > 0) return NextResponse.json({ retryAfterSeconds: Math.ceil(remaining / 1000) });
   }
-
   return NextResponse.json({ retryAfterSeconds: 0 });
 }
 
 export async function POST(req: NextRequest) {
-  // Auth
+  // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
-  // Parse body
+  // ── Parse body ─────────────────────────────────────────────────────────────
   let body: { materialId?: string; count?: number; difficulty?: "easy" | "mixed" | "hard"; focus?: string };
   try {
     body = await req.json();
@@ -128,11 +107,9 @@ export async function POST(req: NextRequest) {
   }
 
   const { materialId, count = 10, difficulty = "mixed", focus } = body;
-  if (!materialId) {
-    return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
-  }
+  if (!materialId) return NextResponse.json({ error: "Missing materialId" }, { status: 400 });
 
-  // Fetch material
+  // ── Fetch material ─────────────────────────────────────────────────────────
   const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
@@ -140,78 +117,57 @@ export async function POST(req: NextRequest) {
     .eq("id", materialId)
     .maybeSingle();
 
-  if (matErr || !mat) {
-    return NextResponse.json({ error: "Material not found." }, { status: 404 });
-  }
+  if (matErr || !mat) return NextResponse.json({ error: "Material not found." }, { status: 404 });
 
   const material = mat as StudyMaterialRow;
   const filePath = material.file_path;
+  if (!filePath) return NextResponse.json({ error: "No file attached to this material." }, { status: 400 });
 
-  // PDF check
-  const urlStr = (filePath ?? "").toLowerCase();
-  if (!urlStr.includes(".pdf")) {
-    return NextResponse.json({ error: "Only PDF materials are supported." }, { status: 400 });
-  }
+  // ── Resolve signed download URL ────────────────────────────────────────────
+  const { data: signed } = await admin.storage
+    .from("study-materials")
+    .createSignedUrl(filePath, 300);
+  const downloadUrl = signed?.signedUrl ?? null;
+  if (!downloadUrl) return NextResponse.json({ error: "File URL not available." }, { status: 404 });
 
-  // Resolve download URL
-  let downloadUrl: string | null = null;
-  if (filePath) {
-    const { data: signed } = await admin.storage
-      .from("study-materials")
-      .createSignedUrl(filePath, 300);
-    downloadUrl = signed?.signedUrl ?? null;
-  }
-
-  if (!downloadUrl) {
-    return NextResponse.json({ error: "File URL not available." }, { status: 404 });
-  }
-
-  const rateLimit = await checkRateLimit(
-    admin,
-    user.id,
-    "generate-questions",
-    5 * 60 * 1000
-  );
+  // ── Rate limit ─────────────────────────────────────────────────────────────
+  const rateLimit = await checkRateLimit(admin, user.id, "generate-questions", 5 * 60 * 1000);
   if ("error" in rateLimit) {
-    console.error("[generate-questions] rate limit error:", rateLimit.error);
     return NextResponse.json({ error: "Failed to check rate limit." }, { status: 500 });
   }
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      {
-        error: `Please wait ${rateLimit.retryAfterSeconds} seconds before generating more questions.`,
-      },
-      {
-        status: 429,
-        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-      }
+      { error: `Please wait ${rateLimit.retryAfterSeconds} seconds before generating more questions.` },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
     );
   }
 
-  // Fetch PDF bytes
-  let pdfBuffer: ArrayBuffer;
+  // ── Fetch file bytes ───────────────────────────────────────────────────────
+  let fileBuffer: ArrayBuffer;
   try {
     const fetchRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
     if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status}`);
-    pdfBuffer = await fetchRes.arrayBuffer();
+    fileBuffer = await fetchRes.arrayBuffer();
   } catch {
-    return NextResponse.json({ error: "Failed to fetch PDF file." }, { status: 502 });
+    return NextResponse.json({ error: "Failed to fetch file." }, { status: 502 });
   }
 
-  if (pdfBuffer.byteLength > 15 * 1024 * 1024) {
+  if (fileBuffer.byteLength > 15 * 1024 * 1024) {
     return NextResponse.json(
-      { error: "This file is too large for AI question generation (max 15 MB). Try a shorter document." },
+      { error: "File is too large for AI question generation (max 15 MB). Try a shorter document." },
       { status: 422 }
     );
   }
 
-  // Call Gemini with PDF inline data
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
+  // ── Extract content (PDF/image → inline, DOCX/PPTX → text) ────────────────
+  const content = await extractMaterialContent(fileBuffer, filePath);
+  if (content.kind === "unsupported") {
+    return NextResponse.json({ error: content.message }, { status: 422 });
   }
 
-  const base64Pdf = Buffer.from(pdfBuffer).toString("base64");
+  // ── Build Gemini request ───────────────────────────────────────────────────
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
 
   const difficultyInstruction = {
     easy: "Generate straightforward recall and definition questions.",
@@ -222,7 +178,7 @@ export async function POST(req: NextRequest) {
   const focusInstruction = focus ? `Focus specifically on: ${focus}` : "";
 
   const systemPrompt = `You are an exam question generator for Nigerian university students.
-Generate exactly ${count} multiple choice questions strictly from the provided PDF content.
+Generate exactly ${count} multiple choice questions strictly from the provided document content.
 Do not add any knowledge from outside the document.
 ${difficultyInstruction}${focusInstruction ? `\n${focusInstruction}` : ""}
 Each question must have 4 options (A, B, C, D) with exactly one correct answer.
@@ -240,21 +196,35 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
   ]
 }`;
 
+  // Build parts array depending on content kind
+  type GeminiPart =
+    | { inline_data: { mime_type: string; data: string } }
+    | { text: string };
+
+  let parts: GeminiPart[];
+  if (content.kind === "inline") {
+    parts = [
+      { inline_data: { mime_type: content.mimeType, data: content.base64 } },
+      { text: systemPrompt },
+    ];
+  } else {
+    // Text-extracted (DOCX / PPTX)
+    const truncated = truncateText(content.text);
+    parts = [
+      { text: `DOCUMENT CONTENT:\n\n${truncated}` },
+      { text: systemPrompt },
+    ];
+  }
+
   const geminiBody = {
-    contents: [
-      {
-        parts: [
-          { inline_data: { mime_type: "application/pdf", data: base64Pdf } },
-          { text: systemPrompt },
-        ],
-      },
-    ],
+    contents: [{ parts }],
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: Math.min(4096, count * 300),
     },
   };
 
+  // ── Call Gemini ────────────────────────────────────────────────────────────
   let rawText: string;
   try {
     const geminiRes = await fetch(`${BASE_URL}?key=${apiKey}`, {
@@ -270,26 +240,17 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }
 
-    const geminiData = (await geminiRes.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{
-            text?: string;
-          }>;
-        };
-      }>;
+    const geminiData = await geminiRes.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
     rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (!rawText.trim()) {
-      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
-    }
+    if (!rawText.trim()) return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    console.error("[generate-questions] Gemini fetch error:", message);
+    console.error("[generate-questions] Gemini fetch error:", e instanceof Error ? e.message : e);
     return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
   }
 
-  // Parse JSON response
+  // ── Parse response ─────────────────────────────────────────────────────────
   try {
     const clean = rawText
       .replace(/^```json\s*/i, "")
@@ -303,12 +264,10 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
     const rateLimitError = await writeRateLimit(admin, user.id, "generate-questions");
     if (rateLimitError) {
       console.error("[generate-questions] rate limit write error:", rateLimitError);
-      return NextResponse.json({ error: "Failed to update rate limit." }, { status: 500 });
     }
     return NextResponse.json({ questions: parsed.questions });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    console.error("[generate-questions] JSON parse error:", message, rawText.slice(0, 200));
+    console.error("[generate-questions] JSON parse error:", e instanceof Error ? e.message : e, rawText.slice(0, 200));
     return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
   }
 }

@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     // then patch denormalized fields per material (only those that have a course row).
     const { error: updErr } = await admin
       .from("study_materials")
-      .update({ approved: true, updated_at: nowIso, approved_by: moderatorId, approved_at: nowIso })
+      .update({ approved: true, upload_status: "live", updated_at: nowIso, approved_by: moderatorId, approved_at: nowIso })
       .in("id", ids);
     if (!updErr) {
       // Re-sync denormalized fields per material — individual updates, fire-and-forget style

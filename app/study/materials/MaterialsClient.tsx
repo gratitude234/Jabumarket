@@ -465,6 +465,7 @@ function MaterialCard({
     note: { border: "border-l-[3px] border-l-[#378ADD] rounded-l-none rounded-r-3xl", iconBg: "bg-[#E6F1FB]", iconText: "text-[#185FA5]", abbr: "N" },
     slides: { border: "border-l-[3px] border-l-[#D85A30] rounded-l-none rounded-r-3xl", iconBg: "bg-[#FAECE7]", iconText: "text-[#993C1D]", abbr: "S" },
     timetable: { border: "border-l-[3px] border-l-[#888780] rounded-l-none rounded-r-3xl", iconBg: "bg-secondary", iconText: "text-muted-foreground", abbr: "T" },
+    other: { border: "border-l-[3px] border-l-[#888780] rounded-l-none rounded-r-3xl", iconBg: "bg-secondary", iconText: "text-muted-foreground", abbr: "F" },
   };
   const ts = typeStyle[m.material_type ?? ""] ?? { border: "rounded-3xl", iconBg: "bg-secondary", iconText: "text-muted-foreground", abbr: "?" };
 
@@ -726,6 +727,7 @@ export default function MaterialsClient() {
     setPage(1);
     setMaterials([]);
     setHasMore(false);
+    setLoading(true);
   }, [filtersKey]);
 
   // Load saved ids for current list

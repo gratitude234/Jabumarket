@@ -86,6 +86,11 @@ function detectKind(m: Material): "pdf" | "image" | "other" {
   return "other";
 }
 
+function isAiGenSupported(m: Material): boolean {
+  const src = (m.file_path ?? "").toLowerCase();
+  return /\.(pdf|png|jpg|jpeg|webp|docx|pptx)$/.test(src);
+}
+
 function fileTypeBadge(kind: "pdf" | "image" | "other", m: Material) {
   if (kind === "pdf") return "PDF";
   if (kind === "image") return "IMAGE";
@@ -542,7 +547,7 @@ export default function MaterialDetailClient({
 
   // Proactive rate-limit check on mount
   useEffect(() => {
-    if (kind !== "pdf") return;
+    if (!isAiGenSupported(m)) return;
     fetch("/api/ai/generate-questions")
       .then((r) => r.json())
       .then((d) => { if (d.retryAfterSeconds > 0) setGenQsCooldown(d.retryAfterSeconds); })
@@ -862,7 +867,7 @@ export default function MaterialDetailClient({
           {/* AI feature cluster */}
           <div className="space-y-2">
             {/* Generate practice questions */}
-            {kind === "pdf" && (
+            {isAiGenSupported(m) && (
               <button type="button"
                 onClick={() => setQuizState("config")}
                 disabled={genQsCooldown > 0}

@@ -60,9 +60,10 @@ export default function QuickStartChecklist({
     async function loadBookmarks() {
       try {
         const { count } = await supabase
-          .from("study_material_bookmarks")
+          .from("study_saved_items")
           .select("id", { count: "exact", head: true })
-          .eq("user_id", userId);
+          .eq("user_id", userId)
+          .eq("item_type", "material");
 
         if (!cancelled) setBookmarkCount(count ?? 0);
       } catch {

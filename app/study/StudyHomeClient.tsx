@@ -257,7 +257,7 @@ function StudyHomeInner({
       <BannerSlot
         examCountdown={examCountdown}
         hasPrefs={hasPrefs}
-        nudgeDismissed={nudgeResolved ? nudgeDismissed : true}
+        nudgeDismissed={nudgeResolved && !loading ? nudgeDismissed : true}
         semesterPrompt={semesterPrompt}
         switchingSemester={switchingSemester}
         onDismissSemester={dismissSemesterPrompt}

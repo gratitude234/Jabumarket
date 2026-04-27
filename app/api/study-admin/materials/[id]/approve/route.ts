@@ -73,6 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const nowIso = new Date().toISOString();
     const patch = {
       approved: true,
+      upload_status: "live",
       updated_at: nowIso,
       approved_by: moderatorId,
       approved_at: nowIso,

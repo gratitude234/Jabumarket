@@ -110,7 +110,7 @@ export async function POST(req: Request) {
         .select("user_id")
         .eq("user_id", uid)
         .maybeSingle();
-      const autoApprove = Boolean(repRow || adminRow);
+      const autoApprove = process.env.STUDY_AUTO_APPROVE_UPLOADS === "true" || Boolean(repRow || adminRow);
       patch.upload_status = "live";
       patch.approved = autoApprove;
       patch.approved_by = autoApprove ? uid : null;

@@ -107,7 +107,7 @@ export async function POST(req: Request) {
       .eq("user_id", userId)
       .maybeSingle();
 
-    const autoApprove = isRep || !!adminRow;
+    const autoApprove = process.env.STUDY_AUTO_APPROVE_UPLOADS === "true" || isRep || !!adminRow;
 
     // 1) Verify course exists
     const { data: courseRow, error: courseErr } = await admin

@@ -15,18 +15,18 @@ import {
 import DayOneHero from "./DayOneHero";
 
 type DueCourseRow = {
-  // Assumption: Supabase may return the nested relation as either an object or
-  // a single-item array depending on generated typings for this relation.
-  study_quiz_sets:
-    | { course_code: string | null }
-    | Array<{ course_code: string | null }>
+  study_quiz_questions:
+    | Array<{ study_quiz_sets: Array<{ course_code: string | null }> | null }>
+    | { study_quiz_sets: Array<{ course_code: string | null }> | null }
     | null;
 };
 
 function extractCourseCode(row: DueCourseRow) {
-  const nested = row.study_quiz_sets;
-  if (Array.isArray(nested)) return nested[0]?.course_code ?? null;
-  return nested?.course_code ?? null;
+  const q = Array.isArray(row.study_quiz_questions)
+    ? row.study_quiz_questions[0]
+    : row.study_quiz_questions;
+  const s = Array.isArray(q?.study_quiz_sets) ? q.study_quiz_sets[0] : q?.study_quiz_sets;
+  return (s as any)?.course_code ?? null;
 }
 
 export function HeroCard({
@@ -96,7 +96,7 @@ export function HeroCard({
             .is("graduated_at", null),
           supabase
             .from("study_weak_questions")
-            .select("study_quiz_sets(course_code)")
+            .select("study_quiz_questions(study_quiz_sets(course_code))")
             .eq("user_id", userId)
             .lte("next_due_at", now)
             .is("graduated_at", null)
