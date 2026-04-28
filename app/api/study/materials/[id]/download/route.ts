@@ -11,7 +11,7 @@ import { isWithinScope } from "@/lib/studyAdmin/scope";
 export const dynamic = "force-dynamic";
 
 const BUCKET = "study-materials";
-const EXPIRES_IN_SECONDS = 60;
+const EXPIRES_IN_SECONDS = 10 * 60;
 
 function jsonError(message: string, status: number, code: string) {
   return NextResponse.json({ ok: false, code, message }, { status });

@@ -18,8 +18,9 @@ import { extractMaterialContent, truncateText } from "@/lib/extractMaterialConte
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
-const QUESTION_COUNT = 20;
-const MATERIAL_LIMIT = 5;
+const DEFAULT_QUESTION_COUNT = 10;
+const MAX_QUESTION_COUNT = 15;
+const MATERIAL_LIMIT = 3;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const COURSE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 h
 
@@ -46,12 +47,20 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ setId: null, sources: null });
 
+  const { data: course } = await adminSupabase
+    .from("study_courses")
+    .select("course_code")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (!course?.course_code) return NextResponse.json({ setId: null, sources: null });
+
   const since = new Date(Date.now() - COURSE_COOLDOWN_MS).toISOString();
 
   const { data } = await adminSupabase
     .from("study_quiz_sets")
     .select("id,source_material_ids,created_at")
-    .eq("course_id", courseId)
+    .eq("course_code", course.course_code)
     .eq("source", "ai_course")
     .eq("published", true)
     .gte("created_at", since)
@@ -74,7 +83,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   // ── Body ───────────────────────────────────────────────────────────────────
-  let body: { courseId?: string };
+  let body: { courseId?: string; count?: number };
   try {
     body = await req.json();
   } catch {
@@ -82,15 +91,31 @@ export async function POST(req: NextRequest) {
   }
   const { courseId } = body;
   if (!courseId) return NextResponse.json({ error: "Missing courseId" }, { status: 400 });
+  const requestedCount =
+    typeof body.count === "number" && Number.isFinite(body.count)
+      ? Math.floor(body.count)
+      : DEFAULT_QUESTION_COUNT;
+  const questionCount = Math.max(5, Math.min(MAX_QUESTION_COUNT, requestedCount));
 
   const admin = adminSupabase;
+
+  const { data: courseForMaterials, error: courseForMaterialsErr } = await admin
+    .from("study_courses")
+    .select("id,course_code,course_title")
+    .eq("id", courseId)
+    .maybeSingle();
+
+  if (courseForMaterialsErr || !courseForMaterials) {
+    return NextResponse.json({ error: "Course not found." }, { status: 404 });
+  }
+  const code = courseForMaterials.course_code as string;
 
   // ── Return cached set if still fresh ──────────────────────────────────────
   const since = new Date(Date.now() - COURSE_COOLDOWN_MS).toISOString();
   const { data: cached } = await admin
     .from("study_quiz_sets")
     .select("id,source_material_ids")
-    .eq("course_id", courseId)
+    .eq("course_code", code)
     .eq("source", "ai_course")
     .eq("published", true)
     .gte("created_at", since)
@@ -107,17 +132,6 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Fetch course ───────────────────────────────────────────────────────────
-  const { data: course, error: courseErr } = await admin
-    .from("study_courses")
-    .select("id,course_code,course_title")
-    .eq("id", courseId)
-    .maybeSingle();
-
-  if (courseErr || !course) {
-    return NextResponse.json({ error: "Course not found." }, { status: 404 });
-  }
-  const code = course.course_code as string;
-
   // ── Fetch top materials: past questions first, then others ─────────────────
   const [pastQsRes, othersRes] = await Promise.all([
     admin
@@ -145,8 +159,8 @@ export async function POST(req: NextRequest) {
 
   const pastQs = (pastQsRes.data ?? []).filter((m) => isAiSupported(m.file_path));
   const others = (othersRes.data ?? []).filter((m) => isAiSupported(m.file_path));
-  const slotsForOthers = MATERIAL_LIMIT - Math.min(pastQs.length, 3);
-  const candidates = [...pastQs.slice(0, 3), ...others.slice(0, slotsForOthers)].slice(
+  const slotsForOthers = MATERIAL_LIMIT - Math.min(pastQs.length, 2);
+  const candidates = [...pastQs.slice(0, 2), ...others.slice(0, slotsForOthers)].slice(
     0,
     MATERIAL_LIMIT
   );
@@ -252,7 +266,7 @@ export async function POST(req: NextRequest) {
 
   const systemPrompt = `You are an exam question generator for Nigerian university students.
 You have been given ${extracted.length} document(s) uploaded for the course ${code}.
-Your job is to generate exactly ${QUESTION_COUNT} multiple-choice questions strictly based on the content found in these documents.
+Your job is to generate exactly ${questionCount} multiple-choice questions strictly based on the content found in these documents.
 Do not refuse — generate questions from whatever subject matter is present in the documents, regardless of the course code.
 Cover a broad range of topics across all provided documents.
 Mix recall, application, and analysis questions at exam difficulty level.
@@ -289,7 +303,11 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: QUESTION_COUNT * 350 },
+        generationConfig: {
+          temperature: 0.25,
+          maxOutputTokens: Math.min(4096, questionCount * 320),
+          responseMimeType: "application/json",
+        },
       }),
       signal: controller.signal,
     });
@@ -368,7 +386,6 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
     .insert({
       title: `${code} – AI Course Practice`,
       source: "ai_course",
-      course_id: courseId,
       course_code: code,
       created_by: user.id,
       published: true,

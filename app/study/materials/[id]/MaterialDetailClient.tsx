@@ -135,6 +135,10 @@ function formatMaterialType(t: string | null) {
 const GDOCS = (url: string) =>
   `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 
+function previewUrl(url: string) {
+  return `${url}${url.includes("?") ? "&" : "?"}preview=1`;
+}
+
 function PdfViewer({ url, heightClass = "h-[70vh]" }: { url: string; heightClass?: string }) {
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
@@ -183,6 +187,92 @@ function PdfViewer({ url, heightClass = "h-[70vh]" }: { url: string; heightClass
       )}
     </div>
   );
+}
+
+function ResolvedFileViewer({
+  url,
+  title,
+  kind,
+  heightClass,
+}: {
+  url: string;
+  title: string;
+  kind: "pdf" | "image";
+  heightClass: string;
+}) {
+  const [resolvedUrl, setResolvedUrl] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    setResolvedUrl("");
+
+    void (async () => {
+      try {
+        const res = await fetch(previewUrl(url), {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = res.ok ? await res.json() : null;
+        const signedUrl = typeof json?.url === "string" ? json.url : "";
+        if (!res.ok || !signedUrl) throw new Error(json?.message ?? "Could not prepare preview");
+        setResolvedUrl(signedUrl);
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        setError(e instanceof Error ? e.message : "Could not prepare preview");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [url, retryKey]);
+
+  if (loading) {
+    return (
+      <div className={cn("grid w-full place-items-center rounded-2xl border border-border bg-background", heightClass)}>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">Preparing preview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !resolvedUrl) {
+    return (
+      <div className={cn("grid w-full place-items-center rounded-2xl border border-border bg-background p-6 text-center", heightClass)}>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Preview could not load</p>
+          <p className="mt-1 text-xs text-muted-foreground">{error ?? "Try again or open the file directly."}</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRetryKey((key) => key + 1)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground hover:opacity-90"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Try again
+            </button>
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary/50"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Open file
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "pdf") return <PdfViewer url={resolvedUrl} heightClass={heightClass} />;
+  return <ImageViewer url={resolvedUrl} title={title} heightClass={heightClass} />;
 }
 
 function ImageViewer({ url, title, heightClass = "h-[70vh]" }: { url: string; title: string; heightClass?: string }) {
@@ -249,7 +339,7 @@ function InlinePreview({ url, title, kind, onAskAI }: { url: string; title: stri
         <div className="border-t border-border p-3">
           {kind === "pdf" && (
             <div className="relative">
-              <PdfViewer url={url} heightClass="h-[60vh]" />
+              <ResolvedFileViewer url={url} title={title} kind="pdf" heightClass="h-[60vh]" />
               {onAskAI && (
                 <button
                   type="button"
@@ -269,7 +359,7 @@ function InlinePreview({ url, title, kind, onAskAI }: { url: string; title: stri
               )}
             </div>
           )}
-          {kind === "image" && <ImageViewer url={url} title={title} heightClass="h-[60vh]" />}
+          {kind === "image" && <ResolvedFileViewer url={url} title={title} kind="image" heightClass="h-[60vh]" />}
         </div>
       )}
     </div>
@@ -313,8 +403,8 @@ function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onCl
           </div>
         </div>
         <div className="flex-1 overflow-hidden p-3 md:flex-none">
-          {kind === "pdf" && <PdfViewer url={url} heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
-          {kind === "image" && <ImageViewer url={url} title={title} heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
+          {kind === "pdf" && <ResolvedFileViewer url={url} title={title} kind="pdf" heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
+          {kind === "image" && <ResolvedFileViewer url={url} title={title} kind="image" heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
           {kind === "other" && (
             <div className="grid h-48 place-items-center p-6 text-center">
               <div>
