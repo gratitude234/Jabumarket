@@ -24,6 +24,7 @@ import {
   Send,
   Share2,
   ShieldCheck,
+  Sparkles,
   Star,
   X,
   ZoomIn,
