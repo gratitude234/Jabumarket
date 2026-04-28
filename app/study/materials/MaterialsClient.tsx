@@ -14,7 +14,6 @@ import {
   SlidersHorizontal,
   CheckCircle2,
   Star,
-  Sparkles,
   Bookmark,
   BookmarkCheck,
   Download,
@@ -482,16 +481,6 @@ function MaterialCard({
   ].filter(Boolean);
   const metaLine = [courseCode, ...metaParts].filter(Boolean).join(" · ");
 
-  let aiPreview: string | null = null;
-  if (m.ai_summary) {
-    try {
-      const parsed = JSON.parse(m.ai_summary);
-      aiPreview = parsed?.overview ?? parsed?.keyTopics?.[0] ?? null;
-    } catch {
-      aiPreview = typeof m.ai_summary === "string" ? m.ai_summary : null;
-    }
-  }
-
   return (
     <div className={cn("overflow-hidden border border-border bg-card shadow-sm transition hover:border-border hover:shadow-md", ts.border)}>
       <Link href={`/study/materials/${m.id}`} className="block p-4 no-underline">
@@ -558,16 +547,6 @@ function MaterialCard({
           </div>
         </div>
       </Link>
-
-      {aiPreview && (
-        <div className="mx-4 mb-4 rounded-r-xl border-l-2 border-[#5B35D5] bg-[#EEEDFE] px-3 py-2">
-          <div className="mb-1 flex items-center gap-1.5">
-            <Sparkles className="h-3 w-3 text-[#5B35D5]" />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#3B24A8]">AI Summary</span>
-          </div>
-          <p className="line-clamp-2 text-xs leading-relaxed text-[#3B24A8]/80">{aiPreview}</p>
-        </div>
-      )}
 
       <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
         <span>{formatWhen(m.created_at)}</span>

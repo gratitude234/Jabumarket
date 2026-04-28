@@ -5,7 +5,6 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Bookmark,
@@ -25,7 +24,6 @@ import {
   Send,
   Share2,
   ShieldCheck,
-  Sparkles,
   Star,
   X,
   ZoomIn,
@@ -330,139 +328,6 @@ function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onCl
   );
 }
 
-type AiSummaryState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "done"; overview: string; keyTopics: string[]; examTips: string[]; cached: boolean }
-  | { status: "error"; message: string };
-
-function AiSummarizeCard({ materialId, title, description, courseCode, materialType, compact, autoTrigger }: {
-  materialId: string; title: string; description: string | null;
-  courseCode: string | null | undefined; materialType: string | null; compact?: boolean; autoTrigger?: boolean;
-}) {
-  const [state, setState] = useState<AiSummaryState>({ status: "idle" });
-  const autoTriggeredRef = useRef(false);
-
-  async function fetchSummary() {
-    setState({ status: "loading" });
-    try {
-      const res = await fetch("/api/ai/summarize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ materialId, title, description, courseCode, materialType }),
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        setState({ status: "error", message: json.error ?? "Something went wrong." });
-      } else {
-        const s = json.summary;
-        setState({ status: "done", overview: s.overview ?? "", keyTopics: Array.isArray(s.keyTopics) ? s.keyTopics : [], examTips: Array.isArray(s.examTips) ? s.examTips : [], cached: !!json.cached });
-      }
-    } catch {
-      setState({ status: "error", message: "Network error. Please try again." });
-    }
-  }
-
-  useEffect(() => {
-    if (autoTrigger && state.status === "idle" && !autoTriggeredRef.current) {
-      autoTriggeredRef.current = true;
-      void fetchSummary();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (state.status === "idle") {
-    if (compact) {
-      return (
-        <button type="button" onClick={fetchSummary}
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#5B4FD9] hover:underline focus-visible:outline-none">
-          <Sparkles className="h-3 w-3" /> Regenerate with Gemini
-        </button>
-      );
-    }
-    return (
-      <button type="button" onClick={fetchSummary}
-        className="flex w-full items-center gap-3 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/70 px-4 py-3.5 text-left transition hover:bg-[#EEEDFE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9] dark:border-[#5B4FD9]/30 dark:bg-[#5B4FD9]/[0.07] dark:hover:bg-[#5B4FD9]/10">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B4FD9] text-white">
-          <Sparkles className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-[#3A2EB8] dark:text-indigo-300">Summarize with AI</p>
-          <p className="text-xs text-[#5B4FD9]/70 dark:text-indigo-400/70">Key topics & exam tips · Gemini</p>
-        </div>
-      </button>
-    );
-  }
-
-  if (state.status === "loading") {
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/70 px-4 py-3.5 dark:border-[#5B4FD9]/30 dark:bg-[#5B4FD9]/[0.07]">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B4FD9] text-white">
-          <Loader2 className="h-4 w-4 animate-spin" />
-        </span>
-        <div>
-          <p className="text-sm font-bold text-[#3A2EB8] dark:text-indigo-300">Summarising...</p>
-          <p className="text-xs text-[#5B4FD9]/70">Gemini is generating your summary</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.status === "error") {
-    return (
-      <div className="rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 dark:border-rose-800/40 dark:bg-rose-950/20">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-rose-700 dark:text-rose-400">Couldn&apos;t generate summary</p>
-            <p className="mt-0.5 text-xs text-rose-600/80">{state.message}</p>
-          </div>
-          <button type="button" onClick={fetchSummary}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50" aria-label="Retry">
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/50 px-4 py-4 dark:border-[#5B4FD9]/30 dark:bg-[#5B4FD9]/[0.07]">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#5B4FD9] text-white">
-          <Sparkles className="h-3.5 w-3.5" />
-        </span>
-        <p className="text-sm font-bold text-[#3A2EB8] dark:text-indigo-300">AI Summary</p>
-        <span className="ml-auto text-[10px] font-semibold text-[#5B4FD9]/70">Gemini · {state.cached ? "cached" : "generated"}</span>
-      </div>
-      <p className="text-sm leading-relaxed text-foreground">{state.overview}</p>
-      {state.keyTopics.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-bold text-[#3A2EB8] dark:text-indigo-300">Key Topics</p>
-          <div className="flex flex-wrap gap-2">
-            {state.keyTopics.map((t, i) => (
-              <span key={i} className="rounded-full border border-[#5B4FD9]/20 bg-white px-2.5 py-1 text-xs font-semibold text-foreground dark:border-[#5B4FD9]/30 dark:bg-background">{t}</span>
-            ))}
-          </div>
-        </div>
-      )}
-      {state.examTips.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-bold text-[#3A2EB8] dark:text-indigo-300">Exam Tips</p>
-          <ul className="space-y-1.5">
-            {state.examTips.map((tip, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-foreground">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B4FD9]" />
-                {tip}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <p className="text-[10px] text-muted-foreground">AI can make mistakes. Cross-check with your lecturer or textbook.</p>
-    </div>
-  );
-}
 
 export default function MaterialDetailClient({
   material: m, initialSaved = false, relatedMaterials: initialRelatedMaterials = [], fromCourse = null,
@@ -886,72 +751,28 @@ export default function MaterialDetailClient({
               </button>
             )}
 
-            {/* Summarize + Ask AI side by side */}
-            <div className={cn("gap-2", kind === "pdf" ? "grid grid-cols-2" : "block")}>
-              <AiSummarizeCard materialId={m.id} title={title} description={m.description}
-                courseCode={course?.course_code} materialType={m.material_type}
-                autoTrigger={kind === "pdf" && !m.ai_summary} />
-
-              {kind === "pdf" && (
-                <button type="button" onClick={() => setChatOpen((v) => !v)}
-                  className={cn(
-                    "flex flex-col items-start gap-2 rounded-xl border px-4 py-3.5 text-left transition",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]",
-                    chatOpen
-                      ? "border-[#5B4FD9]/30 bg-[#EEEDFE]"
-                      : "border-border/60 bg-background hover:bg-secondary/40"
-                  )}>
-                  <span className={cn("grid h-9 w-9 place-items-center rounded-xl", chatOpen ? "bg-[#5B4FD9] text-white" : "bg-secondary text-muted-foreground")}>
-                    <Send className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <p className={cn("text-sm font-bold", chatOpen ? "text-[#3A2EB8]" : "text-foreground")}>Ask AI</p>
-                    <p className="text-xs text-muted-foreground">Ask anything</p>
-                  </div>
-                </button>
-              )}
-            </div>
+            {kind === "pdf" && (
+              <button type="button" onClick={() => setChatOpen((v) => !v)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]",
+                  chatOpen
+                    ? "border-[#5B4FD9]/30 bg-[#EEEDFE]"
+                    : "border-border/60 bg-background hover:bg-secondary/40"
+                )}>
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", chatOpen ? "bg-[#5B4FD9] text-white" : "bg-secondary text-muted-foreground")}>
+                  <Send className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={cn("text-sm font-bold", chatOpen ? "text-[#3A2EB8]" : "text-foreground")}>Ask AI</p>
+                  <p className="text-xs text-muted-foreground">Ask anything</p>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Existing AI summary strip */}
-      {m.ai_summary && (() => {
-        let overview: string | null = null;
-        let keyTopics: string[] = [];
-        try {
-          const parsed = JSON.parse(m.ai_summary);
-          overview = parsed?.overview ?? null;
-          keyTopics = Array.isArray(parsed?.keyTopics) ? parsed.keyTopics : [];
-        } catch {
-          // Plain string stored (legacy)
-          overview = m.ai_summary;
-        }
-        if (!overview) return null;
-        return (
-          <div className="rounded-2xl border-l-[3px] border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3.5 dark:bg-[#5B4FD9]/10">
-            <div className="mb-2 flex items-center gap-2">
-              <Sparkles className="h-3.5 w-3.5 text-[#5B4FD9]" />
-              <p className="text-xs font-bold uppercase tracking-wider text-[#3A2EB8] dark:text-indigo-300">AI Summary</p>
-              <span className="ml-auto text-[10px] font-medium text-[#5B4FD9]/70">Gemini</span>
-            </div>
-            <p className="text-sm leading-relaxed text-[#3A2EB8]/85 dark:text-indigo-200">{overview}</p>
-            {keyTopics.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {keyTopics.map((t, i) => (
-                  <span key={i} className="rounded-full border border-[#5B4FD9]/20 bg-white/70 px-2.5 py-0.5 text-xs font-semibold text-[#3A2EB8] dark:border-[#5B4FD9]/30 dark:bg-background">
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="mt-3 border-t border-[#5B4FD9]/15 pt-2">
-              <AiSummarizeCard materialId={m.id} title={title} description={m.description}
-                courseCode={course?.course_code} materialType={m.material_type} compact />
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Chat panel */}
       {kind === "pdf" && chatOpen && (
