@@ -21,6 +21,8 @@ export type StudyModeratorScope = {
 export type StudyModeratorAuthResult = {
   userId: string;
   scope: StudyModeratorScope;
+  /** True if the user has a row in study_admins, regardless of rep scope. */
+  isSuper: boolean;
 };
 
 // -----------------------------
@@ -70,13 +72,14 @@ function parseLevels(raw: unknown): number[] | null {
  * IMPORTANT PRIORITY RULE:
  * - If a user is BOTH a super admin AND has an active rep/librarian row,
  *   we prefer the REP/LIBRARIAN scope for scoped actions (like creating courses).
+ * - `isSuper` is always true if the user is in study_admins, regardless of rep row.
  *
  * Throws:
  * - 403 NOT_STUDY_MODERATOR
  * - 403 REP_SCOPE_MISCONFIGURED
  * - 500 DB_LOOKUP_FAILED
  */
-export async function getStudyModeratorScopeByUserId(userId: string): Promise<StudyModeratorScope> {
+export async function getStudyModeratorScopeByUserId(userId: string): Promise<{ scope: StudyModeratorScope; isSuper: boolean }> {
   const admin = createSupabaseAdminClient();
 
   // 1) Check super admin (but don't return early; super+rep should still work)
@@ -126,10 +129,8 @@ export async function getStudyModeratorScopeByUserId(userId: string): Promise<St
     if (role === "dept_librarian") {
       // Dept librarians: department-wide across all levels
       return {
-        role,
-        facultyId,
-        departmentId,
-        levels: null,
+        scope: { role, facultyId, departmentId, levels: null },
+        isSuper,
       };
     }
 
@@ -143,16 +144,14 @@ export async function getStudyModeratorScopeByUserId(userId: string): Promise<St
     }
 
     return {
-      role: "course_rep",
-      facultyId,
-      departmentId,
-      levels: parsedLevels,
+      scope: { role: "course_rep", facultyId, departmentId, levels: parsedLevels },
+      isSuper,
     };
   }
 
   // No rep row; super-only can still pass for admin endpoints.
   if (isSuper) {
-    return { role: "super", facultyId: null, departmentId: null, levels: null };
+    return { scope: { role: "super", facultyId: null, departmentId: null, levels: null }, isSuper: true };
   }
 
   throw httpError("Forbidden", 403, "NOT_STUDY_MODERATOR");
@@ -172,7 +171,7 @@ export async function requireStudyModerator(): Promise<StudyModeratorAuthResult>
   }
 
   const userId = userData.user.id;
-  const scope = await getStudyModeratorScopeByUserId(userId);
+  const { scope, isSuper } = await getStudyModeratorScopeByUserId(userId);
 
-  return { userId, scope };
+  return { userId, scope, isSuper };
 }

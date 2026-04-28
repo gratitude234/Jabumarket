@@ -505,7 +505,13 @@ function MaterialCard({
             {metaLine && <p className="mt-1 text-xs text-muted-foreground">{metaLine}</p>}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {courseCode && (
-                <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground">{courseCode}</span>
+                <Link
+                  href={`/study/courses/${encodeURIComponent(courseCode)}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded-full border border-[#5B35D5]/25 bg-[#EEEDFE] px-2 py-0.5 text-[11px] font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/15 transition"
+                >
+                  {courseCode}
+                </Link>
               )}
               <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
                 {dlCount.toLocaleString("en-NG")} downloads
@@ -1330,61 +1336,24 @@ export default function MaterialsClient() {
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {fastLaneCourses.map((course) => {
-              const active = courseParam.toUpperCase() === course.course_code.toUpperCase();
-              return (
-                <button
-                  key={course.id}
-                  type="button"
-                  onClick={() =>
-                    router.replace(
-                      buildHref(pathname, {
-                        q: qParam || null,
-                        level: levelParam || null,
-                        semester: semesterParam || null,
-                        faculty: facultyParam || null,
-                        faculty_id: facultyIdParam || null,
-                        dept: deptParam || null,
-                        dept_id: deptIdParam || null,
-                        course: course.course_code,
-                        session: sessionParam || null,
-                        type: typeParam !== "all" ? typeParam : null,
-                        sort: sortParam !== "newest" ? sortParam : null,
-                        verified: verifiedOnly ? "1" : null,
-                        featured: featuredOnly ? "1" : null,
-                        mine: mineParam || null,
-                      })
-                    )
-                  }
-                  className={cn(
-                    "flex shrink-0 rounded-2xl border px-3 py-2 text-left transition",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    active
-                      ? "border-[#AFA9EC] bg-[#EEEDFE] dark:border-[#5B35D5]/40 dark:bg-[#5B35D5]/10"
-                      : "border-border bg-card hover:bg-secondary/30"
-                  )}
-                >
-                  <div>
-                    <p
-                      className={cn(
-                        "text-[12px] font-extrabold",
-                        active ? "text-[#3C3489] dark:text-indigo-200" : "text-foreground"
-                      )}
-                    >
-                      {course.course_code}
-                    </p>
-                    <p
-                      className={cn(
-                        "mt-1 text-[10px]",
-                        active ? "text-[#534AB7] dark:text-indigo-300" : "text-muted-foreground"
-                      )}
-                    >
-                      {course.materialCount} material{course.materialCount === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+            {fastLaneCourses.map((course) => (
+              <Link
+                key={course.id}
+                href={`/study/courses/${encodeURIComponent(course.course_code)}`}
+                className={cn(
+                  "flex shrink-0 rounded-2xl border px-3 py-2 text-left no-underline transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "border-border bg-card hover:border-[#AFA9EC] hover:bg-[#EEEDFE] dark:hover:border-[#5B35D5]/40 dark:hover:bg-[#5B35D5]/10"
+                )}
+              >
+                <div>
+                  <p className="text-[12px] font-extrabold text-foreground">{course.course_code}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {course.materialCount} material{course.materialCount === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       ) : null}
@@ -1498,10 +1467,19 @@ export default function MaterialsClient() {
               ) : null}
 
               {courseParam ? (
-                <Link href={`/study/courses/${encodeURIComponent(courseParam)}`}
-                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] no-underline transition hover:bg-[#5B4FD9]/15">
-                  {courseParam} hub →
-                </Link>
+                <button
+                  type="button"
+                  onClick={() => router.replace(buildHref(pathname, {
+                    q: qParam || null, level: levelParam || null, semester: semesterParam || null,
+                    faculty: facultyParam || null, faculty_id: facultyIdParam || null,
+                    dept: deptParam || null, dept_id: deptIdParam || null, course: null,
+                    session: sessionParam || null, type: typeParam !== "all" ? typeParam : null,
+                    sort: sortParam !== "newest" ? sortParam : null,
+                    verified: verifiedOnly ? "1" : null, featured: featuredOnly ? "1" : null,
+                  }))}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none">
+                  {courseParam} <span className="text-[#5B4FD9]">×</span>
+                </button>
               ) : null}
             </div>
           ) : (

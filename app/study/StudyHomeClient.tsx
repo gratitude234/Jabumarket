@@ -1,50 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BookOpen, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { trackHomeCta, trackHomeView, type StudyHomeHeroState } from "@/lib/studyAnalytics";
-import { cn, currentAcademicSessionFallback } from "@/lib/utils";
+import { trackHomeView, type StudyHomeHeroState } from "@/lib/studyAnalytics";
+import { currentAcademicSessionFallback } from "@/lib/utils";
 import StudyTabs from "./_components/StudyTabs";
-import { EmptyState } from "./_components/StudyUI";
 import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
-import {
-  ForYouSection,
-  MaterialCard,
-  Section,
-  Skeleton,
-  type Chips,
-  type MaterialMini,
-} from "./_components/ForYouSection";
+import { ForYouSection, type Chips } from "./_components/ForYouSection";
 import CourseSearch from "./_components/CourseSearch";
 import { HeroCard } from "./_components/HeroCard";
 import { QuickActions } from "./_components/QuickActions";
 import BannerSlot from "./_components/BannerSlot";
 import StatsStrip from "./_components/StatsStrip";
 import QuickStartChecklist from "./_components/QuickStartChecklist";
-import type { MaterialMiniStatic } from "./page";
 
-export default function StudyHomeClient({
-  initialTrending,
-}: {
-  initialTrending: MaterialMiniStatic[];
-}) {
+export default function StudyHomeClient() {
   return (
     <StudyPrefsProvider>
-      <StudyHomeInner initialTrending={initialTrending} />
+      <StudyHomeInner />
     </StudyPrefsProvider>
   );
 }
 
-function StudyHomeInner({
-  initialTrending,
-}: {
-  initialTrending: MaterialMiniStatic[];
-}) {
+function StudyHomeInner() {
   const { loading, displayName, prefs, hasPrefs, rep, userId, updateSemester } =
     useStudyPrefs();
 
-  const [trending] = useState<MaterialMini[]>(initialTrending as MaterialMini[]);
   const [chips, setChips] = useState<Chips>({});
   const [semesterPrompt, setSemesterPrompt] = useState<{
     show: boolean;
@@ -202,16 +185,6 @@ function StudyHomeInner({
     };
   }, [loading, userId]);
 
-  const filteredTrending = useMemo(() => {
-    if (!chips.level && !chips.semester && !chips.type) return trending;
-    return trending.filter((material) => {
-      if (chips.level && String(material.level) !== String(chips.level)) return false;
-      if (chips.semester && material.semester !== chips.semester) return false;
-      if (chips.type && material.material_type !== chips.type) return false;
-      return true;
-    });
-  }, [chips, trending]);
-
   function clearFilters() {
     setChips({});
   }
@@ -288,62 +261,163 @@ function StudyHomeInner({
 
       <ForYouSection chips={chips} setChips={setChips} onClearFilters={clearFilters} />
 
-      <Section
-        title="Trending"
-        subtitle="Most downloaded right now"
-        href="/study/materials"
-        hrefLabel="Explore"
-      >
-        {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Skeleton />
-            <Skeleton />
-          </div>
-        ) : filteredTrending.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {filteredTrending.map((material, index) => (
-              <MaterialCard
-                key={material.id}
-                m={material}
-                context="trending"
-                onClick={() =>
-                  trackHomeCta("trending_card", {
-                    material_id: material.id,
-                    course_code: material.course_code,
-                    position: index + 1,
-                  })
-                }
-              />
-            ))}
-          </div>
-        ) : trending.length > 0 ? (
-          <EmptyState
-            variant="compact"
-            title="No matches for these filters"
-            description="Try clearing the filters to see trending materials."
-            action={
-              <button
-                type="button"
-                onClick={clearFilters}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2",
-                  "text-sm font-semibold text-foreground hover:bg-secondary/50"
-                )}
-              >
-                <X className="h-4 w-4" /> Clear filters
-              </button>
-            }
-            icon={TrendingUp}
-          />
-        ) : (
-          <EmptyState
-            variant="compact"
-            title="Nothing trending yet"
-            description="Once students start downloading materials, the top ones will show here."
-            icon={TrendingUp}
-          />
-        )}
-      </Section>
+      <MyCourses />
     </div>
+  );
+}
+
+// ─── My Courses ───────────────────────────────────────────────────────────────
+
+type CourseRow = {
+  id: string;
+  course_code: string;
+  course_title: string;
+  materialCount: number;
+};
+
+function MyCourses() {
+  const { prefs, loading: prefsLoading, hasPrefs } = useStudyPrefs();
+  const [courses, setCourses] = useState<CourseRow[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+
+  useEffect(() => {
+    if (prefsLoading) return;
+    if (!prefs?.department_id && !prefs?.level) return;
+
+    let cancelled = false;
+    setCoursesLoading(true);
+
+    (async () => {
+      try {
+        let q = supabase
+          .from("study_courses")
+          .select("id,course_code,course_title")
+          .eq("status", "approved")
+          .order("course_code", { ascending: true })
+          .limit(8);
+
+        if (prefs?.department_id) q = q.eq("department_id", prefs.department_id);
+        if (prefs?.level) q = q.eq("level", prefs.level);
+
+        const { data, error } = await q;
+        if (cancelled || error || !data?.length) {
+          if (!cancelled) { setCourses([]); setCoursesLoading(false); }
+          return;
+        }
+
+        const withCounts = await Promise.all(
+          (data as Pick<CourseRow, "id" | "course_code" | "course_title">[]).map(
+            async (course) => {
+              const { count } = await supabase
+                .from("study_materials")
+                .select("id", { count: "exact", head: true })
+                .eq("course_id", course.id)
+                .eq("approved", true);
+              return { ...course, materialCount: count ?? 0 };
+            }
+          )
+        );
+
+        if (!cancelled) { setCourses(withCounts); setCoursesLoading(false); }
+      } catch {
+        if (!cancelled) { setCourses([]); setCoursesLoading(false); }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [prefsLoading, prefs?.department_id, prefs?.level]);
+
+  if (prefsLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="h-5 w-28 animate-pulse rounded-full bg-muted" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasPrefs) {
+    return (
+      <div className="rounded-3xl border border-border bg-card p-6 text-center">
+        <BookOpen className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+        <p className="font-semibold text-foreground">Your courses will appear here</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Set up your profile to see courses for your department and level.
+        </p>
+        <Link
+          href="/study/profile"
+          className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#4a2bb0]"
+        >
+          Set up profile <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-foreground">My Courses</h2>
+          <p className="text-xs text-muted-foreground">Your department&apos;s course hubs</p>
+        </div>
+        <Link
+          href="/study/materials"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[#5B35D5] hover:underline"
+        >
+          All materials <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
+      {coursesLoading ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />
+          ))}
+        </div>
+      ) : courses.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {courses.map((course) => (
+            <Link
+              key={course.id}
+              href={`/study/courses/${encodeURIComponent(course.course_code)}`}
+              className="group flex flex-col gap-1.5 rounded-2xl border border-border bg-card p-4 no-underline transition hover:border-[#5B35D5]/40 hover:bg-[#EEEDFE]/40"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="rounded-xl bg-[#5B35D5]/10 px-2.5 py-1 text-xs font-bold text-[#5B35D5]">
+                  {course.course_code}
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-[#5B35D5]" />
+              </div>
+              <p className="line-clamp-2 text-sm font-semibold text-foreground">
+                {course.course_title}
+              </p>
+              {course.materialCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {course.materialCount} material{course.materialCount !== 1 ? "s" : ""}
+                </p>
+              )}
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-center">
+          <p className="text-sm font-semibold text-foreground">No courses found yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Materials for your courses will appear here as students upload them.
+          </p>
+          <Link
+            href="/study/materials"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B35D5] hover:underline"
+          >
+            Browse all materials <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+    </section>
   );
 }

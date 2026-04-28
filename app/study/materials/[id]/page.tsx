@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import MaterialDetailClient from "./MaterialDetailClient";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string }> };
 
 // ─── Server-side data fetch ──────────────────────────────────────────────────
 
@@ -64,8 +64,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default async function MaterialDetailPage({ params }: Props) {
+export default async function MaterialDetailPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const { from } = await searchParams;
   const m = await getMaterial(id);
 
   if (!m) notFound();
@@ -110,6 +111,7 @@ export default async function MaterialDetailPage({ params }: Props) {
       material={m as any}
       initialSaved={initialSaved}
       relatedMaterials={relatedMaterials}
+      fromCourse={from ?? null}
     />
   );
 }

@@ -42,7 +42,7 @@ export async function requireStudyModeratorFromRequest(req: Request): Promise<St
   }
 
   const userId = userData.user.id;
-  const scope = await getStudyModeratorScopeByUserId(userId);
+  const { scope, isSuper } = await getStudyModeratorScopeByUserId(userId);
 
-  return { userId, scope };
+  return { userId, scope, isSuper };
 }

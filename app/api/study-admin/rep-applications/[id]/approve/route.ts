@@ -52,7 +52,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (e: any) {
     return jsonError(e?.message || "Unauthorized", e?.status || 401, e?.code || "UNAUTHORIZED");
   }
-  if (auth.scope.role !== "super") return jsonError("Forbidden", 403, "FORBIDDEN");
+  if (!auth.isSuper) return jsonError("Forbidden", 403, "FORBIDDEN");
 
   const id = resolvedParams?.id;
   if (!id) return jsonError("Missing application id", 400, "MISSING_ID");

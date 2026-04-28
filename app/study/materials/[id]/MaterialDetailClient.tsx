@@ -465,9 +465,9 @@ function AiSummarizeCard({ materialId, title, description, courseCode, materialT
 }
 
 export default function MaterialDetailClient({
-  material: m, initialSaved = false, relatedMaterials: initialRelatedMaterials = [],
+  material: m, initialSaved = false, relatedMaterials: initialRelatedMaterials = [], fromCourse = null,
 }: {
-  material: Material; initialSaved?: boolean; relatedMaterials?: any[];
+  material: Material; initialSaved?: boolean; relatedMaterials?: any[]; fromCourse?: string | null;
 }) {
   const kind = detectKind(m);
   const badge = fileTypeBadge(kind, m);
@@ -771,9 +771,11 @@ export default function MaterialDetailClient({
 
       {/* Back */}
       <div>
-        <Link href="/study/materials"
+        <Link
+          href={fromCourse ? `/study/courses/${encodeURIComponent(fromCourse)}` : "/study/materials"}
           className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-          <ArrowLeft className="h-4 w-4" /> Materials
+          <ArrowLeft className="h-4 w-4" />
+          {fromCourse ?? "Materials"}
         </Link>
       </div>
 
@@ -914,20 +916,42 @@ export default function MaterialDetailClient({
       </div>
 
       {/* Existing AI summary strip */}
-      {m.ai_summary && (
-        <div className="rounded-2xl border-l-[3px] border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3.5 dark:bg-[#5B4FD9]/10">
-          <div className="mb-2 flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 text-[#5B4FD9]" />
-            <p className="text-xs font-bold uppercase tracking-wider text-[#3A2EB8] dark:text-indigo-300">AI Summary</p>
-            <span className="ml-auto text-[10px] font-medium text-[#5B4FD9]/70">verify before your exam</span>
+      {m.ai_summary && (() => {
+        let overview: string | null = null;
+        let keyTopics: string[] = [];
+        try {
+          const parsed = JSON.parse(m.ai_summary);
+          overview = parsed?.overview ?? null;
+          keyTopics = Array.isArray(parsed?.keyTopics) ? parsed.keyTopics : [];
+        } catch {
+          // Plain string stored (legacy)
+          overview = m.ai_summary;
+        }
+        if (!overview) return null;
+        return (
+          <div className="rounded-2xl border-l-[3px] border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3.5 dark:bg-[#5B4FD9]/10">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-[#5B4FD9]" />
+              <p className="text-xs font-bold uppercase tracking-wider text-[#3A2EB8] dark:text-indigo-300">AI Summary</p>
+              <span className="ml-auto text-[10px] font-medium text-[#5B4FD9]/70">Gemini</span>
+            </div>
+            <p className="text-sm leading-relaxed text-[#3A2EB8]/85 dark:text-indigo-200">{overview}</p>
+            {keyTopics.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {keyTopics.map((t, i) => (
+                  <span key={i} className="rounded-full border border-[#5B4FD9]/20 bg-white/70 px-2.5 py-0.5 text-xs font-semibold text-[#3A2EB8] dark:border-[#5B4FD9]/30 dark:bg-background">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 border-t border-[#5B4FD9]/15 pt-2">
+              <AiSummarizeCard materialId={m.id} title={title} description={m.description}
+                courseCode={course?.course_code} materialType={m.material_type} compact />
+            </div>
           </div>
-          <p className="text-sm leading-relaxed text-[#3A2EB8]/85 dark:text-indigo-200">{m.ai_summary}</p>
-          <div className="mt-3 border-t border-[#5B4FD9]/15 pt-2">
-            <AiSummarizeCard materialId={m.id} title={title} description={m.description}
-              courseCode={course?.course_code} materialType={m.material_type} compact />
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Chat panel */}
       {kind === "pdf" && chatOpen && (

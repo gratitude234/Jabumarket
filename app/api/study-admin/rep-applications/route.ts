@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   } catch (e: any) {
     return jsonError(e?.message || "Unauthorized", e?.status || 401, e?.code || "UNAUTHORIZED");
   }
-  if (auth.scope.role !== "super") return jsonError("Forbidden", 403, "FORBIDDEN");
+  if (!auth.isSuper) return jsonError("Forbidden", 403, "FORBIDDEN");
 
   const url = new URL(req.url);
   const status = (url.searchParams.get("status") as Status) || "pending";

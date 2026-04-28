@@ -1,12 +1,7 @@
 // app/study/page.tsx
 import { Suspense } from "react";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import StudyHomeClient from "./StudyHomeClient";
 import { SkeletonCard } from "./_components/StudyUI";
-
-// Non-user-specific data (counts + trending) cached for 60 s on the server.
-// Every individual user's prefs/streak/forYou are still fetched client-side.
-export const revalidate = 60;
 
 export const metadata = {
   title: "Study Hub",
@@ -19,72 +14,6 @@ export const metadata = {
     type: "website",
   },
 };
-
-// ─── Shared types ─────────────────────────────────────────────────────────────
-
-export type StudyCounts = {
-  courses: number;
-  approvedMaterials: number;
-  tutors: number;
-};
-
-export type MaterialMiniStatic = {
-  id: string;
-  title: string | null;
-  course_code: string | null;
-  level: number | null;
-  semester: string | null;
-  material_type: string | null;
-  downloads: number | null;
-  created_at: string | null;
-};
-
-// ─── Prefetch (runs server-side, result is baked into HTML for 60 s) ──────────
-
-async function fetchStaticData(): Promise<{
-  counts: StudyCounts;
-  trending: MaterialMiniStatic[];
-}> {
-  try {
-    const supabase = await createSupabaseServerClient();
-
-    const [coursesRes, materialsRes, tutorsRes, trendingRes] =
-      await Promise.all([
-        supabase
-          .from("study_courses")
-          .select("id", { count: "exact", head: true }),
-        supabase
-          .from("study_materials")
-          .select("id", { count: "exact", head: true })
-          .eq("approved", true),
-        supabase
-          .from("study_tutors")
-          .select("id", { count: "exact", head: true }),
-        supabase
-          .from("study_materials")
-          .select(
-            "id,title,course_code,level,semester,material_type,downloads,created_at"
-          )
-          .eq("approved", true)
-          .order("downloads", { ascending: false, nullsFirst: false })
-          .limit(2),
-      ]);
-
-    return {
-      counts: {
-        courses: coursesRes.count ?? 0,
-        approvedMaterials: materialsRes.count ?? 0,
-        tutors: tutorsRes.count ?? 0,
-      },
-      trending: (trendingRes.data as MaterialMiniStatic[]) ?? [],
-    };
-  } catch {
-    return {
-      counts: { courses: 0, approvedMaterials: 0, tutors: 0 },
-      trending: [],
-    };
-  }
-}
 
 // ─── Loading skeleton ─────────────────────────────────────────────────────────
 
@@ -127,19 +56,12 @@ function StudyHomeFallback() {
   );
 }
 
-// ─── Async data → client bridge ───────────────────────────────────────────────
-
-async function StudyHomeWithData() {
-  const { trending } = await fetchStaticData();
-  return <StudyHomeClient initialTrending={trending} />;
-}
-
 // ─── Page export ──────────────────────────────────────────────────────────────
 
 export default function StudyPage() {
   return (
     <Suspense fallback={<StudyHomeFallback />}>
-      <StudyHomeWithData />
+      <StudyHomeClient />
     </Suspense>
   );
 }
