@@ -78,6 +78,7 @@ type QuizSetRow = {
   approved?: boolean | null;
   visibility?: "public" | "private" | "pending_review" | null;
   created_by?: string | null;
+  source?: string | null;
 
   questions_count?: number | null;
   total_questions?: number | null;
@@ -479,6 +480,7 @@ function QuizSetCard({
   const bestPct       = summary?.bestPct ?? null;
   const isMastered    = bestPct != null && bestPct >= 70;
   const isPrivate = s.visibility === "private" && s.created_by === currentUserId;
+  const isOfficialAi = s.source === "rep_ai_bank";
 
   return (
     <Card className={cn(
@@ -505,6 +507,11 @@ function QuizSetCard({
               {isPrivate && (
                 <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-100/30 px-2 py-0.5 text-[10px] font-extrabold text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
                   Private
+                </span>
+              )}
+              {isOfficialAi && (
+                <span className="inline-flex items-center rounded-full border border-[#5B35D5]/30 bg-[#EEEDFE] px-2 py-0.5 text-[10px] font-extrabold text-[#3B24A8]">
+                  Official AI-built
                 </span>
               )}
               {isMastered && (
@@ -1392,7 +1399,7 @@ function PracticeHomeInner() {
 
     try {
       const selectFields =
-        "id,title,description,course_code,level,semester,time_limit_minutes,difficulty,published,questions_count,created_at,visibility,created_by";
+        "id,title,description,course_code,level,semester,time_limit_minutes,difficulty,published,questions_count,created_at,visibility,created_by,source";
 
       let query = supabase.from("study_quiz_sets").select(selectFields, { count: "exact" });
 

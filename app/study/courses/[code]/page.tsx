@@ -16,6 +16,8 @@ import {
   FileText,
   Loader2,
   MessageCircle,
+  Play,
+  ShieldCheck,
   Sparkles,
   UploadCloud,
   Zap,
@@ -28,6 +30,7 @@ type Course = {
   id: string;
   course_code: string;
   course_title: string | null;
+  level: number | null;
   study_departments?: {
     id: string;
     name: string;
@@ -77,6 +80,43 @@ type QuestionRow = {
   answers_count: number | null;
   upvotes_count: number | null;
   solved: boolean | null;
+};
+
+type BankTopic = {
+  title: string;
+  description?: string | null;
+  target?: number | null;
+  generated?: number | null;
+};
+
+type BankMaterial = {
+  id: string;
+  material_id: string;
+  position: number | null;
+  status: string | null;
+  topic_outline: BankTopic[] | null;
+  generated_count: number | null;
+  error_message: string | null;
+  study_materials?: {
+    id: string;
+    title: string | null;
+    material_type: string | null;
+    file_path: string | null;
+  } | null;
+};
+
+type BankState = {
+  run: {
+    id: string;
+    course_id: string;
+    course_code: string;
+    quiz_set_id: string;
+    status: "draft" | "ready" | "completed" | "failed" | string;
+    batch_size: number | null;
+    topic_target: number | null;
+  };
+  materials: BankMaterial[];
+  questionsCount: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -150,6 +190,7 @@ function MaterialCard({ m, courseCode }: { m: Material; courseCode: string }) {
 
 function PracticeSetCard({ s }: { s: PracticeSet }) {
   const isAiCourse = s.source === "ai_course";
+  const isOfficialAi = s.source === "rep_ai_bank";
   const sources: SourceMaterial[] = Array.isArray(s.source_material_ids)
     ? s.source_material_ids
     : [];
@@ -161,15 +202,18 @@ function PracticeSetCard({ s }: { s: PracticeSet }) {
     >
       <div className={cn(
         "mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl",
-        isAiCourse ? "bg-[#5B35D5]" : "bg-[#EEEDFE]"
+        isAiCourse || isOfficialAi ? "bg-[#5B35D5]" : "bg-[#EEEDFE]"
       )}>
-        <Sparkles className={cn("h-4 w-4", isAiCourse ? "text-white" : "text-[#5B35D5]")} />
+        <Sparkles className={cn("h-4 w-4", isAiCourse || isOfficialAi ? "text-white" : "text-[#5B35D5]")} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-foreground">
           {norm(String(s.title ?? "Practice set"))}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+          {isOfficialAi && (
+            <span className="text-xs font-extrabold text-[#5B35D5]">Official AI-built</span>
+          )}
           {typeof s.questions_count === "number" && (
             <span className="text-xs text-muted-foreground">{s.questions_count} questions</span>
           )}
@@ -203,6 +247,188 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
+function bankMaterialTitle(row: BankMaterial) {
+  const material = Array.isArray(row.study_materials)
+    ? row.study_materials[0]
+    : row.study_materials;
+  return material?.title ?? "Untitled material";
+}
+
+function BankBuilderCard({
+  bank,
+  compatibleMaterials,
+  selectedIds,
+  setSelectedIds,
+  busy,
+  error,
+  onStart,
+  onGenerate,
+  onPublish,
+}: {
+  bank: BankState | null;
+  compatibleMaterials: Material[];
+  selectedIds: string[];
+  setSelectedIds: (ids: string[]) => void;
+  busy: boolean;
+  error: string | null;
+  onStart: () => void;
+  onGenerate: () => void;
+  onPublish: () => void;
+}) {
+  const ready = bank?.run.status === "ready";
+  const hasBank = Boolean(bank?.run.id);
+
+  return (
+    <div className="rounded-3xl border border-[#5B35D5]/20 bg-[#5B35D5]/5 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-[#5B35D5]" />
+            <p className="text-sm font-extrabold text-[#3B24A8]">Official question bank</p>
+          </div>
+          <p className="mt-1 text-xs leading-snug text-[#534AB7]">
+            Build the rep-reviewed practice set that appears on the Practice page.
+          </p>
+        </div>
+        {hasBank && (
+          <span className="shrink-0 rounded-full border border-[#5B35D5]/20 bg-background px-2.5 py-1 text-[11px] font-extrabold text-[#3B24A8]">
+            {bank?.questionsCount ?? 0} Q
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-2xl border border-rose-300/40 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+          {error}
+        </p>
+      )}
+
+      {!hasBank ? (
+        <div className="mt-3 space-y-3">
+          <div className="space-y-2">
+            {compatibleMaterials.slice(0, 8).map((m) => {
+              const checked = selectedIds.includes(m.id);
+              const meta = typeMeta(m.material_type ?? "other");
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedIds(
+                      checked ? selectedIds.filter((id) => id !== m.id) : [...selectedIds, m.id]
+                    )
+                  }
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl border bg-background px-3 py-2.5 text-left transition",
+                    checked ? "border-[#5B35D5]/30" : "border-border"
+                  )}
+                >
+                  <div className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl", meta.bg, meta.color)}>
+                    <FileText className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">{m.title ?? "Untitled material"}</p>
+                    <p className="text-[11px] text-muted-foreground">{meta.label}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      "grid h-5 w-5 shrink-0 place-items-center rounded-full border",
+                      checked ? "border-[#5B35D5] bg-[#5B35D5] text-white" : "border-border"
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={busy || selectedIds.length === 0}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-extrabold text-white transition hover:bg-[#4526B8] disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {busy ? "Starting bank..." : "Start official bank"}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="space-y-2">
+            {bank!.materials.map((row) => {
+              const topics = Array.isArray(row.topic_outline) ? row.topic_outline : [];
+              const totalTarget = topics.reduce((sum, t) => sum + Number(t.target ?? 0), 0);
+              const totalGenerated = topics.reduce((sum, t) => sum + Number(t.generated ?? 0), 0);
+              const pct = totalTarget > 0 ? Math.round((totalGenerated / totalTarget) * 100) : 0;
+              return (
+                <div key={row.id} className="rounded-2xl border border-border bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{bankMaterialTitle(row)}</p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
+                        {row.status === "covered"
+                          ? "Covered"
+                          : row.status === "failed"
+                            ? "Needs retry"
+                            : row.status === "pending"
+                              ? "Pending outline"
+                              : `${totalGenerated}/${totalTarget || "?"} topic questions`}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-extrabold text-[#5B35D5]">{row.status === "covered" ? "Done" : `${pct}%`}</span>
+                  </div>
+                  {topics.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {topics.slice(0, 4).map((topic) => (
+                        <span key={topic.title} className="rounded-full border border-[#5B35D5]/15 bg-[#5B35D5]/5 px-2 py-0.5 text-[10px] font-semibold text-[#534AB7]">
+                          {topic.title}: {topic.generated ?? 0}/{topic.target ?? 0}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {row.error_message && (
+                    <p className="mt-2 rounded-xl border border-rose-300/40 bg-rose-50 px-2 py-1.5 text-[11px] font-semibold text-rose-700">
+                      {row.error_message}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={busy || ready}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-3 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#4526B8] disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Next batch
+            </button>
+            <Link
+              href={`/admin/study/practice/${encodeURIComponent(bank!.run.quiz_set_id)}`}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-3 py-2.5 text-xs font-extrabold text-foreground no-underline hover:bg-secondary/40"
+            >
+              <Play className="h-3.5 w-3.5" />
+              Open editor
+            </Link>
+            <button
+              type="button"
+              onClick={onPublish}
+              disabled={busy || (bank?.questionsCount ?? 0) === 0}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-300/50 bg-emerald-50 px-3 py-2.5 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Publish
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function CourseHubPage() {
   const router = useRouter();
@@ -219,8 +445,11 @@ export default function CourseHubPage() {
 
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [showAllMaterials, setShowAllMaterials] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [canManageBank, setCanManageBank] = useState(false);
+  const [bank, setBank] = useState<BankState | null>(null);
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankError, setBankError] = useState<string | null>(null);
+  const [selectedBankMaterialIds, setSelectedBankMaterialIds] = useState<string[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -231,7 +460,7 @@ export default function CourseHubPage() {
 
       const cRes = await supabase
         .from("study_courses")
-        .select("id,course_code,course_title,department_id,study_departments:department_id(id,name,faculty_id,study_faculties:faculty_id(id,name))")
+        .select("id,course_code,course_title,level,department_id,study_departments:department_id(id,name,faculty_id,study_faculties:faculty_id(id,name))")
         .eq("course_code", code)
         .maybeSingle();
 
@@ -338,6 +567,57 @@ export default function CourseHubPage() {
     [materials]
   );
 
+  const compatibleMaterials = useMemo(
+    () => materials.filter((m) => isAiSupported(m.file_path)),
+    [materials]
+  );
+
+  useEffect(() => {
+    setSelectedBankMaterialIds((prev) => {
+      const valid = new Set(compatibleMaterials.map((m) => m.id));
+      const kept = prev.filter((id) => valid.has(id));
+      if (kept.length) return kept;
+      return compatibleMaterials.slice(0, 5).map((m) => m.id);
+    });
+  }, [compatibleMaterials]);
+
+  async function authHeaders() {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Sign in to manage this course bank.");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
+  async function refreshBank(courseId: string) {
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/study/rep-question-bank?courseId=${encodeURIComponent(courseId)}`, {
+        headers,
+        cache: "no-store",
+      });
+      if (res.status === 401 || res.status === 403) {
+        setCanManageBank(false);
+        setBank(null);
+        return;
+      }
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Could not load question bank.");
+      setCanManageBank(true);
+      setBank((json.bank ?? null) as BankState | null);
+    } catch {
+      setCanManageBank(false);
+      setBank(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!course?.id) return;
+    void refreshBank(course.id);
+  }, [course?.id]);
+
   const topPracticeHref = practiceSets[0]?.id
     ? `/study/practice/${encodeURIComponent(String(practiceSets[0].id))}`
     : `/study/practice?course=${encodeURIComponent(code)}`;
@@ -345,31 +625,72 @@ export default function CourseHubPage() {
   // Smart primary CTA
   const primaryCta = useMemo(() => {
     if (practiceSets.length > 0) return "practice";
-    if (firstAiMaterial) return "generate";
     if (materials.length > 0) return "browse";
     return "upload";
-  }, [practiceSets, firstAiMaterial, materials]);
+  }, [practiceSets, materials]);
 
-  async function handleGenerate() {
-    if (!course?.id || generating) return;
-    setGenerating(true);
-    setGenerateError(null);
+  async function handleStartBank() {
+    if (!course?.id || bankLoading) return;
+    setBankLoading(true);
+    setBankError(null);
     try {
-      const res = await fetch("/api/ai/generate-questions-course", {
+      const headers = await authHeaders();
+      const res = await fetch("/api/study/rep-question-bank/start", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId: course.id }),
+        headers,
+        body: JSON.stringify({
+          courseId: course.id,
+          materialIds: selectedBankMaterialIds,
+        }),
       });
-      const data = (await res.json()) as { setId?: string; error?: string };
-      if (!res.ok || !data.setId) {
-        setGenerateError(data.error ?? "Failed to generate questions. Please try again.");
-        setGenerating(false);
-        return;
-      }
-      router.push(`/study/practice/${encodeURIComponent(data.setId)}`);
-    } catch {
-      setGenerateError("Failed to generate questions. Please try again.");
-      setGenerating(false);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to start question bank.");
+      setCanManageBank(true);
+      setBank(json.bank as BankState);
+    } catch (e: unknown) {
+      setBankError(e instanceof Error ? e.message : "Failed to start question bank.");
+    } finally {
+      setBankLoading(false);
+    }
+  }
+
+  async function handleGenerateBatch() {
+    if (!bank?.run.id || bankLoading) return;
+    setBankLoading(true);
+    setBankError(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/study/rep-question-bank/${encodeURIComponent(bank.run.id)}/generate-batch`, {
+        method: "POST",
+        headers,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to generate batch.");
+      setBank(json.bank as BankState);
+    } catch (e: unknown) {
+      setBankError(e instanceof Error ? e.message : "Failed to generate batch.");
+    } finally {
+      setBankLoading(false);
+    }
+  }
+
+  async function handlePublishBank() {
+    if (!bank?.run.id || bankLoading) return;
+    setBankLoading(true);
+    setBankError(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/study/rep-question-bank/${encodeURIComponent(bank.run.id)}/publish`, {
+        method: "POST",
+        headers,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to publish bank.");
+      router.push(`/study/practice/${encodeURIComponent(bank.run.quiz_set_id)}`);
+    } catch (e: unknown) {
+      setBankError(e instanceof Error ? e.message : "Failed to publish bank.");
+    } finally {
+      setBankLoading(false);
     }
   }
 
@@ -482,40 +803,6 @@ export default function CourseHubPage() {
               </Link>
             )}
 
-            {primaryCta === "generate" && firstAiMaterial && (
-              generating ? (
-                <div className="flex items-center gap-3 rounded-2xl bg-[#5B35D5]/10 px-4 py-3.5">
-                  <Loader2 className="h-5 w-5 shrink-0 animate-spin text-[#5B35D5]" />
-                  <div>
-                    <p className="text-sm font-extrabold text-[#3B24A8]">Generating questions…</p>
-                    <p className="mt-0.5 text-xs text-[#534AB7]">
-                      Reading {code} materials · this takes ~20 seconds
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-[#5B35D5] px-4 py-3.5 transition hover:bg-[#4526B8] active:scale-[0.98]"
-                >
-                  <div className="text-left">
-                    <p className="text-sm font-extrabold text-white">Generate practice questions</p>
-                    <p className="mt-0.5 text-xs text-white/70">
-                      AI-powered MCQs from all {code} materials · shared with your class
-                    </p>
-                  </div>
-                  <Sparkles className="h-5 w-5 shrink-0 text-white/80" />
-                </button>
-              )
-            )}
-
-            {generateError && (
-              <p className="rounded-2xl border border-rose-300/40 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                {generateError}
-              </p>
-            )}
-
             {primaryCta === "browse" && (
               <div className="rounded-2xl border border-dashed border-border bg-secondary/20 px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-foreground">Browse materials below</p>
@@ -563,6 +850,20 @@ export default function CourseHubPage() {
           </div>
 
           {/* ── Level filter ─────────────────────────────────────────────────── */}
+          {canManageBank && compatibleMaterials.length > 0 && (
+            <BankBuilderCard
+              bank={bank}
+              compatibleMaterials={compatibleMaterials}
+              selectedIds={selectedBankMaterialIds}
+              setSelectedIds={setSelectedBankMaterialIds}
+              busy={bankLoading}
+              error={bankError}
+              onStart={handleStartBank}
+              onGenerate={handleGenerateBatch}
+              onPublish={handlePublishBank}
+            />
+          )}
+
           {availableLevels.length > 1 && (
             <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] py-0.5">
               {(["all", ...availableLevels] as string[]).map((lv) => (
@@ -634,25 +935,11 @@ export default function CourseHubPage() {
                 <p className="text-sm font-semibold text-[#3C3489]">No practice sets yet</p>
                 <p className="mt-0.5 text-xs text-[#534AB7]">
                   {firstAiMaterial
-                    ? "Generate AI questions from the materials below — they save as a practice set."
-                    : "Upload a material first, then generate AI practice questions from it."}
+                    ? canManageBank
+                      ? "Use the official question bank builder above to create the first class practice set."
+                      : "Your course rep can publish an official practice set from the materials below."
+                    : "Upload a material first, then your course rep can build practice from it."}
                 </p>
-                {firstAiMaterial && (
-                  generating ? (
-                    <div className="mt-2.5 flex items-center gap-1.5">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#5B35D5]" />
-                      <span className="text-xs font-semibold text-[#534AB7]">Generating…</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleGenerate}
-                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-[#4526B8]"
-                    >
-                      <Sparkles className="h-3 w-3" /> Generate now
-                    </button>
-                  )
-                )}
               </div>
             )}
           </div>

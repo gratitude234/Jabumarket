@@ -601,6 +601,8 @@ if (err || !meta) {
     );
   }
 
+  const resultPct = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+
   return (
     <div className="pb-28 md:pb-6">
       {/* Sticky mobile header */}
@@ -730,114 +732,149 @@ if (err || !meta) {
       ) : submitted ? (
         /* Results */
         <div className="mt-4 space-y-3">
-          <div className="overflow-hidden rounded-3xl bg-[#5B35D5]">
-            <div className="px-5 py-6 text-center">
-              {milestone && (
-                <div className="mb-3 text-4xl">{milestone.emoji}</div>
-              )}
-              <div className="text-5xl font-extrabold tracking-tight text-white">
-                {stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0}%
+
+          {/* ── Score hero ─────────────────────────────────────────────────── */}
+          <div className="overflow-hidden rounded-3xl">
+            <div className="bg-gradient-to-b from-[#5B35D5] to-[#4526B8] px-6 pb-6 pt-8 text-center">
+              {/* SVG score ring */}
+              <div className="relative mx-auto mb-3 h-36 w-36">
+                <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="9" />
+                  <circle
+                    cx="50" cy="50" r="40" fill="none"
+                    stroke="white" strokeWidth="9"
+                    strokeLinecap="round"
+                    strokeDasharray={`${resultPct * 2.5133} 251.33`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl font-extrabold tracking-tight text-white">{resultPct}%</span>
+                </div>
               </div>
-              <div className="mt-1 text-sm font-semibold text-white/70">
+
+              <p className="text-sm font-semibold text-white/70">
                 {stats.correct} / {stats.total} correct
-              </div>
-              <div className="mt-2 truncate px-4 text-sm font-semibold text-white/60">
-                {normalize(meta.title)}
-                {meta.course_code ? ` · ${meta.course_code}` : ""}
-              </div>
-              <div className="mt-4 flex items-center justify-center gap-6 text-xs font-semibold text-white/70">
+              </p>
+              <p className="mt-1.5 truncate px-6 text-xs font-medium text-white/45">
+                {normalize(meta.title)}{meta.course_code ? ` · ${meta.course_code}` : ""}
+              </p>
+
+              {/* Status pills */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 {streakCount !== null && (
-                  <span>🔥 {streakCount}-day streak</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                    🔥 {streakCount}-day streak
+                  </span>
+                )}
+                {isDueMode && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                    📚 Due review
+                  </span>
+                )}
+                {isRetryMode && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                    🔁 Retry mode
+                  </span>
                 )}
                 {finalizing ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Saving…
                   </span>
                 ) : (
-                  <span>✓ Saved</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                    <CheckCircle2 className="h-3 w-3" /> Saved
+                  </span>
                 )}
-                {isDueMode && <span>📚 Due review</span>}
-                {isRetryMode && <span>🔁 Retry mode</span>}
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2 border-t border-white/15 px-5 py-4">
-              <button
-                type="button"
-                onClick={resetAll}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
-              >
-                <RefreshCcw className="h-4 w-4" /> Retry
-              </button>
-
-              {stats.correct < stats.total && (
+            {/* Action buttons */}
+            <div className="space-y-2 bg-[#3B1FA8] px-5 py-4">
+              {/* Primary CTA */}
+              {stats.correct < stats.total ? (
                 <button
                   type="button"
                   onClick={() => { setRevealed({}); retryWeakQuestions(); }}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-[#5B35D5] transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Retry weak ({stats.total - stats.correct})
                 </button>
-              )}
-
-              {stats.total > 0 && (
+              ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    const pct = Math.round((stats.correct / stats.total) * 100);
-                    const setTitle = normalize(meta?.title ?? "a practice set");
-                    const courseCode = meta?.course_code ? ` (${meta.course_code})` : "";
-                    const streakLine = streakCount && streakCount > 1
-                      ? `\n🔥 ${streakCount}-day streak!`
-                      : "";
-                    const msg = encodeURIComponent(
-                      `I scored ${pct}% on "${setTitle}"${courseCode} on Jabumarket Study Hub!${streakLine}\n\nPractice for free: https://jabumarket.com/study`
-                    );
-                    window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener,noreferrer");
-                  }}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-[#25D366] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#1EB856]"
+                  onClick={resetAll}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-[#5B35D5] transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 >
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp
+                  <RefreshCcw className="h-4 w-4" />
+                  Practice again
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={async () => {
-                  const pct = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
-                  const text = `I scored ${pct}% on "${normalize(meta.title)}" on Jabumarket Study Hub!`;
-                  try {
-                    if (typeof navigator.share === "function") {
-                      await navigator.share({ text, title: "My Practice Score" });
-                    } else {
-                      await navigator.clipboard.writeText(text);
-                    }
-                  } catch { /* user cancelled */ }
-                }}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-white/25"
-              >
-                <Share2 className="h-4 w-4" />
-                Share
-              </button>
-
-              <Link
-                href="/study/practice"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-extrabold text-[#5B35D5] no-underline hover:bg-white/90"
-              >
-                Back to sets
-              </Link>
+              {/* Secondary row */}
+              <div className="flex gap-2">
+                <Link
+                  href="/study/practice"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-bold text-white no-underline transition hover:bg-white/20"
+                >
+                  Back to sets
+                </Link>
+                <button
+                  type="button"
+                  aria-label="Share score"
+                  onClick={async () => {
+                    const text = `I scored ${resultPct}% on "${normalize(meta.title)}" on Jabumarket Study Hub!`;
+                    try {
+                      if (typeof navigator.share === "function") {
+                        await navigator.share({ text, title: "My Practice Score" });
+                      } else {
+                        await navigator.clipboard.writeText(text);
+                      }
+                    } catch { /* user cancelled */ }
+                  }}
+                  className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-2xl border border-white/25 bg-white/10 text-white transition hover:bg-white/20"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                {stats.total > 0 && (
+                  <button
+                    type="button"
+                    aria-label="Share on WhatsApp"
+                    onClick={() => {
+                      const streakLine = streakCount && streakCount > 1 ? `\n🔥 ${streakCount}-day streak!` : "";
+                      const msg = encodeURIComponent(
+                        `I scored ${resultPct}% on "${normalize(meta?.title ?? "a practice set")}"${meta?.course_code ? ` (${meta.course_code})` : ""} on Jabumarket Study Hub!${streakLine}\n\nPractice for free: https://jabumarket.com/study`
+                      );
+                      window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener,noreferrer");
+                    }}
+                    className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-2xl bg-[#25D366] text-white transition hover:bg-[#1EB856]"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* ── SRS summary card ──────────────────────────────────────────── */}
+          {/* ── Score breakdown ─────────────────────────────────────────────── */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-emerald-200/60 bg-emerald-50 py-4 dark:border-emerald-800/30 dark:bg-emerald-950/20">
+              <span className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">{stats.correct}</span>
+              <span className="text-[11px] font-semibold text-emerald-600/70 dark:text-emerald-500">Correct</span>
+            </div>
+            <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-rose-200/60 bg-rose-50 py-4 dark:border-rose-800/30 dark:bg-rose-950/20">
+              <span className="text-2xl font-extrabold text-rose-500 dark:text-rose-400">{stats.total - stats.correct}</span>
+              <span className="text-[11px] font-semibold text-rose-500/70 dark:text-rose-500">Missed</span>
+            </div>
+            <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-border bg-card py-4">
+              <span className="text-2xl font-extrabold text-foreground">{stats.total}</span>
+              <span className="text-[11px] font-semibold text-muted-foreground">Total</span>
+            </div>
+          </div>
+
+          {/* ── Streak milestone ────────────────────────────────────────────── */}
           {streakMilestone && (
-            <div className={cn(
-              "overflow-hidden rounded-3xl border shadow-sm",
-              "border-amber-300/50 bg-amber-50 dark:border-amber-700/40",
-              "dark:bg-amber-950/20"
-            )}>
+            <div className="overflow-hidden rounded-3xl border border-amber-300/50 bg-amber-50 shadow-sm dark:border-amber-700/40 dark:bg-amber-950/20">
               <div className="px-5 py-4">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">🔥</span>
@@ -854,33 +891,17 @@ if (err || !meta) {
                     </p>
                   </div>
                 </div>
-
                 <button
                   type="button"
                   onClick={() => {
                     const msg = encodeURIComponent(
-                      `🔥 I just hit a ${streakMilestone}-day study streak on ` +
-                      `Jabumarket Study Hub!\n\n` +
-                      `${streakMilestone === 7 ? "One full week" :
-                         streakMilestone === 14 ? "Two weeks straight" :
-                         streakMilestone === 30 ? "30 days straight" :
-                         streakMilestone === 60 ? "60 days of consistent study" :
-                         "100 days"} of consistent practice.\n\n` +
+                      `🔥 I just hit a ${streakMilestone}-day study streak on Jabumarket Study Hub!\n\n` +
+                      `${streakMilestone === 7 ? "One full week" : streakMilestone === 14 ? "Two weeks straight" : streakMilestone === 30 ? "30 days straight" : streakMilestone === 60 ? "60 days of consistent study" : "100 days"} of consistent practice.\n\n` +
                       `Study smarter: https://jabumarket.com/study`
                     );
-                    window.open(
-                      `https://wa.me/?text=${msg}`,
-                      "_blank",
-                      "noopener,noreferrer"
-                    );
+                    window.open(`https://wa.me/?text=${msg}`, "_blank", "noopener,noreferrer");
                   }}
-                  className={cn(
-                    "mt-3 inline-flex w-full items-center justify-center gap-2",
-                    "rounded-2xl bg-[#25D366] px-4 py-2.5 text-sm font-extrabold",
-                    "text-white transition hover:bg-[#1EB856]",
-                    "focus-visible:outline-none focus-visible:ring-2",
-                    "focus-visible:ring-[#25D366] focus-visible:ring-offset-2"
-                  )}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-[#1EB856] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:ring-offset-2"
                 >
                   <MessageCircle className="h-4 w-4" />
                   Share on WhatsApp
@@ -889,88 +910,82 @@ if (err || !meta) {
             </div>
           )}
 
+          {/* ── Weak questions ──────────────────────────────────────────────── */}
           {weakSummary && weakSummary.filter((r) => !r.wasCorrect).length > 0 ? (
             <Card className="rounded-3xl">
-              <div className="flex items-center gap-2.5 mb-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5] dark:text-indigo-300">
-                  <CalendarClock className="h-4 w-4" />
+              <div className="mb-4 flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B35D5]/[0.07] text-[#5B35D5] dark:text-indigo-300">
+                  <CalendarClock className="h-4.5 w-4.5" />
                 </span>
                 <div>
-                  <p className="text-xs font-extrabold text-foreground">Weak questions tracked</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {weakSummary.filter((r) => !r.wasCorrect).length} question{weakSummary.filter((r) => !r.wasCorrect).length !== 1 ? "s" : ""} added to your spaced repetition queue
+                  <p className="text-sm font-extrabold text-foreground">Weak questions</p>
+                  <p className="text-xs text-muted-foreground">
+                    {weakSummary.filter((r) => !r.wasCorrect).length} added to your review queue
                   </p>
                 </div>
               </div>
-              <div className="space-y-1.5">
+
+              <div className="space-y-2">
                 {weakSummary
                   .filter((r) => !r.wasCorrect)
                   .slice(0, 5)
                   .map((r) => (
-                    <div
-                      key={r.questionId}
-                      className="flex items-center gap-2.5 rounded-xl border border-border bg-background px-3 py-2"
-                    >
-                      <span
-                        className={cn(
-                          "h-2 w-2 shrink-0 rounded-full",
-                          r.missCount >= 4
-                            ? "bg-rose-500"
-                            : r.missCount >= 2
-                            ? "bg-amber-500"
-                            : "bg-muted-foreground/50"
-                        )}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
-                        {r.prompt}
-                      </span>
-                      <span className="shrink-0 text-[11px] font-extrabold text-muted-foreground">
-                        ×{r.missCount}
-                      </span>
-                      <a
-                        href={`/study/report?question=${encodeURIComponent(r.questionId)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-auto inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition no-underline"
-                      >
-                        <Flag className="h-2.5 w-2.5" />
-                        Flag
-                      </a>
-                      {r.nextDueAt ? (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          due {formatDue(r.nextDueAt)}
+                    <div key={r.questionId} className="rounded-xl border border-border bg-background p-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className={cn(
+                          "mt-1 h-2 w-2 shrink-0 rounded-full",
+                          r.missCount >= 4 ? "bg-rose-500" : r.missCount >= 2 ? "bg-amber-500" : "bg-muted-foreground/40"
+                        )} />
+                        <p className="flex-1 text-[13px] font-semibold leading-snug text-foreground line-clamp-2">
+                          {r.prompt}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 pl-4">
+                        <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-extrabold text-rose-600 dark:bg-rose-950/30 dark:text-rose-400">
+                          ×{r.missCount} missed
                         </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleMarkUnderstood(r.questionId)}
-                        className={cn(
-                          'shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
-                          understood[r.questionId]
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/30'
-                            : 'border-border/60 bg-background text-muted-foreground hover:bg-secondary/50'
+                        {r.nextDueAt && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Due {formatDue(r.nextDueAt)}
+                          </span>
                         )}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        {understood[r.questionId] ? 'Understood' : 'Got it'}
-                      </button>
+                        <div className="flex-1" />
+                        <a
+                          href={`/study/report?question=${encodeURIComponent(r.questionId)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Report question"
+                          className="grid h-6 w-6 place-items-center rounded-lg text-muted-foreground/40 transition hover:text-muted-foreground no-underline"
+                        >
+                          <Flag className="h-3 w-3" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleMarkUnderstood(r.questionId)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition",
+                            understood[r.questionId]
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/30"
+                              : "border-border bg-background text-muted-foreground hover:bg-secondary/50"
+                          )}
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          {understood[r.questionId] ? "Got it" : "Mark done"}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 {weakSummary.filter((r) => !r.wasCorrect).length > 5 && (
-                  <p className="pl-2 text-[11px] text-muted-foreground">
+                  <p className="pl-4 text-[11px] text-muted-foreground">
                     +{weakSummary.filter((r) => !r.wasCorrect).length - 5} more tracked
                   </p>
                 )}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+
+              <div className="mt-4">
                 <a
                   href="/study/practice?view=due"
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-extrabold",
-                    "bg-[#5B35D5] text-white hover:bg-[#4526B8]",
-                    "dark:bg-[#4526B8] dark:hover:bg-[#4526B8]",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
-                  )}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B35D5]/[0.07] px-4 py-2.5 text-sm font-extrabold text-[#5B35D5] no-underline transition hover:bg-[#5B35D5]/[0.12] dark:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
                 >
                   <CalendarClock className="h-4 w-4" />
                   View Due Today
@@ -979,102 +994,114 @@ if (err || !meta) {
             </Card>
           ) : weakSummary && weakSummary.every((r) => r.wasCorrect) && weakSummary.length > 0 ? (
             <Card className="rounded-3xl">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <TrendingUp className="h-4 w-4" />
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <TrendingUp className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">No new weak questions</p>
-                  <p className="text-[11px] text-muted-foreground">Great session — all tracked questions answered correctly.</p>
+                  <p className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300">No new weak questions!</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">All tracked questions answered correctly.</p>
                 </div>
               </div>
             </Card>
           ) : null}
 
-          {/* What next? */}
-          <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-            <div className="border-b border-border px-4 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                What next?
-              </p>
-            </div>
-            <div className="grid grid-cols-2 divide-x divide-y divide-border">
+          {/* ── Keep going ──────────────────────────────────────────────────── */}
+          <div className="overflow-hidden rounded-3xl border border-border bg-card">
+            <p className="border-b border-border px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Keep going
+            </p>
+            <div className="divide-y divide-border">
               {stats.correct < stats.total && (
                 <button
                   type="button"
                   onClick={() => { setRevealed({}); retryWeakQuestions(); }}
-                  className="flex flex-col gap-2 p-4 text-left hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-secondary/40 focus-visible:outline-none"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/30">
-                    <RotateCcw className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-50 dark:bg-rose-950/30">
+                    <RotateCcw className="h-4 w-4 text-rose-500" />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Retry weak Qs</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {stats.total - stats.correct} questions below 60%
-                    </p>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">Retry weak ({stats.total - stats.correct})</p>
+                    <p className="text-xs text-muted-foreground">Focus on what you missed</p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={resetAll}
+                className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-secondary/40 focus-visible:outline-none"
+              >
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+                  <RefreshCcw className="h-4 w-4 text-[#5B35D5]" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Practice again</p>
+                  <p className="text-xs text-muted-foreground">Redo all {stats.total} questions</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+              </button>
 
               {meta?.course_code && (
                 <Link
                   href={`/study/materials?course=${encodeURIComponent(meta.course_code)}`}
-                  className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  className="flex w-full items-center gap-3 p-4 no-underline transition-colors hover:bg-secondary/40"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E1F5EE]">
-                    <BookOpen className="h-4 w-4 text-[#1D9E75]" />
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 dark:bg-emerald-950/30">
+                    <BookOpen className="h-4 w-4 text-emerald-600" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-semibold text-foreground">{meta.course_code} materials</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Brush up on weak topics</p>
+                    <p className="text-xs text-muted-foreground">Brush up on weak topics</p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
                 </Link>
               )}
 
               {sourceMaterial && (
                 <Link
                   href={`/study/materials/${encodeURIComponent(sourceMaterial.id)}`}
-                  className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  className="flex w-full items-center gap-3 p-4 no-underline transition-colors hover:bg-secondary/40"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
                     <FileText className="h-4 w-4 text-[#5B35D5] dark:text-indigo-300" />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      Source material
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-                      {sourceMaterial.title ?? "View PDF"}
-                    </p>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">Source material</p>
+                    <p className="text-xs text-muted-foreground line-clamp-1">{sourceMaterial.title ?? "View PDF"}</p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
                 </Link>
               )}
 
               <Link
                 href="/study/practice"
-                className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="flex w-full items-center gap-3 p-4 no-underline transition-colors hover:bg-secondary/40"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#EEEDFE]">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
                   <GraduationCap className="h-4 w-4 text-[#5B35D5]" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <p className="text-sm font-semibold text-foreground">Another set</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Browse all practice sets</p>
+                  <p className="text-xs text-muted-foreground">Browse all practice sets</p>
                 </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
               </Link>
 
               <Link
                 href="/study/history"
-                className="flex flex-col gap-2 p-4 no-underline hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="flex w-full items-center gap-3 p-4 no-underline transition-colors hover:bg-secondary/40"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/30">
-                  <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-50 dark:bg-amber-950/30">
+                  <TrendingUp className="h-4 w-4 text-amber-500" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <p className="text-sm font-semibold text-foreground">View history</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Track progress over time</p>
+                  <p className="text-xs text-muted-foreground">Track progress over time</p>
                 </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
               </Link>
             </div>
           </div>
