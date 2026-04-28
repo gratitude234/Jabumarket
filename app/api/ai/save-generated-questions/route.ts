@@ -28,6 +28,7 @@ type MCQ = {
 type MaterialTitleRow = {
   id: string;
   title: string | null;
+  course_code: string | null;
 };
 
 type QuizSetRow = {
@@ -48,15 +49,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  let body: { materialId?: string; courseId?: string; questions?: MCQ[] };
+  let body: { materialId?: string; questions?: MCQ[] };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { materialId, courseId, questions } = body;
-  if (!materialId || !courseId || !Array.isArray(questions) || questions.length === 0) {
+  const { materialId, questions } = body;
+  if (!materialId || !Array.isArray(questions) || questions.length === 0) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
   const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
-    .select("id, title")
+    .select("id, title, course_code")
     .eq("id", materialId)
     .maybeSingle();
 
@@ -89,46 +90,24 @@ export async function POST(req: NextRequest) {
   const material = mat as MaterialTitleRow;
   const title = `AI Generated - ${material.title ?? "Practice Set"}`;
 
-  let setResult = await admin
+  const { data: set, error: setErr } = await admin
     .from("study_quiz_sets")
     .insert({
       title,
       source: "ai_generated",
-      course_id: courseId,
+      course_code: material.course_code,
       created_by: user.id,
       published: true,
       visibility: "private",
       source_material_id: materialId,
       due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    } as any)
+    })
     .select("id")
     .single();
 
-  // If the columns don't exist yet, fall back to inserting without them
-  if (setResult.error) {
-    console.error("[save-generated-questions] supabase error:", setResult.error);
-    const msg = setResult.error.message ?? "";
-    const isMissingColumn = msg.includes("column") && msg.includes("does not exist");
-    if (isMissingColumn) {
-      setResult = await admin
-        .from("study_quiz_sets")
-        .insert({
-          title,
-          source: "ai_generated",
-          course_id: courseId,
-          created_by: user.id,
-          published: true,
-          visibility: "private",
-        } as any)
-        .select("id")
-        .single();
-      if (setResult.error) {
-        console.error("[save-generated-questions] supabase error (fallback):", setResult.error);
-      }
-    }
+  if (setErr) {
+    console.error("[save-generated-questions] supabase error:", setErr);
   }
-
-  const { data: set, error: setErr } = setResult;
 
   if (setErr || !set) {
     return NextResponse.json({ error: "Failed to save questions." }, { status: 500 });

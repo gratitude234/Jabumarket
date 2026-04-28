@@ -712,12 +712,12 @@ export default function MaterialDetailClient({
   }
 
   async function handleSaveQuestions() {
-    if (!generatedQuestions || !m.study_courses?.id) return;
+    if (!generatedQuestions) return;
     setSavingQs(true);
     try {
       const res = await fetch("/api/ai/save-generated-questions", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ materialId: m.id, courseId: m.study_courses.id, questions: generatedQuestions }),
+        body: JSON.stringify({ materialId: m.id, questions: generatedQuestions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
