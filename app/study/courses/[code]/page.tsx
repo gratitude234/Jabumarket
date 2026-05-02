@@ -371,7 +371,7 @@ function BankBuilderCard({
                           : row.status === "failed"
                             ? "Needs retry"
                             : row.status === "pending"
-                              ? "Pending outline"
+                              ? "Waiting for AI scan"
                               : `${totalGenerated}/${totalTarget || "?"} topic questions`}
                       </p>
                     </div>
@@ -792,6 +792,9 @@ export default function CourseHubPage() {
                   <p className="text-sm font-extrabold text-white">
                     {norm(String(practiceSets[0].title ?? "Practice set"))}
                   </p>
+                  {practiceSets[0].source === "rep_ai_bank" && (
+                    <p className="mt-0.5 text-[11px] font-extrabold text-white/85">Official AI-built</p>
+                  )}
                   <p className="mt-0.5 text-xs text-white/70">
                     {[
                       practiceSets[0].questions_count ? `${practiceSets[0].questions_count} questions` : null,
