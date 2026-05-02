@@ -25,41 +25,6 @@ type MaterialRecommendation = {
   materialType: string | null;
 };
 
-type CourseCodeSet = { course_code: string | null };
-type WeakQuestionJoin = { study_quiz_sets: CourseCodeSet | CourseCodeSet[] | null };
-type WeakDueRow = {
-  question_id?: string | null;
-  study_quiz_questions?: WeakQuestionJoin | WeakQuestionJoin[] | null;
-};
-type ActivityRow = { activity_date: string | null; did_practice: boolean | null };
-type AttemptScoreRow = {
-  score: number | null;
-  total_questions: number | null;
-  study_quiz_sets?: CourseCodeSet | CourseCodeSet[] | null;
-};
-type QuizSetRow = {
-  id: string;
-  title: string | null;
-  course_code: string | null;
-  questions_count: number | null;
-  source: string | null;
-  created_at: string | null;
-};
-type MaterialRow = {
-  id: string;
-  title: string | null;
-  course_code: string | null;
-  material_type: string | null;
-};
-type InProgressRow = {
-  id: string;
-  set_id: string | null;
-  score: number | null;
-  total_questions: number | null;
-  study_quiz_sets?: Array<{ id: string; title: string | null; course_code: string | null }> | { id: string; title: string | null; course_code: string | null } | null;
-};
-type WeeklyAttemptRow = { id: string; score: number | null; total_questions: number | null };
-
 function jsonError(message: string, status: number, code: string) {
   return NextResponse.json({ ok: false, code, message }, { status });
 }
@@ -86,7 +51,7 @@ function joinedOne<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null;
 }
 
-function extractCourseCodeFromWeakRow(row: WeakDueRow) {
+function extractCourseCodeFromWeakRow(row: any) {
   const question = joinedOne(row?.study_quiz_questions);
   const set = joinedOne(question?.study_quiz_sets);
   const code = String(set?.course_code ?? "").trim().toUpperCase();
@@ -105,7 +70,7 @@ async function getPracticeStreak(supabase: Awaited<ReturnType<typeof createSupab
   if (error || !Array.isArray(data)) return 0;
 
   const map = new Map<string, boolean>();
-  for (const row of data as ActivityRow[]) {
+  for (const row of data as any[]) {
     if (row?.activity_date) map.set(String(row.activity_date), Boolean(row.did_practice));
   }
 
@@ -138,7 +103,7 @@ async function getWeakCourses(supabase: Awaited<ReturnType<typeof createSupabase
   if (error || !Array.isArray(data)) return [];
 
   const acc = new Map<string, { score: number; total: number; count: number }>();
-  for (const row of data as AttemptScoreRow[]) {
+  for (const row of data as any[]) {
     const set = joinedOne(row?.study_quiz_sets);
     const code = String(set?.course_code ?? "").trim().toUpperCase();
     const score = Number(row?.score ?? 0);
@@ -201,7 +166,7 @@ async function getPracticeRecommendations(
 
   if (error || !Array.isArray(data)) return [];
 
-  return [...(data as QuizSetRow[])]
+  return [...(data as any[])]
     .sort((a, b) => {
       const aOfficial = a?.source === "rep_ai_bank" ? 1 : 0;
       const bOfficial = b?.source === "rep_ai_bank" ? 1 : 0;
@@ -260,7 +225,7 @@ async function getMaterialRecommendations(
 
   if (error || !Array.isArray(data)) return [];
 
-  return (data as MaterialRow[]).slice(0, 4).map((row): MaterialRecommendation => ({
+  return (data as any[]).slice(0, 4).map((row): MaterialRecommendation => ({
     id: String(row.id),
     title: String(row.title ?? "Study material"),
     courseCode: row.course_code ? String(row.course_code).toUpperCase() : null,
@@ -323,7 +288,7 @@ export async function GET() {
     getMaterialRecommendations(supabase, prefs).catch(() => []),
   ]);
 
-  const dueRows = !dueRes.error && Array.isArray(dueRes.data) ? (dueRes.data as WeakDueRow[]) : [];
+  const dueRows = !dueRes.error && Array.isArray(dueRes.data) ? (dueRes.data as any[]) : [];
   const dueCourseCounts = new Map<string, number>();
   for (const row of dueRows) {
     const code = extractCourseCodeFromWeakRow(row);
@@ -336,12 +301,12 @@ export async function GET() {
     .map(([courseCode]) => courseCode);
 
   const inProgress = !inProgressRes.error && Array.isArray(inProgressRes.data)
-    ? (inProgressRes.data as InProgressRow[])[0] ?? null
+    ? (inProgressRes.data as any[])[0] ?? null
     : null;
   const inProgressSet = joinedOne(inProgress?.study_quiz_sets);
 
   const weeklyAttempts = !weekAttemptsRes.error && Array.isArray(weekAttemptsRes.data)
-    ? (weekAttemptsRes.data as WeeklyAttemptRow[])
+    ? (weekAttemptsRes.data as any[])
     : [];
   const scoredAttempts = weeklyAttempts.filter((row) => {
     const score = Number(row?.score);
@@ -356,7 +321,14 @@ export async function GET() {
     : null;
 
   let primaryAction: { kind: PrimaryKind; label: string; href: string; meta?: string };
-  if (dueRows.length > 0) {
+  if (!hasPrefs) {
+    primaryAction = {
+      kind: "onboarding",
+      label: "Set up your study profile",
+      href: "/study/onboarding",
+      meta: "Get materials and practice for your department.",
+    };
+  } else if (dueRows.length > 0) {
     primaryAction = {
       kind: "due",
       label: "Review due questions",
@@ -371,13 +343,6 @@ export async function GET() {
       label: "Continue practice",
       href: `/study/practice/${encodeURIComponent(String(inProgress.set_id))}?attempt=${encodeURIComponent(String(inProgress.id))}`,
       meta: `${inProgressSet?.title ?? "Practice set"}${answered != null && total ? ` - ${answered}/${total}` : ""}`,
-    };
-  } else if (!hasPrefs) {
-    primaryAction = {
-      kind: "onboarding",
-      label: "Set up your study profile",
-      href: "/study/onboarding",
-      meta: "Get materials and practice for your department.",
     };
   } else if (practiceSets[0]) {
     primaryAction = {

@@ -103,12 +103,19 @@ function Skeleton() {
 export default function TodayStudyPanel({ userId, hasPrefs, loading }: Props) {
   const [data, setData] = useState<TodayPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fetching, setFetching] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const viewedRef = useRef(false);
   const weeklyViewedRef = useRef(false);
 
   useEffect(() => {
-    if (loading || !userId) return;
+    if (loading) return;
+
+    if (!userId) {
+      setData(null);
+      setFetching(false);
+      setError(null);
+      return;
+    }
 
     let cancelled = false;
     async function loadToday() {
@@ -171,7 +178,7 @@ export default function TodayStudyPanel({ userId, hasPrefs, loading }: Props) {
     return "Today's Study";
   }, [data]);
 
-  if (loading || (userId && fetching)) return <Skeleton />;
+  if (loading || fetching) return <Skeleton />;
 
   if (error || !data) {
     return (
@@ -181,7 +188,7 @@ export default function TodayStudyPanel({ userId, hasPrefs, loading }: Props) {
             <Loader2 className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <p className="text-base font-extrabold text-foreground">Today&apos;s Study</p>
+            <p className="text-base font-extrabold text-foreground">Today's Study</p>
             <p className="mt-1 text-sm text-muted-foreground">
               We could not load your study plan right now. You can still continue from Practice.
             </p>
@@ -206,7 +213,7 @@ export default function TodayStudyPanel({ userId, hasPrefs, loading }: Props) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-wide text-[#5B35D5]">
-            Today&apos;s Study
+            Today's Study
           </p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">
             {title}
