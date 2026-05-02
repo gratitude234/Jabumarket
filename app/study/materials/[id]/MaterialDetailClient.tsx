@@ -18,6 +18,7 @@ import {
   File,
   FileText,
   Image as ImageIcon,
+  Lightbulb,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -39,6 +40,7 @@ type GeneratedQuestion = {
   options: { A: string; B: string; C: string; D: string };
   answer: "A" | "B" | "C" | "D";
   explanation: string;
+  hint?: string;
 };
 
 type ChatMessage = {
@@ -446,6 +448,9 @@ export default function MaterialDetailClient({
   const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[] | null>(null);
   const [savingQs, setSavingQs] = useState(false);
   const [savedSetId, setSavedSetId] = useState<string | null>(null);
+  const [generatingMore, setGeneratingMore] = useState(false);
+  const [generateMoreError, setGenerateMoreError] = useState<string | null>(null);
+  const [hintShown, setHintShown] = useState<Record<number, boolean>>({});
 
   // Quiz state machine
   const [quizState, setQuizState] = useState<"idle" | "config" | "loading" | "quiz" | "results">("idle");
@@ -455,8 +460,6 @@ export default function MaterialDetailClient({
   const [retryPool, setRetryPool] = useState<GeneratedQuestion[] | null>(null);
   const syncedQuizMissesRef = useRef<string | null>(null);
 
-  // Rate-limit countdown
-  const [genQsCooldown, setGenQsCooldown] = useState(0);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -501,21 +504,6 @@ export default function MaterialDetailClient({
     return () => { document.body.removeAttribute("data-hide-nav"); };
   }, [quizState]);
 
-  // Proactive rate-limit check on mount
-  useEffect(() => {
-    if (!isAiGenSupported(m)) return;
-    fetch("/api/ai/generate-questions")
-      .then((r) => r.json())
-      .then((d) => { if (d.retryAfterSeconds > 0) setGenQsCooldown(d.retryAfterSeconds); })
-      .catch(() => {});
-  }, [kind]);
-
-  // Countdown ticker
-  useEffect(() => {
-    if (genQsCooldown <= 0) return;
-    const t = setInterval(() => setGenQsCooldown((s) => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(t);
-  }, [genQsCooldown]);
 
   const qs = generatedQuestions ?? [];
   const currentAnswer = answers[currentQuestionIndex];
@@ -650,20 +638,50 @@ export default function MaterialDetailClient({
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 429) {
-          const retryAfter = parseInt(res.headers.get("Retry-After") ?? "300");
-          setGenQsCooldown(retryAfter);
-        }
+          throw new Error(data.error ?? "Failed to generate questions.");
+      }
+      setGeneratedQuestions(data.questions);
+      setAnswers({});
+      setCurrentQuestionIndex(0);
+      setRetryPool(null);
+      setHintShown({});
+      setQuizState("quiz");
+    } catch (e: unknown) {
+      setGenQsError(e instanceof Error ? e.message : "Something went wrong.");
+      setQuizState("config");
+    }
+  }
+
+  async function handleGenerateMore() {
+    setGeneratingMore(true);
+    setGenerateMoreError(null);
+    try {
+      const res = await fetch("/api/ai/generate-questions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materialId: m.id,
+          count: quizConfig.count,
+          difficulty: quizConfig.difficulty,
+          focus: quizConfig.focus || undefined,
+          coveredQuestions: generatedQuestions?.map((q) => q.question) ?? [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
         throw new Error(data.error ?? "Failed to generate questions.");
       }
       setGeneratedQuestions(data.questions);
       setAnswers({});
       setCurrentQuestionIndex(0);
       setRetryPool(null);
+      setHintShown({});
+      setSavedSetId(null);
+      syncedQuizMissesRef.current = null;
       setQuizState("quiz");
     } catch (e: unknown) {
-      setGenQsError(e instanceof Error ? e.message : "Something went wrong.");
-      setQuizState("config");
+      setGenerateMoreError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setGeneratingMore(false);
     }
   }
 
@@ -828,15 +846,12 @@ export default function MaterialDetailClient({
             {isAiGenSupported(m) && (
               <button type="button"
                 onClick={() => setQuizState("config")}
-                disabled={genQsCooldown > 0}
-                className="flex w-full items-center gap-3 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/70 px-4 py-3.5 text-left transition hover:bg-[#EEEDFE] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
+                className="flex w-full items-center gap-3 rounded-xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/70 px-4 py-3.5 text-left transition hover:bg-[#EEEDFE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B4FD9]">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#5B4FD9] text-white">
                   <Sparkles className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-[#3A2EB8]">
-                    {genQsCooldown > 0 ? `Wait ${genQsCooldown}s` : "Generate Practice Questions"}
-                  </p>
+                  <p className="text-sm font-bold text-[#3A2EB8]">Generate Practice Questions</p>
                   <p className="text-xs text-[#5B4FD9]/70">AI-powered exam prep from this material</p>
                 </div>
               </button>
@@ -893,7 +908,7 @@ export default function MaterialDetailClient({
               </p>
             )}
             {chatHistory.map((msg) => (
-              <div key={msg.id} className={cn("max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+              <div key={msg.id} className={cn("max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
                 msg.role === "user" ? "ml-auto bg-[#5B4FD9] text-white" : "mr-auto bg-[#EEEDFE] text-[#3A2EB8]")}>
                 {msg.text || (<span className="flex items-center gap-1.5 text-[#5B4FD9]/60"><Loader2 className="h-3 w-3 animate-spin" /> Thinking…</span>)}
               </div>
@@ -1150,6 +1165,30 @@ export default function MaterialDetailClient({
                     <p className="mb-4 text-sm font-bold text-foreground leading-relaxed">
                       {currentQuestionIndex + 1}. {currentQ.question}
                     </p>
+
+                    {/* Hint */}
+                    {currentQ.hint && !answered && (
+                      <div className="mb-4">
+                        {hintShown[currentQuestionIndex] ? (
+                          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/60 bg-amber-50 px-3.5 py-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+                            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                            <p className="text-xs font-medium leading-relaxed text-amber-800 dark:text-amber-300">
+                              {currentQ.hint}
+                            </p>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setHintShown((prev) => ({ ...prev, [currentQuestionIndex]: true }))}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                          >
+                            <Lightbulb className="h-3.5 w-3.5" />
+                            Show hint
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     <div className="space-y-2.5">
                       {(["A", "B", "C", "D"] as const).map((key) => {
                         const isCorrect = currentQ.answer === key;
@@ -1274,6 +1313,19 @@ export default function MaterialDetailClient({
               {/* Results footer */}
               {quizState === "results" && (
                 <div className="absolute inset-x-0 bottom-0 space-y-2 border-t border-border bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                  {generateMoreError && (
+                    <p className="text-center text-xs font-semibold text-rose-600">{generateMoreError}</p>
+                  )}
+                  {/* Generate more */}
+                  <button type="button"
+                    onClick={handleGenerateMore}
+                    disabled={generatingMore}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3A2EB8] transition hover:bg-[#E5E2FF] disabled:opacity-50 focus-visible:outline-none">
+                    {generatingMore
+                      ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</>
+                      : <><Sparkles className="h-4 w-4" /> Generate {quizConfig.count} more questions</>
+                    }
+                  </button>
                   {missedList.length > 0 && (
                     <button type="button"
                       onClick={() => {
@@ -1282,12 +1334,13 @@ export default function MaterialDetailClient({
                         setRetryPool(missed);
                         setAnswers({});
                         setCurrentQuestionIndex(0);
+                        setHintShown({});
                         syncedQuizMissesRef.current = null;
                         setQuizState("quiz");
                       }}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#5B4FD9] bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3A2EB8] transition hover:bg-[#E5E2FF] focus-visible:outline-none">
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-secondary/50 focus-visible:outline-none">
                       <RotateCcw className="h-4 w-4" />
-                      Retry missed questions ({missedList.length})
+                      Retry missed ({missedList.length})
                     </button>
                   )}
                   {savedSetId ? (

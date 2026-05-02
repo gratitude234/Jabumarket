@@ -41,8 +41,6 @@ type GeminiStreamChunk = {
     content?: { parts?: Array<{ text?: string }> };
   }>;
 };
-type RateLimitRow = { last_called_at: string };
-
 // Upload a file to the Gemini Files API and return its hosted URI.
 // Used for PDF and images so the file is cached and reused across chat turns.
 async function uploadFileToGemini(
@@ -94,44 +92,6 @@ async function uploadFileToGemini(
   return fileUri;
 }
 
-async function enforceRateLimit(
-  admin: typeof adminSupabase,
-  userId: string,
-  endpoint: string,
-  cooldownMs: number
-): Promise<
-  | { allowed: true }
-  | { allowed: false; retryAfterSeconds: number }
-  | { allowed: false; error: string }
-> {
-  const { data, error } = await admin
-    .from("ai_rate_limits")
-    .select("last_called_at")
-    .eq("user_id", userId)
-    .eq("endpoint", endpoint)
-    .maybeSingle();
-
-  if (error) return { allowed: false, error: error.message };
-
-  const row = data as RateLimitRow | null;
-  const now = Date.now();
-  if (row?.last_called_at) {
-    const nextAllowedAt = new Date(row.last_called_at).getTime() + cooldownMs;
-    if (Number.isFinite(nextAllowedAt) && nextAllowedAt > now) {
-      return { allowed: false, retryAfterSeconds: Math.ceil((nextAllowedAt - now) / 1000) };
-    }
-  }
-
-  const { error: upsertError } = await admin
-    .from("ai_rate_limits")
-    .upsert(
-      { user_id: userId, endpoint, last_called_at: new Date(now).toISOString() },
-      { onConflict: "user_id,endpoint" }
-    );
-  if (upsertError) return { allowed: false, error: upsertError.message };
-  return { allowed: true };
-}
-
 export async function POST(req: NextRequest) {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
@@ -168,18 +128,6 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
 
-  // ── Rate limit ─────────────────────────────────────────────────────────────
-  const rateLimit = await enforceRateLimit(admin, user.id, "material-chat", 60_000);
-  if ("error" in rateLimit) {
-    return NextResponse.json({ error: "Failed to check rate limit." }, { status: 500 });
-  }
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: `Please wait ${rateLimit.retryAfterSeconds} seconds before sending another message.` },
-      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
-    );
-  }
-
   // ── Resolve file content ───────────────────────────────────────────────────
   // For PDF/images: upload to Gemini Files API (or use cached URI) → file_data part
   // For DOCX/PPTX: extract text → inject as text context (no URI to cache)
@@ -189,7 +137,9 @@ export async function POST(req: NextRequest) {
 Answer questions strictly based on the provided document.
 If the answer cannot be found in the document, say: "I couldn't find that in this material."
 Keep answers concise and student-friendly.
-Do not invent information outside the document.`;
+Do not invent information outside the document.
+Use plain text only — no asterisks, no markdown, no bold/italic symbols.
+For lists, put each item on its own line with a dash prefix (e.g. "- item").`;
 
   let contents: GeminiContent[];
 
