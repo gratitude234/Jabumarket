@@ -105,7 +105,7 @@ function DishCard({ result }: { result: DishResult }) {
   const vendorsToShow = expanded ? result.vendors : [primary];
 
   return (
-    <div className="rounded-3xl border bg-white shadow-sm overflow-hidden">
+    <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
       {/* Dish header */}
       <div className="flex items-center gap-3 px-4 pt-4 pb-3">
         <span className="text-2xl leading-none">{result.emoji}</span>
@@ -145,9 +145,12 @@ function DishCard({ result }: { result: DishResult }) {
             {activeVendorId === vendor.vendor_id && (
               <div className="border-t border-zinc-100 bg-zinc-50">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 bg-white">
-                  <p className="text-xs font-semibold text-zinc-900">
-                    Order from {vendor.vendor_name}
-                  </p>
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-900">
+                      Order from {vendor.vendor_name}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">You will track status in My Orders.</p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setActiveVendorId(null)}

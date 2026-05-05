@@ -10,14 +10,10 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
-  CarFront,
   CheckCircle2,
   Circle,
   Eye,
-  MapPin,
   Search,
-  Store,
-  Truck,
   UtensilsCrossed,
 } from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
@@ -942,7 +938,7 @@ function ListingCard({
   listing, vendor, stats,
 }: {
   listing: ListingRow;
-  vendor: { id: string; name: string | null; verified: boolean; verification_status: string | null; vendor_type: string | null; avatar_url: string | null } | null;
+  vendor: { id: string; name: string | null; location: string | null; verified: boolean | null; verification_status: string | null; vendor_type: string | null; avatar_url: string | null } | null;
   stats: { views: number; saves: number } | null;
 }) {
   const priceText = listing.price !== null ? formatNaira(listing.price) : listing.price_label ?? "Contact for price";
@@ -951,6 +947,7 @@ function ListingCard({
   const isInactive = listing.status === "inactive";
   const desc = (listing.description ?? "").trim();
   const isVerified = vendor?.verified === true || vendor?.verification_status === "verified";
+  const hasEngagement = (stats?.saves ?? 0) > 0 || (stats?.views ?? 0) > 8;
 
   // FIX #4: isNew computed server-side but badge has suppressHydrationWarning
   const isNew = !isSold && !isInactive && !!listing.created_at &&
@@ -959,7 +956,7 @@ function ListingCard({
   return (
     <Link
       href={`/listing/${listing.id}`}
-      className={cn("group overflow-hidden rounded-3xl border bg-white no-underline transition-shadow hover:shadow-sm", (isSold || isInactive) && "opacity-90")}
+      className={cn("group overflow-hidden rounded-2xl border bg-white no-underline transition-shadow hover:shadow-sm", (isSold || isInactive) && "opacity-90")}
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-100">
         <ListingImage
@@ -995,12 +992,17 @@ function ListingCard({
             </span>
           </div>
         )}
+
+        <div className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-sm font-bold text-zinc-950 shadow-sm">
+          {priceText}
+        </div>
       </div>
 
       <div className="space-y-2 p-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{typeLabel}</span>
           {listing.category ? <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{listing.category}</span> : null}
+          {hasEngagement ? <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">Popular</span> : null}
         </div>
 
         <p className="text-base font-bold text-zinc-900">
@@ -1024,8 +1026,9 @@ function ListingCard({
               </div>
             )}
             <span className="truncate text-xs text-zinc-500">{vendor.name}</span>
+            {isVerified && <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
             {vendor.vendor_type === "mall" && (
-              <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">Shop</span>
+              <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">Store</span>
             )}
           </div>
         ) : null}
@@ -1033,6 +1036,12 @@ function ListingCard({
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
           <span className="truncate">{listing.location ?? "—"}</span>
           <div className="flex shrink-0 items-center gap-2">
+            {stats && stats.views > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                <Eye className="h-3 w-3" />
+                {stats.views}
+              </span>
+            )}
             {stats && stats.saves > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                 🔖 {stats.saves}

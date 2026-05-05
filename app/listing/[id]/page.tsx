@@ -23,8 +23,11 @@ import {
   BadgeCheck,
   Bookmark,
   Clock,
+  CreditCard,
   Eye,
   MapPin,
+  MessageCircle,
+  ShieldCheck,
   Truck,
 } from "lucide-react";
 
@@ -459,6 +462,30 @@ export default async function ListingPage({
                 ) : null}
               </div>
             ) : null}
+
+            <div className="grid gap-2 rounded-2xl border border-zinc-100 bg-zinc-50 p-3 text-xs text-zinc-600 sm:grid-cols-3">
+              <div className="flex items-start gap-2">
+                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+                <span>
+                  <span className="block font-semibold text-zinc-900">Pay after order</span>
+                  Bank or cash details are handled after the order opens.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+                <span>
+                  <span className="block font-semibold text-zinc-900">Chat first</span>
+                  Confirm condition, pickup point and availability with the seller.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+                <span>
+                  <span className="block font-semibold text-zinc-900">Trade safely</span>
+                  Meet publicly and inspect items before paying.
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Seller card */}
@@ -501,6 +528,15 @@ export default async function ListingPage({
                 </div>
                 <div className="mt-1">
                   <VendorRatingBadge vendorId={vendor.id} />
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                  {vendor.location ? (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      {vendor.location}
+                    </span>
+                  ) : null}
+                  <span>View seller profile and other listings</span>
                 </div>
               </div>
               <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300" />
@@ -591,7 +627,7 @@ export default async function ListingPage({
 
         {/* Safety — one-liner, no card */}
         <p className="pb-2 text-center text-xs text-zinc-400">
-          🔒 Meet in public · inspect before paying · report suspicious listings
+          Meet in public. Inspect before paying. Report suspicious listings.
         </p>
       </div>
 

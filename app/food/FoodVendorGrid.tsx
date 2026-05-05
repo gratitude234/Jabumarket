@@ -6,7 +6,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Clock, CheckCircle2, Circle, Star, ShoppingBag, X, Plus } from 'lucide-react';
+import { Clock, CheckCircle2, Circle, Star, ShoppingBag, X, Plus, UtensilsCrossed } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MealBuilder from '@/components/chat/MealBuilder';
 
@@ -47,12 +47,24 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
   }
 
   return (
-    <>
+    <div className="space-y-3">
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+        <UtensilsCrossed className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-amber-900">Food orders stay trackable</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-amber-800">
+            Build your meal here, then follow payment, ETA and delivery updates in My Orders.
+          </p>
+        </div>
+        <Link href="/my-orders" className="shrink-0 rounded-xl bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 no-underline hover:bg-amber-800">
+          My Orders
+        </Link>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {vendors.map((v) => (
           <div
             key={v.id}
-            className="flex flex-col gap-3 rounded-3xl border bg-white p-4 shadow-sm"
+            className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm"
           >
             {/* Vendor header */}
             <div className="flex items-start gap-3">
@@ -65,7 +77,7 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
                   className="h-12 w-12 shrink-0 rounded-2xl object-cover"
                 />
               ) : (
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-xl">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-zinc-100">
                   🍽
                 </div>
               )}
@@ -127,30 +139,33 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
 
             {/* Menu preview chips */}
             {v.menuItems.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {v.menuItems.map((item, i) => {
-                  const low  = item.stock_count !== null && item.stock_count <= 3;
-                  const warn = item.stock_count !== null && item.stock_count > 3 && item.stock_count <= 5;
-                  return (
-                    <span
-                      key={i}
-                      className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1 text-xs text-zinc-700"
-                    >
-                      <span>{item.emoji}</span>
-                      {item.name}
-                      {low && (
-                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 leading-none">
-                          {item.stock_count === 1 ? '1 left' : `${item.stock_count} left`}
-                        </span>
-                      )}
-                      {warn && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 leading-none">
-                          {item.stock_count} left
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
+              <div className="space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Menu preview</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {v.menuItems.map((item, i) => {
+                    const low  = item.stock_count !== null && item.stock_count <= 3;
+                    const warn = item.stock_count !== null && item.stock_count > 3 && item.stock_count <= 5;
+                    return (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-1 text-xs text-zinc-700"
+                      >
+                        <span>{item.emoji}</span>
+                        {item.name}
+                        {low && (
+                          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 leading-none">
+                            {item.stock_count === 1 ? '1 left' : `${item.stock_count} left`}
+                          </span>
+                        )}
+                        {warn && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 leading-none">
+                            {item.stock_count} left
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -158,7 +173,10 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
             {activeVendorId === v.id && (
               <div className="rounded-2xl border border-zinc-200 bg-zinc-50 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 bg-white">
-                  <p className="text-sm font-semibold text-zinc-900">Order from {v.name}</p>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">Order from {v.name}</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">After checkout, track it in My Orders.</p>
+                  </div>
                   <button
                     type="button"
                     onClick={closeOrder}
@@ -193,7 +211,7 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
                     className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-zinc-700"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    Order
+                    Order now
                   </button>
                 ) : v.menuItems.length === 0 ? (
                   v.user_id && currentUserId === v.user_id ? (
@@ -218,6 +236,6 @@ export default function FoodVendorGrid({ vendors, currentUserId }: { vendors: Fo
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }

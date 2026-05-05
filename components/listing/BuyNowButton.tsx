@@ -220,20 +220,25 @@ export default function BuyNowButton({
                   : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
               )}
             >
-              {m === 'transfer' ? '🏦 Bank transfer' : '💵 Cash on pickup'}
+              {m === 'transfer' ? 'Bank transfer' : 'Cash on pickup'}
             </button>
           ))}
         </div>
         {paymentMethod === 'transfer' && (
           <p className="mt-1 text-[11px] text-zinc-400">
-            Seller&apos;s bank details will appear in chat after ordering.
+            Seller&apos;s bank details appear after the order is created.
           </p>
         )}
       </div>
 
+      <div className="flex items-start gap-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-600">
+        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+        No payment is collected here. The order opens chat so you can confirm pickup, delivery and payment with the seller.
+      </div>
+
       {/* Note */}
       <textarea
-        placeholder="Add a note — e.g. pickup location, condition question…"
+        placeholder="Add a note, pickup location or condition question..."
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={2}
@@ -317,7 +322,7 @@ export default function BuyNowButton({
                   loading ? "bg-zinc-300 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-700"
                 )}
               >
-                {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Confirm"}
+                {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Create order"}
               </button>
             </div>
           </div>
