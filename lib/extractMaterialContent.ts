@@ -5,7 +5,6 @@
 
 import JSZip from "jszip";
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -36,6 +35,19 @@ const IMAGE_MIME: Record<string, string> = {
 
 const MIN_EXTRACTED_PDF_CHARS = 120;
 let pdfWorkerConfigured = false;
+type PDFParseConstructor = typeof import("pdf-parse").PDFParse;
+
+function shouldExtractPdfText(): boolean {
+  const explicitEnable = process.env.ENABLE_PDF_TEXT_EXTRACTION?.trim().toLowerCase();
+  if (explicitEnable === "true") return true;
+
+  const explicitDisable = process.env.DISABLE_PDF_TEXT_EXTRACTION?.trim().toLowerCase();
+  if (explicitDisable === "true") return false;
+
+  // pdf-parse uses pdfjs-dist, which can require DOMMatrix/canvas globals that
+  // are not available in Vercel's serverless runtime.
+  return process.env.VERCEL !== "1";
+}
 
 function getExt(filePath: string): string {
   const p = (filePath ?? "").toLowerCase();
@@ -57,7 +69,12 @@ export function isGeminiInlineSupported(filePath: string): boolean {
   return ext === ".pdf" || !!IMAGE_MIME[ext];
 }
 
-function configurePdfWorker() {
+async function loadPdfParse(): Promise<PDFParseConstructor> {
+  const mod = await import("pdf-parse");
+  return mod.PDFParse;
+}
+
+function configurePdfWorker(PDFParse: PDFParseConstructor) {
   if (pdfWorkerConfigured) return;
 
   const workerPath = path.join(
@@ -84,7 +101,8 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
 }
 
 async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
-  configurePdfWorker();
+  const PDFParse = await loadPdfParse();
+  configurePdfWorker(PDFParse);
 
   const parser = new PDFParse({
     data: Buffer.from(buffer),
@@ -140,8 +158,8 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
 /**
  * Extracts content from a study material buffer for AI generation.
  *
- * - Text PDFs    -> selectable text extracted for NVIDIA first
- * - Scanned PDFs -> inline file fallback for Gemini
+ * - Text PDFs    -> selectable text extracted for NVIDIA first where supported
+ * - PDFs on Vercel/scanned PDFs -> inline file fallback for Gemini
  * - Images       -> inline file fallback for Gemini
  * - DOCX         -> text extracted with mammoth
  * - PPTX         -> slide text extracted from DrawingML XML via jszip
@@ -153,13 +171,17 @@ export async function extractMaterialContent(
   const ext = getExt(filePath);
 
   if (ext === ".pdf") {
-    try {
-      const text = await extractPdfText(buffer);
-      if (text.length >= MIN_EXTRACTED_PDF_CHARS) {
-        return { kind: "text", text };
+    if (shouldExtractPdfText()) {
+      try {
+        const text = await extractPdfText(buffer);
+        if (text.length >= MIN_EXTRACTED_PDF_CHARS) {
+          return { kind: "text", text };
+        }
+      } catch (e: any) {
+        console.warn("[extractMaterialContent] PDF text extraction failed; falling back to inline file:", e?.message);
       }
-    } catch (e: any) {
-      console.warn("[extractMaterialContent] PDF text extraction failed; falling back to inline file:", e?.message);
+    } else {
+      console.info("[extractMaterialContent] PDF text extraction disabled in this runtime; using inline file fallback.");
     }
 
     return {
