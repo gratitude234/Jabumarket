@@ -12,6 +12,7 @@ export type InlineContent = {
   kind: "inline";
   mimeType: string;
   base64: string;
+  reason?: string;
 };
 
 export type TextContent = {
@@ -179,15 +180,28 @@ export async function extractMaterialContent(
         }
       } catch (e: any) {
         console.warn("[extractMaterialContent] PDF text extraction failed; falling back to inline file:", e?.message);
+        return {
+          kind: "inline",
+          mimeType: "application/pdf",
+          base64: Buffer.from(buffer).toString("base64"),
+          reason: `PDF text extraction failed: ${e?.message ?? "unknown error"}`,
+        };
       }
     } else {
       console.info("[extractMaterialContent] PDF text extraction disabled in this runtime; using inline file fallback.");
+      return {
+        kind: "inline",
+        mimeType: "application/pdf",
+        base64: Buffer.from(buffer).toString("base64"),
+        reason: "PDF text extraction is disabled on this deployment runtime, so Gemini read the PDF directly.",
+      };
     }
 
     return {
       kind: "inline",
       mimeType: "application/pdf",
       base64: Buffer.from(buffer).toString("base64"),
+      reason: "PDF did not contain enough selectable text, so Gemini read the PDF directly.",
     };
   }
 
@@ -196,6 +210,7 @@ export async function extractMaterialContent(
       kind: "inline",
       mimeType: IMAGE_MIME[ext],
       base64: Buffer.from(buffer).toString("base64"),
+      reason: "Images are read directly by Gemini because NVIDIA only receives extracted text in this version.",
     };
   }
 

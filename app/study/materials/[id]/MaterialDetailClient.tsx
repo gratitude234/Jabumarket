@@ -47,6 +47,7 @@ type AiGenerationMeta = {
   provider: "nvidia" | "gemini";
   model: string;
   inputMode: "extracted-text" | "inline-file";
+  reason?: string;
 };
 
 type GenerateQuestionsResponse = {
@@ -154,6 +155,10 @@ function formatAiProvider(ai: AiGenerationMeta | null) {
 function formatAiModel(ai: AiGenerationMeta | null) {
   if (!ai) return "";
   return ai.model.split("/").pop() ?? ai.model;
+}
+
+function formatAiReason(ai: AiGenerationMeta | null) {
+  return ai?.reason ?? "";
 }
 
 async function readGenerateQuestionsResponse(res: Response): Promise<GenerateQuestionsResponse> {
@@ -691,6 +696,7 @@ export default function MaterialDetailClient({
         provider: data.ai?.provider ?? "unknown",
         model: data.ai?.model ?? "unknown",
         inputMode: data.ai?.inputMode ?? "unknown",
+        reason: data.ai?.reason ?? null,
         count: data.questions.length,
       });
       setGeneratedQuestions(data.questions);
@@ -731,6 +737,7 @@ export default function MaterialDetailClient({
         provider: data.ai?.provider ?? "unknown",
         model: data.ai?.model ?? "unknown",
         inputMode: data.ai?.inputMode ?? "unknown",
+        reason: data.ai?.reason ?? null,
         count: data.questions.length,
       });
       setGeneratedQuestions(data.questions);
@@ -1138,10 +1145,18 @@ export default function MaterialDetailClient({
                   )}
                   {generationAi && (quizState === "quiz" || quizState === "results") && (
                     <p
-                      className="mt-1 max-w-[260px] truncate text-[11px] font-semibold text-muted-foreground"
+                      className="mt-1 max-w-[300px] truncate text-[11px] font-semibold text-muted-foreground"
                       title={`${generationAi.provider} · ${generationAi.model} · ${generationAi.inputMode}`}
                     >
                       {formatAiProvider(generationAi)} · {formatAiModel(generationAi)}
+                    </p>
+                  )}
+                  {generationAi && formatAiReason(generationAi) && (quizState === "quiz" || quizState === "results") && (
+                    <p
+                      className="mt-0.5 max-w-[300px] line-clamp-2 text-[10px] font-medium leading-snug text-muted-foreground"
+                      title={formatAiReason(generationAi)}
+                    >
+                      {formatAiReason(generationAi)}
                     </p>
                   )}
                 </div>

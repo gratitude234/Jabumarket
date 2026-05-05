@@ -243,7 +243,12 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
     }
     return NextResponse.json({
       questions: parsed.questions,
-      ai: { provider: "gemini", model: geminiModelName(), inputMode: "inline-file" },
+      ai: {
+        provider: "gemini",
+        model: geminiModelName(),
+        inputMode: "inline-file",
+        reason: content.reason ?? "Inline files are handled by Gemini.",
+      },
     });
   } catch (e: unknown) {
     console.error("[generate-questions] JSON parse error:", e instanceof Error ? e.message : e, rawText.slice(0, 200));
