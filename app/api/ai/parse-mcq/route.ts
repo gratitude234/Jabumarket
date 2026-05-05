@@ -1,6 +1,6 @@
 // app/api/ai/parse-mcq/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { geminiJson } from "@/lib/gemini";
+import { generateJson, userMessage } from "@/lib/ai";
 
 type ParsedOption = { text: string; is_correct: boolean };
 type ParsedQuestion = {
@@ -41,9 +41,11 @@ Rules:
 Document text:
 ${text}`;
 
-  const result = await geminiJson<ParsedQuestion[]>(prompt, {
-    maxOutputTokens: 8000,
+  const result = await generateJson<ParsedQuestion[]>({
+    messages: [userMessage(prompt)],
+    maxTokens: 8000,
     temperature: 0.1,
+    timeoutMs: 60_000,
   });
 
   if (!result.ok) {

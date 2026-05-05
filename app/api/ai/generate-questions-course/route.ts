@@ -1,5 +1,5 @@
 // app/api/ai/generate-questions-course/route.ts
-export const maxDuration = 120; // requires Vercel Pro or above
+export const maxDuration = 180; // requires Vercel Pro or above
 // POST /api/ai/generate-questions-course
 //
 // Generates a shared, course-wide AI practice set from the top materials in a
@@ -12,6 +12,7 @@ export const maxDuration = 120; // requires Vercel Pro or above
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { generateJson, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 import { extractMaterialContent, truncateText } from "@/lib/extractMaterialContent";
 
@@ -23,6 +24,14 @@ const MAX_QUESTION_COUNT = 15;
 const MATERIAL_LIMIT = 3;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const COURSE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 h
+const QUESTION_GEN_TEXT_CHARS = 24_000;
+const QUESTION_GEN_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
+const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+
+function parsePositiveInt(value: string | undefined) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 type SourceMaterial = {
   id: string;
@@ -259,7 +268,7 @@ export async function POST(req: NextRequest) {
       parts.push({ text: label });
       parts.push({ inline_data: { mime_type: content.mimeType, data: content.base64 } });
     } else if (content.kind === "text") {
-      const truncated = truncateText(content.text);
+      const truncated = truncateText(content.text, QUESTION_GEN_TEXT_CHARS);
       parts.push({ text: `${label}\n\n${truncated}` });
     }
   }
@@ -287,11 +296,39 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
 
   parts.push({ text: systemPrompt });
 
+  let rawText: string | null = null;
+  let aiMeta: { provider: "nvidia" | "gemini"; model: string; inputMode: "extracted-text" | "inline-file" } | null = null;
+  if (extracted.every((item) => item.content.kind === "text")) {
+    const textPrompt = parts
+      .map((part) => ("text" in part ? part.text : ""))
+      .filter(Boolean)
+      .join("\n\n");
+    const result = await generateJson<{ questions: unknown[] }>({
+      messages: [userMessage(textPrompt)],
+      temperature: 0.25,
+      maxTokens: Math.min(4096, questionCount * 320),
+      timeoutMs: QUESTION_GEN_TIMEOUT_MS,
+      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+    });
+    if (!result.ok) {
+      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+    }
+    rawText = JSON.stringify(result.data);
+    aiMeta = {
+      provider: result.provider,
+      model:
+        result.provider === "nvidia"
+          ? process.env.NVIDIA_CHAT_MODEL?.trim() || "mistralai/mistral-large-3-675b-instruct-2512"
+          : process.env.GEMINI_MODEL?.trim() || MODEL,
+      inputMode: "extracted-text",
+    };
+  }
+
+  if (!rawText) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
 
   // ── Call Gemini (with hard Promise.race timeout) ──────────────────────────
-  let rawText: string;
   try {
     const GEMINI_TIMEOUT_MS = 60_000;
 
@@ -333,6 +370,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
     rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    aiMeta = { provider: "gemini", model: process.env.GEMINI_MODEL?.trim() || MODEL, inputMode: "inline-file" };
     if (!rawText.trim()) {
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }
@@ -345,6 +383,12 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
   }
 
   // ── Parse questions ────────────────────────────────────────────────────────
+  }
+
+  if (!rawText) {
+    return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+  }
+
   type MCQ = {
     question: string;
     options: { A: string; B: string; C: string; D: string };
@@ -443,5 +487,5 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
     return NextResponse.json({ error: "Failed to save options." }, { status: 500 });
   }
 
-  return NextResponse.json({ setId: quizSet.id, sources, cached: false });
+  return NextResponse.json({ setId: quizSet.id, sources, cached: false, ai: aiMeta });
 }

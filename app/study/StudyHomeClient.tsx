@@ -4,15 +4,17 @@ import { useEffect, useState } from "react";
 import { BookOpen, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { trackHomeView, type StudyHomeHeroState } from "@/lib/studyAnalytics";
 import { currentAcademicSessionFallback } from "@/lib/utils";
 import StudyTabs from "./_components/StudyTabs";
 import { StudyPrefsProvider, useStudyPrefs } from "./_components/StudyPrefsContext";
 import { ForYouSection, type Chips } from "./_components/ForYouSection";
 import CourseSearch from "./_components/CourseSearch";
+import { HeroCard } from "./_components/HeroCard";
 import { QuickActions } from "./_components/QuickActions";
 import BannerSlot from "./_components/BannerSlot";
+import StatsStrip from "./_components/StatsStrip";
 import QuickStartChecklist from "./_components/QuickStartChecklist";
-import TodayStudyPanel from "./_components/TodayStudyPanel";
 
 export default function StudyHomeClient() {
   return (
@@ -23,7 +25,7 @@ export default function StudyHomeClient() {
 }
 
 function StudyHomeInner() {
-  const { loading, prefs, hasPrefs, rep, userId, updateSemester } =
+  const { loading, displayName, prefs, hasPrefs, rep, userId, updateSemester } =
     useStudyPrefs();
 
   const [chips, setChips] = useState<Chips>({});
@@ -36,11 +38,24 @@ function StudyHomeInner() {
   const [switchingSemester, setSwitchingSemester] = useState(false);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const [nudgeResolved, setNudgeResolved] = useState(false);
+  const [heroMetrics, setHeroMetrics] = useState<{
+    heroState: StudyHomeHeroState;
+    dueCount: number;
+    streak: number;
+  } | null>(null);
   const [examCountdown, setExamCountdown] = useState<{
     daysLeft: number;
     semester: string;
   } | null>(null);
   const [totalAttempts, setTotalAttempts] = useState<number | null>(null);
+
+  function markSessionFlag(flag: string) {
+    if (typeof window === "undefined") return false;
+    window.__studyAnalyticsFlags ??= {};
+    if (window.__studyAnalyticsFlags[flag]) return false;
+    window.__studyAnalyticsFlags[flag] = true;
+    return true;
+  }
 
   useEffect(() => {
     async function checkExamSeason() {
@@ -79,6 +94,15 @@ function StudyHomeInner() {
     }
     setNudgeResolved(true);
   }, []);
+
+  useEffect(() => {
+    if (loading || !heroMetrics || !markSessionFlag("study_home_viewed")) return;
+    trackHomeView(heroMetrics.heroState, {
+      has_prefs: hasPrefs,
+      due_count: heroMetrics.dueCount,
+      streak: heroMetrics.streak,
+    });
+  }, [hasPrefs, heroMetrics, loading]);
 
   useEffect(() => {
     if (loading || !prefs) return;
@@ -216,21 +240,24 @@ function StudyHomeInner() {
 
       <CourseSearch />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)] lg:items-start">
-        <TodayStudyPanel userId={userId} hasPrefs={hasPrefs} loading={loading} />
+      <HeroCard
+        displayName={displayName}
+        userId={userId}
+        loading={loading}
+        onHeroStateResolved={setHeroMetrics}
+      />
 
-        <div className="space-y-4">
-          <QuickActions repStatus={rep.status} />
+      <QuickActions repStatus={rep.status} />
 
-          {userId && totalAttempts === null ? (
-            <div className="h-20 animate-pulse rounded-3xl bg-muted" />
-          ) : null}
+      {userId && totalAttempts === null ? (
+        <div className="h-20 animate-pulse rounded-3xl bg-muted" />
+      ) : null}
 
-          {userId && totalAttempts !== null && isNewUser ? (
-            <QuickStartChecklist userId={userId} hasPrefs={hasPrefs} />
-          ) : null}
-        </div>
-      </div>
+      {userId && totalAttempts !== null
+        ? isNewUser
+          ? <QuickStartChecklist userId={userId} hasPrefs={hasPrefs} />
+          : <StatsStrip userId={userId} />
+        : null}
 
       <ForYouSection chips={chips} setChips={setChips} onClearFilters={clearFilters} />
 

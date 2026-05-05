@@ -1,6 +1,7 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
+import { generateJson, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 import { extractMaterialContent, truncateText } from "@/lib/extractMaterialContent";
 import { isWithinScope } from "@/lib/studyAdmin/scope";
@@ -9,6 +10,15 @@ import type { StudyModeratorScope } from "@/lib/studyAdmin/requireStudyModerator
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const QUESTION_BANK_TEXT_CHARS = 24_000;
+const OUTLINE_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
+const QUESTION_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
+const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+
+function parsePositiveInt(value: string | undefined) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 export type BankTopic = {
   title: string;
@@ -161,17 +171,36 @@ Return ONLY JSON:
   ]
 }`;
 
-  const parts =
-    args.content.kind === "inline"
-      ? [
-          { text: `MATERIAL: ${args.materialTitle}` },
-          { inline_data: { mime_type: args.content.mimeType, data: args.content.base64 } },
-          { text: prompt },
-        ]
-      : [
-          { text: `MATERIAL: ${args.materialTitle}\n\n${truncateText(args.content.text)}` },
-          { text: prompt },
-        ];
+  if (args.content.kind === "text") {
+    const result = await generateJson<{ topics?: Array<{ title?: string; description?: string }> }>({
+      messages: [userMessage(`MATERIAL: ${args.materialTitle}\n\n${truncateText(args.content.text, QUESTION_BANK_TEXT_CHARS)}\n\n${prompt}`)],
+      temperature: 0.25,
+      maxTokens: 1200,
+      timeoutMs: OUTLINE_TIMEOUT_MS,
+      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    const topics = Array.isArray(result.data.topics) ? result.data.topics : [];
+    const normalized: BankTopic[] = topics
+      .map((topic) => ({
+        title: String(topic.title ?? "").trim(),
+        description: String(topic.description ?? "").trim() || null,
+        target: args.topicTarget,
+        generated: 0,
+      }))
+      .filter((topic) => topic.title.length > 0)
+      .slice(0, 8);
+
+    if (!normalized.length) throw new Error("AI could not outline this material.");
+    return normalized;
+  }
+
+  const parts = [
+    { text: `MATERIAL: ${args.materialTitle}` },
+    { inline_data: { mime_type: args.content.mimeType, data: args.content.base64 } },
+    { text: prompt },
+  ];
 
   const parsed = await callGeminiJson<{ topics?: Array<{ title?: string; description?: string }> }>(parts, 1200);
   const topics = Array.isArray(parsed.topics) ? parsed.topics : [];
@@ -232,17 +261,32 @@ Return ONLY JSON:
   ]
 }`;
 
-  const parts =
-    args.content.kind === "inline"
-      ? [
-          { text: `MATERIAL: ${args.materialTitle}` },
-          { inline_data: { mime_type: args.content.mimeType, data: args.content.base64 } },
-          { text: prompt },
-        ]
-      : [
-          { text: `MATERIAL: ${args.materialTitle}\n\n${truncateText(args.content.text)}` },
-          { text: prompt },
-        ];
+  if (args.content.kind === "text") {
+    const result = await generateJson<{ questions?: GeneratedMCQ[] }>({
+      messages: [userMessage(`MATERIAL: ${args.materialTitle}\n\n${truncateText(args.content.text, QUESTION_BANK_TEXT_CHARS)}\n\n${prompt}`)],
+      temperature: 0.25,
+      maxTokens: Math.min(4096, args.count * 360),
+      timeoutMs: QUESTION_TIMEOUT_MS,
+      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    const questions = Array.isArray(result.data.questions) ? result.data.questions : [];
+    const optionKeys = ["A", "B", "C", "D"] as const;
+
+    return questions
+      .filter((q) => {
+        if (!q?.question || !q?.options || !optionKeys.includes(q.answer)) return false;
+        return optionKeys.every((key) => typeof q.options[key] === "string" && q.options[key].trim().length > 0);
+      })
+      .slice(0, args.count);
+  }
+
+  const parts = [
+    { text: `MATERIAL: ${args.materialTitle}` },
+    { inline_data: { mime_type: args.content.mimeType, data: args.content.base64 } },
+    { text: prompt },
+  ];
 
   const parsed = await callGeminiJson<{ questions?: GeneratedMCQ[] }>(parts, Math.min(4096, args.count * 360));
   const questions = Array.isArray(parsed.questions) ? parsed.questions : [];

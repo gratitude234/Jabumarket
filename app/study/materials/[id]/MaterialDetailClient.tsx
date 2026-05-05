@@ -43,6 +43,18 @@ type GeneratedQuestion = {
   hint?: string;
 };
 
+type AiGenerationMeta = {
+  provider: "nvidia" | "gemini";
+  model: string;
+  inputMode: "extracted-text" | "inline-file";
+};
+
+type GenerateQuestionsResponse = {
+  questions?: GeneratedQuestion[];
+  ai?: AiGenerationMeta;
+  error?: string;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "model";
@@ -132,6 +144,16 @@ function formatMaterialType(t: string | null) {
       other: "Other",
     }[t] ?? t
   );
+}
+
+function formatAiProvider(ai: AiGenerationMeta | null) {
+  if (!ai) return null;
+  return ai.provider === "nvidia" ? "NVIDIA Mistral" : "Gemini fallback";
+}
+
+function formatAiModel(ai: AiGenerationMeta | null) {
+  if (!ai) return "";
+  return ai.model.split("/").pop() ?? ai.model;
 }
 
 const GDOCS = (url: string) =>
@@ -451,6 +473,7 @@ export default function MaterialDetailClient({
   const [generatingMore, setGeneratingMore] = useState(false);
   const [generateMoreError, setGenerateMoreError] = useState<string | null>(null);
   const [hintShown, setHintShown] = useState<Record<number, boolean>>({});
+  const [generationAi, setGenerationAi] = useState<AiGenerationMeta | null>(null);
 
   // Quiz state machine
   const [quizState, setQuizState] = useState<"idle" | "config" | "loading" | "quiz" | "results">("idle");
@@ -624,6 +647,7 @@ export default function MaterialDetailClient({
   async function handleGenerateQuestions() {
     setQuizState("loading");
     setGenQsError(null);
+    setGenerationAi(null);
     setSavedSetId(null);
     syncedQuizMissesRef.current = null;
     try {
@@ -636,11 +660,21 @@ export default function MaterialDetailClient({
           focus: quizConfig.focus || undefined,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as GenerateQuestionsResponse;
       if (!res.ok) {
           throw new Error(data.error ?? "Failed to generate questions.");
       }
+      if (!Array.isArray(data.questions)) {
+        throw new Error("Failed to generate questions.");
+      }
+      console.info("[study-ai] generated questions", {
+        provider: data.ai?.provider ?? "unknown",
+        model: data.ai?.model ?? "unknown",
+        inputMode: data.ai?.inputMode ?? "unknown",
+        count: data.questions.length,
+      });
       setGeneratedQuestions(data.questions);
+      setGenerationAi(data.ai ?? null);
       setAnswers({});
       setCurrentQuestionIndex(0);
       setRetryPool(null);
@@ -666,11 +700,21 @@ export default function MaterialDetailClient({
           coveredQuestions: generatedQuestions?.map((q) => q.question) ?? [],
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as GenerateQuestionsResponse;
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to generate questions.");
       }
+      if (!Array.isArray(data.questions)) {
+        throw new Error("Failed to generate questions.");
+      }
+      console.info("[study-ai] generated more questions", {
+        provider: data.ai?.provider ?? "unknown",
+        model: data.ai?.model ?? "unknown",
+        inputMode: data.ai?.inputMode ?? "unknown",
+        count: data.questions.length,
+      });
       setGeneratedQuestions(data.questions);
+      setGenerationAi(data.ai ?? null);
       setAnswers({});
       setCurrentQuestionIndex(0);
       setRetryPool(null);
@@ -1071,6 +1115,14 @@ export default function MaterialDetailClient({
                   </p>
                   {quizState === "quiz" && (
                     <p className="text-xs text-[#5B4FD9] font-semibold">{correctCount}/{currentQuestionIndex} correct</p>
+                  )}
+                  {generationAi && (quizState === "quiz" || quizState === "results") && (
+                    <p
+                      className="mt-1 max-w-[260px] truncate text-[11px] font-semibold text-muted-foreground"
+                      title={`${generationAi.provider} · ${generationAi.model} · ${generationAi.inputMode}`}
+                    >
+                      {formatAiProvider(generationAi)} · {formatAiModel(generationAi)}
+                    </p>
                   )}
                 </div>
                 <button type="button" onClick={() => setQuizState("idle")}

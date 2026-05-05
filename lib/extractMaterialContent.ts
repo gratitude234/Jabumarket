@@ -1,10 +1,13 @@
 // lib/extractMaterialContent.ts
-// Server-side utility that turns any uploaded study material into content
-// Gemini can understand. Supports PDF, images, DOCX, and PPTX.
+// Server-side utility that turns uploaded study materials into text for NVIDIA,
+// or inline file payloads for Gemini fallback. Supports PDF, images, DOCX, and PPTX.
 // Never import this from a "use client" file.
 
-import mammoth from "mammoth";
 import JSZip from "jszip";
+import mammoth from "mammoth";
+import { PDFParse } from "pdf-parse";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type InlineContent = {
   kind: "inline";
@@ -31,6 +34,9 @@ const IMAGE_MIME: Record<string, string> = {
   ".webp": "image/webp",
 };
 
+const MIN_EXTRACTED_PDF_CHARS = 120;
+let pdfWorkerConfigured = false;
+
 function getExt(filePath: string): string {
   const p = (filePath ?? "").toLowerCase();
   const i = p.lastIndexOf(".");
@@ -51,6 +57,23 @@ export function isGeminiInlineSupported(filePath: string): boolean {
   return ext === ".pdf" || !!IMAGE_MIME[ext];
 }
 
+function configurePdfWorker() {
+  if (pdfWorkerConfigured) return;
+
+  const workerPath = path.join(
+    process.cwd(),
+    "node_modules",
+    "pdf-parse",
+    "dist",
+    "pdf-parse",
+    "esm",
+    "pdf.worker.mjs"
+  );
+
+  PDFParse.setWorker(pathToFileURL(workerPath).href);
+  pdfWorkerConfigured = true;
+}
+
 async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
   const warnings = result.messages.filter((m) => m.type === "warning");
@@ -60,10 +83,26 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   return result.value.trim();
 }
 
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  configurePdfWorker();
+
+  const parser = new PDFParse({
+    data: Buffer.from(buffer),
+    disableFontFace: true,
+    useWorkerFetch: false,
+  });
+
+  try {
+    const result = await parser.getText();
+    return result.text.replace(/\s+\n/g, "\n").replace(/[ \t]{2,}/g, " ").trim();
+  } finally {
+    await parser.destroy();
+  }
+}
+
 async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
   const zip = await JSZip.loadAsync(buffer);
 
-  // Collect all slide XML files in slide order
   const slideFiles = Object.keys(zip.files)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((a, b) => {
@@ -77,7 +116,6 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
   for (const slideName of slideFiles) {
     const xml = await zip.files[slideName].async("string");
 
-    // Extract text from DrawingML <a:t> elements
     const texts = Array.from(xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g))
       .map((m) =>
         m[1]
@@ -100,12 +138,13 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
 }
 
 /**
- * Extracts content from a study material buffer so it can be sent to Gemini.
+ * Extracts content from a study material buffer for AI generation.
  *
- * - PDF / images → returned as base64 inline_data (Gemini reads them natively)
- * - DOCX         → text extracted with mammoth
- * - PPTX         → slide text extracted from DrawingML XML via jszip
- * - anything else → UnsupportedContent with a user-friendly message
+ * - Text PDFs    -> selectable text extracted for NVIDIA first
+ * - Scanned PDFs -> inline file fallback for Gemini
+ * - Images       -> inline file fallback for Gemini
+ * - DOCX         -> text extracted with mammoth
+ * - PPTX         -> slide text extracted from DrawingML XML via jszip
  */
 export async function extractMaterialContent(
   buffer: ArrayBuffer,
@@ -113,8 +152,16 @@ export async function extractMaterialContent(
 ): Promise<MaterialContent> {
   const ext = getExt(filePath);
 
-  // ── PDF ────────────────────────────────────────────────────────────────────
   if (ext === ".pdf") {
+    try {
+      const text = await extractPdfText(buffer);
+      if (text.length >= MIN_EXTRACTED_PDF_CHARS) {
+        return { kind: "text", text };
+      }
+    } catch (e: any) {
+      console.warn("[extractMaterialContent] PDF text extraction failed; falling back to inline file:", e?.message);
+    }
+
     return {
       kind: "inline",
       mimeType: "application/pdf",
@@ -122,7 +169,6 @@ export async function extractMaterialContent(
     };
   }
 
-  // ── Images ─────────────────────────────────────────────────────────────────
   if (IMAGE_MIME[ext]) {
     return {
       kind: "inline",
@@ -131,7 +177,6 @@ export async function extractMaterialContent(
     };
   }
 
-  // ── DOCX ──────────────────────────────────────────────────────────────────
   if (ext === ".docx") {
     try {
       const text = await extractDocxText(buffer);
@@ -145,7 +190,6 @@ export async function extractMaterialContent(
     }
   }
 
-  // ── PPTX ──────────────────────────────────────────────────────────────────
   if (ext === ".pptx") {
     try {
       const text = await extractPptxText(buffer);
@@ -159,18 +203,17 @@ export async function extractMaterialContent(
     }
   }
 
-  // ── Unsupported ────────────────────────────────────────────────────────────
   return {
     kind: "unsupported",
     message: `File type "${ext || "unknown"}" is not supported for AI features. Upload a PDF, image, DOCX, or PPTX.`,
   };
 }
 
-// Max characters of extracted text we send to Gemini to stay within token limits.
-// ~60 000 chars ≈ 15 000 tokens — well within Gemini Flash-Lite's context window.
+// Max characters of extracted text we send to AI providers to stay within token limits.
+// Roughly 60,000 chars is about 15,000 tokens.
 export const MAX_TEXT_CHARS = 60_000;
 
-export function truncateText(text: string): string {
-  if (text.length <= MAX_TEXT_CHARS) return text;
-  return text.slice(0, MAX_TEXT_CHARS) + "\n\n[Document truncated — showing first portion only]";
+export function truncateText(text: string, maxChars = MAX_TEXT_CHARS): string {
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + "\n\n[Document truncated - showing first portion only]";
 }

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { geminiJson } from "@/lib/gemini";
+import { generateJson, userMessage } from "@/lib/ai";
 
 type PriceSuggestion = {
   min: number;
@@ -83,9 +83,11 @@ Respond ONLY with valid JSON — no markdown, no backticks, no text outside the 
 }`;
 
   // ── Call Gemini ────────────────────────────────────────────────────────────
-  const result = await geminiJson<PriceSuggestion>(prompt, {
+  const result = await generateJson<PriceSuggestion>({
+    messages: [userMessage(prompt)],
     temperature: 0.3,
-    maxOutputTokens: 250,
+    maxTokens: 250,
+    timeoutMs: 30_000,
   });
 
   if (!result.ok) {

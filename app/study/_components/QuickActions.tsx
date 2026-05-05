@@ -36,8 +36,8 @@ type QuickActionMoreTile = {
 const TILES: readonly (QuickActionLinkTile | QuickActionMoreTile)[] = [
   {
     href: "/study/materials",
-    label: "AI Practice",
-    sublabel: "From materials",
+    label: "PDF → Qs",
+    sublabel: "AI-generated",
     icon: Sparkles,
     primary: true,
     isNew: true,

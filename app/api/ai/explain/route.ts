@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { gemini } from "@/lib/gemini";
+import { generateText, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 
 type ExplainCache = {
@@ -107,7 +107,12 @@ Write a clear explanation (3–5 sentences) that:
 Be direct and academic. No greetings. No filler phrases like "Great question!". Write in plain English — no markdown formatting.`;
 
   // ── Call Gemini ────────────────────────────────────────────────────────────
-  const result = await gemini(prompt, { temperature: 0.3, maxOutputTokens: 400 });
+  const result = await generateText({
+    messages: [userMessage(prompt)],
+    temperature: 0.3,
+    maxTokens: 400,
+    timeoutMs: 45_000,
+  });
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 502 });

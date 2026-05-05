@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { gemini } from "@/lib/gemini";
+import { generateText, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 
 export async function POST(req: NextRequest) {
@@ -75,7 +75,12 @@ Write in plain English. No markdown formatting. No greetings or sign-offs.
 Note at the end in one line: "— AI-generated answer. Verify with your lecturer or textbook."`;
 
   // ── Call Gemini ────────────────────────────────────────────────────────────
-  const result = await gemini(prompt, { temperature: 0.5, maxOutputTokens: 500 });
+  const result = await generateText({
+    messages: [userMessage(prompt)],
+    temperature: 0.5,
+    maxTokens: 500,
+    timeoutMs: 45_000,
+  });
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 502 });

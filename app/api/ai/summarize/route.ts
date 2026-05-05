@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { geminiJson } from "@/lib/gemini";
+import { generateJson, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 
 type MaterialSummary = {
@@ -98,9 +98,11 @@ Respond ONLY with valid JSON — no markdown, no backticks, no explanation outsi
 }`;
 
   // ── Call Gemini ────────────────────────────────────────────────────────────
-  const result = await geminiJson<MaterialSummary>(prompt, {
+  const result = await generateJson<MaterialSummary>({
+    messages: [userMessage(prompt)],
     temperature: 0.4,
-    maxOutputTokens: 500,
+    maxTokens: 500,
+    timeoutMs: 45_000,
   });
 
   if (!result.ok) {

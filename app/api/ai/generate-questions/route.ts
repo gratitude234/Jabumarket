@@ -3,8 +3,11 @@
 // Generates MCQ practice questions from a study material using Gemini.
 // Supports: PDF, JPG/PNG/WEBP images, DOCX, PPTX.
 
+export const maxDuration = 180;
+
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { generateJson, userMessage } from "@/lib/ai";
 import { adminSupabase } from "@/lib/supabase/admin";
 import {
   extractMaterialContent,
@@ -13,6 +16,22 @@ import {
 
 const MODEL = "gemini-2.5-flash-lite";
 const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const QUESTION_GEN_TEXT_CHARS = 24_000;
+const QUESTION_GEN_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
+const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+
+function parsePositiveInt(value: string | undefined) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function nvidiaModelName() {
+  return process.env.NVIDIA_CHAT_MODEL?.trim() || "mistralai/mistral-large-3-675b-instruct-2512";
+}
+
+function geminiModelName() {
+  return process.env.GEMINI_MODEL?.trim() || MODEL;
+}
 
 type StudyMaterialRow = {
   id: string;
@@ -84,9 +103,6 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Build Gemini request ───────────────────────────────────────────────────
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
-
   const difficultyInstruction = {
     easy: "Generate straightforward recall and definition questions.",
     mixed: "Mix of recall, application, and analysis questions.",
@@ -120,6 +136,32 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
   ]
 }`;
 
+  if (content.kind === "text") {
+    const truncated = truncateText(content.text, QUESTION_GEN_TEXT_CHARS);
+    const result = await generateJson<{ questions: unknown[] }>({
+      messages: [userMessage(`DOCUMENT CONTENT:\n\n${truncated}\n\n${systemPrompt}`)],
+      temperature: 0.3,
+      maxTokens: Math.min(6000, count * 380),
+      timeoutMs: QUESTION_GEN_TIMEOUT_MS,
+      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+    });
+
+    if (!result.ok) {
+      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+    }
+    if (!Array.isArray(result.data.questions) || result.data.questions.length === 0) {
+      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+    }
+    return NextResponse.json({
+      questions: result.data.questions,
+      ai: {
+        provider: result.provider,
+        model: result.provider === "nvidia" ? nvidiaModelName() : geminiModelName(),
+        inputMode: "extracted-text",
+      },
+    });
+  }
+
   // Build parts array depending on content kind
   type GeminiPart =
     | { inline_data: { mime_type: string; data: string } }
@@ -132,12 +174,7 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       { text: systemPrompt },
     ];
   } else {
-    // Text-extracted (DOCX / PPTX)
-    const truncated = truncateText(content.text);
-    parts = [
-      { text: `DOCUMENT CONTENT:\n\n${truncated}` },
-      { text: systemPrompt },
-    ];
+    return NextResponse.json({ error: "Unexpected content kind." }, { status: 500 });
   }
 
   const geminiBody = {
@@ -151,6 +188,9 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
   // ── Call Gemini ────────────────────────────────────────────────────────────
   let rawText: string;
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
+
     const geminiRes = await fetch(`${BASE_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -185,7 +225,10 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
     if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }
-    return NextResponse.json({ questions: parsed.questions });
+    return NextResponse.json({
+      questions: parsed.questions,
+      ai: { provider: "gemini", model: geminiModelName(), inputMode: "inline-file" },
+    });
   } catch (e: unknown) {
     console.error("[generate-questions] JSON parse error:", e instanceof Error ? e.message : e, rawText.slice(0, 200));
     return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });

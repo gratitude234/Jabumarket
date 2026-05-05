@@ -3,7 +3,6 @@ import { cn, normalize, msToClock, safePushRecent } from "@/lib/utils";
 import type { QuizSet, QuizQuestion, QuizOption, ReviewTab } from "@/lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { track } from "@/lib/studyAnalytics";
 
 type LatestRestore = {
   answers?: Record<string, string>;
@@ -578,17 +577,6 @@ export function usePracticeEngine({
         .update(attemptUpdate)
         .eq("id", attemptId)
         .eq("user_id", userId);
-
-      track("study_practice_submitted", {
-        attempt_id: attemptId,
-        set_id: setId,
-        reason,
-        score: correct,
-        total_questions: total,
-        pct: total > 0 ? Math.round((correct / total) * 100) : null,
-        time_spent_seconds: timeSpent,
-        course_code: meta?.course_code ?? null,
-      });
 
       // Update set-level due_at for spaced repetition
       const pct = total > 0 ? (correct / total) * 100 : 0;
