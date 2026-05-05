@@ -21,15 +21,15 @@ export type AiRequestConfig = {
 };
 
 export type AiTextResult =
-  | { ok: true; text: string; provider: "nvidia" | "gemini" }
+  | { ok: true; text: string; provider: "nvidia" | "gemini"; fallbackReason?: string }
   | { ok: false; error: string; provider?: "nvidia" | "gemini" };
 
 export type AiJsonResult<T> =
-  | { ok: true; data: T; provider: "nvidia" | "gemini"; rawText: string }
+  | { ok: true; data: T; provider: "nvidia" | "gemini"; rawText: string; fallbackReason?: string }
   | { ok: false; error: string; provider?: "nvidia" | "gemini"; rawText?: string };
 
 export type AiStreamResult =
-  | { ok: true; stream: ReadableStream<Uint8Array>; provider: "nvidia" | "gemini" }
+  | { ok: true; stream: ReadableStream<Uint8Array>; provider: "nvidia" | "gemini"; fallbackReason?: string }
   | { ok: false; error: string; provider?: "nvidia" | "gemini" };
 
 function shouldFallbackToGemini() {
@@ -47,6 +47,10 @@ function errorMessage(error: unknown) {
   const causeCode = cause?.code ? ` (${cause.code})` : "";
   const causeMessage = cause?.message ? `: ${cause.message}` : "";
   return `${error.message}${causeCode}${causeMessage}`;
+}
+
+function fallbackReason(error: unknown) {
+  return `NVIDIA ${errorCode(error)}: ${errorMessage(error).slice(0, 180)}`;
 }
 
 function logProviderFailure(provider: "nvidia" | "gemini", operation: string, error: unknown) {
@@ -117,7 +121,7 @@ export async function generateText(config: AiRequestConfig): Promise<AiTextResul
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const text = await geminiText(fallbackConfig(config));
-        return { ok: true, text, provider: "gemini" };
+        return { ok: true, text, provider: "gemini", fallbackReason: nvidiaFailure ? fallbackReason(nvidiaFailure) : undefined };
       } catch (error) {
         logProviderFailure("gemini", "generateText", error);
         if (attempt === 0 && isTransientGeminiError(error)) continue;
@@ -154,7 +158,13 @@ export async function generateJson<T>(config: AiRequestConfig): Promise<AiJsonRe
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const rawText = await geminiText(fallbackConfig(config));
-        return { ok: true, data: parseJsonText<T>(rawText), provider: "gemini", rawText };
+        return {
+          ok: true,
+          data: parseJsonText<T>(rawText),
+          provider: "gemini",
+          rawText,
+          fallbackReason: nvidiaFailure ? fallbackReason(nvidiaFailure) : undefined,
+        };
       } catch (error) {
         logProviderFailure("gemini", "generateJson", error);
         if (attempt === 0 && isTransientGeminiError(error)) continue;
@@ -191,7 +201,7 @@ export async function streamText(config: AiRequestConfig): Promise<AiStreamResul
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const stream = await geminiStream(fallbackConfig(config));
-        return { ok: true, stream, provider: "gemini" };
+        return { ok: true, stream, provider: "gemini", fallbackReason: nvidiaFailure ? fallbackReason(nvidiaFailure) : undefined };
       } catch (error) {
         logProviderFailure("gemini", "streamText", error);
         if (attempt === 0 && isTransientGeminiError(error)) continue;

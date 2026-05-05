@@ -175,6 +175,7 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
         provider: result.provider,
         model: result.provider === "nvidia" ? nvidiaModelName() : geminiModelName(),
         inputMode: "extracted-text",
+        reason: result.fallbackReason,
       },
     });
   }

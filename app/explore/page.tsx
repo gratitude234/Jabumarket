@@ -6,7 +6,20 @@ import type { ListingRow, ListingType, ListingCondition, RiderRow, CourierRow } 
 import { LISTING_CONDITION_LABELS } from "@/lib/types";
 import { timeAgo } from "@/lib/utils";
 import ListingImage from "@/components/ListingImage";
-import { Search, ArrowRight, ArrowLeft, UtensilsCrossed, CheckCircle2, Circle } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
+  CarFront,
+  CheckCircle2,
+  Circle,
+  Eye,
+  MapPin,
+  Search,
+  Store,
+  Truck,
+  UtensilsCrossed,
+} from "lucide-react";
 import MobileFilterSheet from "@/components/explore/MobileFilterSheet";
 import QuickMessageButton from "@/components/explore/QuickMessageButton";
 import RecentSearchesBar from "@/components/explore/RecentSearchesBar";
@@ -481,7 +494,15 @@ export default async function ExplorePage({
   const showingFrom = total === 0 ? 0 : from + 1;
   const showingTo = Math.min(total, to + 1);
 
-  type VendorSnippet = { id: string; name: string | null; verified: boolean; verification_status: string | null; vendor_type: string | null; avatar_url: string | null };
+  type VendorSnippet = {
+    id: string;
+    name: string | null;
+    location: string | null;
+    verified: boolean | null;
+    verification_status: string | null;
+    vendor_type: string | null;
+    avatar_url: string | null;
+  };
   let vendorMap: Record<string, VendorSnippet> = {};
   let statsMap: Record<string, { views: number; saves: number }> = {};
 
@@ -493,7 +514,7 @@ export default async function ExplorePage({
     parallelFetches.push(
       (async () => {
         const { data } = await supabase.from("vendors")
-          .select("id, name, verified, verification_status, vendor_type, avatar_url")
+          .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
           .in("id", vendorIds);
         for (const v of data ?? []) vendorMap[v.id] = v as VendorSnippet;
       })()
@@ -641,15 +662,21 @@ export default async function ExplorePage({
   const resultsSection = (
     <div className="space-y-4">
       {listings.length === 0 ? (
-        <div className="rounded-3xl border bg-white p-6">
-          <p className="text-sm font-semibold text-zinc-900">No results found</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            Try a different search, or remove a filter.
-            {qRaw && qRaw.length < 2 ? <span className="ml-1 text-xs text-zinc-500">(Tip: use at least 2 characters.)</span> : null}
+        <div className="rounded-2xl border bg-white p-6 shadow-sm">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-zinc-100">
+            <Search className="h-5 w-5 text-zinc-500" />
+          </div>
+          <p className="mt-4 text-sm font-semibold text-zinc-900">No matching listings yet</p>
+          <p className="mt-1 max-w-lg text-sm leading-6 text-zinc-600">
+            Try fewer filters, check a nearby category, or browse the newest campus listings.
+            {qRaw && qRaw.length < 2 ? (
+              <span className="ml-1 text-xs text-zinc-500">Search works best with at least 2 characters.</span>
+            ) : null}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/explore" className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white no-underline hover:bg-zinc-800">Clear filters</Link>
             <Link href="/explore?sort=newest" className="rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50">Browse newest</Link>
+            <Link href="/explore?tab=food&open=1" className="rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50">Open food vendors</Link>
             <Link href="/post" className="rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-zinc-900 no-underline hover:bg-zinc-50">Post a listing</Link>
           </div>
         </div>
@@ -706,7 +733,7 @@ export default async function ExplorePage({
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-zinc-900">Explore</h1>
+          <h1 className="text-xl font-semibold text-zinc-900">Explore JABU Market</h1>
           {error ? (
             <p className="mt-1 text-sm text-red-600">Couldn't load listings. Check Supabase env vars + server logs.</p>
           ) : (
@@ -721,6 +748,24 @@ export default async function ExplorePage({
         <Link href="/post" className="hidden sm:inline-flex rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white no-underline hover:bg-zinc-800">
           Post
         </Link>
+      </div>
+
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:px-0">
+        {[
+          { href: "/explore?sort=newest", label: "Fresh listings" },
+          { href: "/explore?type=service", label: "Services" },
+          { href: "/explore?tab=food&open=1", label: "Open food" },
+          { href: "/explore?tab=vendors", label: "Verified vendors" },
+          { href: "/explore?tab=delivery", label: "Delivery riders" },
+        ].map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="shrink-0 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 no-underline hover:bg-zinc-50"
+          >
+            {link.label}
+          </Link>
+        ))}
       </div>
 
       {/* ── Desktop layout: sidebar + results — FIX #5 (single render) ───────── */}

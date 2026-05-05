@@ -298,7 +298,12 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
   parts.push({ text: systemPrompt });
 
   let rawText: string | null = null;
-  let aiMeta: { provider: "nvidia" | "gemini"; model: string; inputMode: "extracted-text" | "inline-file" } | null = null;
+  let aiMeta: {
+    provider: "nvidia" | "gemini";
+    model: string;
+    inputMode: "extracted-text" | "inline-file";
+    reason?: string;
+  } | null = null;
   if (extracted.every((item) => item.content.kind === "text")) {
     const textPrompt = parts
       .map((part) => ("text" in part ? part.text : ""))
@@ -322,6 +327,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
           ? process.env.NVIDIA_CHAT_MODEL?.trim() || "mistralai/mistral-large-3-675b-instruct-2512"
           : process.env.GEMINI_MODEL?.trim() || MODEL,
       inputMode: "extracted-text",
+      reason: result.fallbackReason,
     };
   }
 
