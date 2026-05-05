@@ -15,7 +15,6 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
   { href: "/food", label: "Food" },
-  { href: "/study", label: "Study" },
 ];
 
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {

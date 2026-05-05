@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen,
   Home,
   MessageCircle,
   Search,
   Store,
   Truck,
+  UtensilsCrossed,
   User,
 } from "lucide-react";
 
@@ -37,7 +37,7 @@ export default function BottomNav() {
   const studentItems = [
     { href: "/", label: "Home", icon: Home, badge: null },
     { href: "/explore", label: "Explore", icon: Search, badge: null },
-    { href: "/study", label: "Study", icon: BookOpen, badge: null },
+    { href: "/food", label: "Food", icon: UtensilsCrossed, badge: null },
     {
       href: "/inbox",
       label: "Messages",
@@ -62,7 +62,7 @@ export default function BottomNav() {
           : null,
       badgeUrgent: pendingVendorOrders > 0,
     },
-    { href: "/study", label: "Study", icon: BookOpen, badge: null },
+    { href: "/vendor", label: "Store", icon: Store, badge: null },
     {
       href: "/inbox",
       label: "Messages",
@@ -92,11 +92,7 @@ export default function BottomNav() {
                 href={item.href}
                 className={[
                   "flex flex-col items-center justify-center gap-1 text-xs no-underline",
-                  active
-                    ? item.href === "/study"
-                      ? "text-brand-study font-semibold"
-                      : "text-brand-market font-semibold"
-                    : "text-muted-foreground",
+                  active ? "text-brand-market font-semibold" : "text-muted-foreground",
                 ].join(" ")}
               >
                 <span className="relative">

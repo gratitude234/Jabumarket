@@ -7,6 +7,7 @@ import {
   isTransientNvidiaError,
   nvidiaStream,
   nvidiaText,
+  shouldFallbackFromNvidiaError,
 } from "./nvidia";
 
 export type { AiChatMessage } from "./nvidia";
@@ -92,17 +93,24 @@ export function parseJsonText<T>(text: string): T {
 }
 
 export async function generateText(config: AiRequestConfig): Promise<AiTextResult> {
+  let nvidiaFailure: unknown;
+
   if (isNvidiaConfigured()) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const text = await nvidiaText(config);
         return { ok: true, text, provider: "nvidia" };
       } catch (error) {
+        nvidiaFailure = error;
         logProviderFailure("nvidia", "generateText", error);
         if (attempt === 0 && isTransientNvidiaError(error)) continue;
         break;
       }
     }
+  }
+
+  if (nvidiaFailure && !shouldFallbackFromNvidiaError(nvidiaFailure)) {
+    return { ok: false, error: errorMessage(nvidiaFailure), provider: "nvidia" };
   }
 
   if (shouldFallbackToGemini() && isGeminiConfigured()) {
@@ -122,17 +130,24 @@ export async function generateText(config: AiRequestConfig): Promise<AiTextResul
 }
 
 export async function generateJson<T>(config: AiRequestConfig): Promise<AiJsonResult<T>> {
+  let nvidiaFailure: unknown;
+
   if (isNvidiaConfigured()) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const rawText = await nvidiaText(config);
         return { ok: true, data: parseJsonText<T>(rawText), provider: "nvidia", rawText };
       } catch (error) {
+        nvidiaFailure = error;
         logProviderFailure("nvidia", "generateJson", error);
         if (attempt === 0 && isTransientNvidiaError(error)) continue;
         break;
       }
     }
+  }
+
+  if (nvidiaFailure && !shouldFallbackFromNvidiaError(nvidiaFailure)) {
+    return { ok: false, error: errorMessage(nvidiaFailure), provider: "nvidia" };
   }
 
   if (shouldFallbackToGemini() && isGeminiConfigured()) {
@@ -152,17 +167,24 @@ export async function generateJson<T>(config: AiRequestConfig): Promise<AiJsonRe
 }
 
 export async function streamText(config: AiRequestConfig): Promise<AiStreamResult> {
+  let nvidiaFailure: unknown;
+
   if (isNvidiaConfigured()) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const stream = await nvidiaStream(config);
         return { ok: true, stream, provider: "nvidia" };
       } catch (error) {
+        nvidiaFailure = error;
         logProviderFailure("nvidia", "streamText", error);
         if (attempt === 0 && isTransientNvidiaError(error)) continue;
         break;
       }
     }
+  }
+
+  if (nvidiaFailure && !shouldFallbackFromNvidiaError(nvidiaFailure)) {
+    return { ok: false, error: errorMessage(nvidiaFailure), provider: "nvidia" };
   }
 
   if (shouldFallbackToGemini() && isGeminiConfigured()) {

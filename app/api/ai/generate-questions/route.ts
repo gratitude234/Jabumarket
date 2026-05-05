@@ -4,6 +4,7 @@
 // Supports: PDF, JPG/PNG/WEBP images, DOCX, PPTX.
 
 export const maxDuration = 180;
+export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";

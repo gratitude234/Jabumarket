@@ -1,5 +1,6 @@
 // app/api/ai/generate-questions-course/route.ts
 export const maxDuration = 180; // requires Vercel Pro or above
+export const runtime = "nodejs";
 // POST /api/ai/generate-questions-course
 //
 // Generates a shared, course-wide AI practice set from the top materials in a

@@ -45,9 +45,10 @@ function shouldExtractPdfText(): boolean {
   const explicitDisable = process.env.DISABLE_PDF_TEXT_EXTRACTION?.trim().toLowerCase();
   if (explicitDisable === "true") return false;
 
-  // pdf-parse uses pdfjs-dist, which can require DOMMatrix/canvas globals that
-  // are not available in Vercel's serverless runtime.
-  return process.env.VERCEL !== "1";
+  // Prefer Mistral/NVIDIA whenever a PDF has selectable text. If pdf-parse fails
+  // in a runtime, extraction falls back per request instead of disabling all
+  // deployed PDFs up front.
+  return true;
 }
 
 function getExt(filePath: string): string {
@@ -188,12 +189,12 @@ export async function extractMaterialContent(
         };
       }
     } else {
-      console.info("[extractMaterialContent] PDF text extraction disabled in this runtime; using inline file fallback.");
+      console.info("[extractMaterialContent] PDF text extraction disabled by env; using inline file fallback.");
       return {
         kind: "inline",
         mimeType: "application/pdf",
         base64: Buffer.from(buffer).toString("base64"),
-        reason: "PDF text extraction is disabled on this deployment runtime, so Gemini read the PDF directly.",
+        reason: "PDF text extraction is disabled by server configuration, so Gemini read the PDF directly.",
       };
     }
 

@@ -44,6 +44,11 @@ export function isTransientNvidiaError(error: unknown) {
   return code === "network" || code === "server";
 }
 
+export function shouldFallbackFromNvidiaError(error: unknown) {
+  const code = typeof error === "object" && error !== null ? (error as any).code : "";
+  return code === "network" || code === "server" || code === "timeout" || code === "rate_limit" || code === "payment";
+}
+
 function parsePositiveInt(value: string | undefined) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
