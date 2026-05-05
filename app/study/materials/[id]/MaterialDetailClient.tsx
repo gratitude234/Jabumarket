@@ -156,6 +156,26 @@ function formatAiModel(ai: AiGenerationMeta | null) {
   return ai.model.split("/").pop() ?? ai.model;
 }
 
+async function readGenerateQuestionsResponse(res: Response): Promise<GenerateQuestionsResponse> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text) as GenerateQuestionsResponse;
+  } catch {
+    console.error("[study-ai] non-json generate-questions response", {
+      status: res.status,
+      contentType: res.headers.get("content-type"),
+      bodyStart: text.slice(0, 240),
+    });
+    return {
+      error: res.ok
+        ? "The server returned an unreadable AI response."
+        : "The AI server crashed before returning JSON. Check the deployment function logs for /api/ai/generate-questions.",
+    };
+  }
+}
+
 const GDOCS = (url: string) =>
   `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 
@@ -660,7 +680,7 @@ export default function MaterialDetailClient({
           focus: quizConfig.focus || undefined,
         }),
       });
-      const data = (await res.json()) as GenerateQuestionsResponse;
+      const data = await readGenerateQuestionsResponse(res);
       if (!res.ok) {
           throw new Error(data.error ?? "Failed to generate questions.");
       }
@@ -700,7 +720,7 @@ export default function MaterialDetailClient({
           coveredQuestions: generatedQuestions?.map((q) => q.question) ?? [],
         }),
       });
-      const data = (await res.json()) as GenerateQuestionsResponse;
+      const data = await readGenerateQuestionsResponse(res);
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to generate questions.");
       }

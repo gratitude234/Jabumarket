@@ -41,7 +41,23 @@ type StudyMaterialRow = {
   material_type: string | null;
 };
 
+function routeErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return `Failed to generate questions: ${error.message}`;
+  }
+  return "Failed to generate questions.";
+}
+
 export async function POST(req: NextRequest) {
+  try {
+    return await handleGenerateQuestionsRequest(req);
+  } catch (error) {
+    console.error("[generate-questions] unhandled route error:", error);
+    return NextResponse.json({ error: routeErrorMessage(error) }, { status: 500 });
+  }
+}
+
+async function handleGenerateQuestionsRequest(req: NextRequest) {
   // ── Auth ───────────────────────────────────────────────────────────────────
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
