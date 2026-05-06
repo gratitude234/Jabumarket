@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import BottomNav from "@/components/layout/BottomNav";
 import MobileTopBar from "@/components/layout/MobileTopBar";
+import StudyBottomNav from "@/components/layout/StudyBottomNav";
 import TopNav from "@/components/layout/TopNav";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { subscribeToPush } from "@/components/ServiceWorkerRegister";
@@ -37,8 +38,9 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading: authLoading } = useAuth();
   const isAdmin = pathname?.startsWith("/admin") || pathname?.startsWith("/study-admin");
+  const isStudyPage = pathname === "/study" || pathname?.startsWith("/study/");
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname ?? "");
-  const hideActiveOrderBanner = pathname === "/my-orders";
+  const hideActiveOrderBanner = pathname === "/my-orders" || isStudyPage;
 
   const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
@@ -122,7 +124,11 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading) return;
-    void loadActiveOrders();
+    const timer = window.setTimeout(() => {
+      void loadActiveOrders();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [authLoading, loadActiveOrders, pathname]);
 
   useEffect(() => {
@@ -182,7 +188,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
           {children}
         </main>
 
-        <BottomNav />
+        {isStudyPage ? <StudyBottomNav /> : <BottomNav />}
 
         {updateWorker && (
           <div className="pointer-events-none fixed bottom-20 left-0 right-0 z-50 flex justify-center px-4">

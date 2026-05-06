@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Study Hub Library Mockup</title>
+    <style>
+      :root {
+        --ink: #171717;
+        --muted: #6b7280;
+        --soft: #f6f7fb;
+        --line: #e5e7eb;
+        --paper: #ffffff;
+        --violet: #5b35d5;
+        --violet-soft: #eeedfe;
+        --teal: #0f766e;
+        --teal-soft: #e6f5f2;
+        --amber: #b45309;
+        --amber-soft: #fff4df;
+        --blue: #2563eb;
+        --blue-soft: #eaf1ff;
+        --shadow: 0 18px 50px rgba(23, 23, 23, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, #f4f6fb 0%, #ffffff 42%),
+          #ffffff;
+        color: var(--ink);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        letter-spacing: 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .canvas {
+        min-height: 100vh;
+        padding: 32px 18px 46px;
+      }
+
+      .mockup-shell {
+        margin: 0 auto;
+        display: grid;
+        max-width: 1120px;
+        grid-template-columns: minmax(320px, 430px) minmax(360px, 1fr);
+        gap: 28px;
+        align-items: start;
+      }
+
+      .phone {
+        overflow: hidden;
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        border-radius: 34px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .screen {
+        min-height: 900px;
+        padding: 18px 16px 98px;
+        background: #fbfbfd;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 4px 2px 14px;
+      }
+
+      .eyebrow {
+        margin: 0 0 3px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        font-size: 24px;
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      .upload {
+        display: inline-flex;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        background: var(--violet);
+        padding: 10px 12px;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .search-panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--soft);
+        padding: 0 13px;
+        color: #8a8f9c;
+        font-size: 14px;
+      }
+
+      .search-icon,
+      .filter-icon,
+      .nav-icon,
+      .tiny-icon {
+        position: relative;
+        display: inline-block;
+        width: 17px;
+        height: 17px;
+        flex: 0 0 auto;
+      }
+
+      .search-icon::before {
+        position: absolute;
+        inset: 1px 4px 4px 1px;
+        content: "";
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .search-icon::after {
+        position: absolute;
+        right: 1px;
+        bottom: 1px;
+        width: 7px;
+        height: 2px;
+        content: "";
+        border-radius: 999px;
+        background: currentColor;
+        transform: rotate(45deg);
+      }
+
+      .filter-row {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-top: 10px;
+      }
+
+      .chip {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 8px 11px;
+        color: #525866;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .chip.active {
+        border-color: transparent;
+        background: var(--violet);
+        color: #fff;
+      }
+
+      .hero {
+        margin-top: 14px;
+        overflow: hidden;
+        border-radius: 26px;
+        background:
+          linear-gradient(135deg, rgba(91, 53, 213, 0.96), rgba(37, 99, 235, 0.9)),
+          var(--violet);
+        padding: 16px;
+        color: #fff;
+      }
+
+      .hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .hero h2 {
+        max-width: 270px;
+        font-size: 23px;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .hero p {
+        margin-top: 7px;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .hero-badge {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        padding: 7px 9px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .hero-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+        margin-top: 15px;
+      }
+
+      .hero-stat {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 17px;
+        background: rgba(255, 255, 255, 0.12);
+        padding: 11px;
+      }
+
+      .hero-stat strong {
+        display: block;
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .hero-stat span {
+        display: block;
+        margin-top: 5px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .section h2 {
+        font-size: 16px;
+        line-height: 1.2;
+      }
+
+      .section-link {
+        color: var(--violet);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .course-strip {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+      }
+
+      .course-card {
+        min-width: 156px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        padding: 13px;
+      }
+
+      .course-code {
+        display: inline-flex;
+        border-radius: 999px;
+        background: var(--violet-soft);
+        padding: 6px 8px;
+        color: var(--violet);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .course-card h3 {
+        margin-top: 10px;
+        font-size: 14px;
+        line-height: 1.18;
+      }
+
+      .course-card p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .library-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: #fff;
+        padding: 6px;
+      }
+
+      .library-tabs a {
+        display: grid;
+        min-height: 40px;
+        place-items: center;
+        border-radius: 13px;
+        color: #71717a;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .library-tabs .active {
+        background: var(--violet-soft);
+        color: var(--violet);
+      }
+
+      .material-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .material {
+        display: grid;
+        grid-template-columns: 44px 1fr auto;
+        gap: 12px;
+        align-items: start;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .file-icon {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        border-radius: 15px;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .file-icon.violet {
+        background: var(--violet);
+      }
+
+      .file-icon.teal {
+        background: var(--teal);
+      }
+
+      .file-icon.amber {
+        background: var(--amber);
+      }
+
+      .material-body {
+        min-width: 0;
+      }
+
+      .material-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .material-desc {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .material-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 9px;
+      }
+
+      .meta-pill {
+        border-radius: 999px;
+        background: var(--soft);
+        padding: 5px 7px;
+        color: #525866;
+        font-size: 10px;
+        font-weight: 850;
+      }
+
+      .save {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: #fff;
+        color: var(--violet);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .saved-card {
+        border: 1px solid #d7e9ff;
+        border-radius: 22px;
+        background: var(--blue-soft);
+        padding: 14px;
+      }
+
+      .saved-card h3 {
+        font-size: 15px;
+      }
+
+      .saved-card p {
+        margin-top: 5px;
+        color: #415f92;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .saved-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .primary,
+      .secondary {
+        display: inline-flex;
+        min-height: 39px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 13px;
+        padding: 9px 10px;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .primary {
+        background: var(--violet);
+        color: #fff;
+      }
+
+      .secondary {
+        border: 1px solid rgba(37, 99, 235, 0.18);
+        background: #fff;
+        color: var(--blue);
+      }
+
+      .bottom-nav {
+        position: fixed;
+        right: 50%;
+        bottom: 18px;
+        z-index: 5;
+        display: grid;
+        width: min(398px, calc(100vw - 34px));
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.94);
+        padding: 8px;
+        box-shadow: 0 16px 42px rgba(23, 23, 23, 0.12);
+        transform: translateX(-144px);
+        backdrop-filter: blur(16px);
+      }
+
+      .nav-item {
+        display: grid;
+        min-height: 48px;
+        place-items: center;
+        border-radius: 17px;
+        color: #71717a;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .nav-item.active {
+        background: var(--violet-soft);
+        color: var(--violet);
+      }
+
+      .nav-icon {
+        margin-bottom: 3px;
+      }
+
+      .nav-icon.home::before,
+      .nav-icon.library::before,
+      .nav-icon.practice::before,
+      .nav-icon.qa::before,
+      .nav-icon.me::before {
+        position: absolute;
+        content: "";
+      }
+
+      .nav-icon.home::before {
+        inset: 3px;
+        border: 2px solid currentColor;
+        border-radius: 4px;
+        transform: rotate(45deg);
+      }
+
+      .nav-icon.library::before {
+        inset: 2px 4px;
+        border: 2px solid currentColor;
+        border-radius: 3px;
+      }
+
+      .nav-icon.practice::before {
+        inset: 1px;
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .nav-icon.qa::before {
+        inset: 3px 2px 5px;
+        border: 2px solid currentColor;
+        border-radius: 7px;
+      }
+
+      .nav-icon.me::before {
+        left: 3px;
+        right: 3px;
+        bottom: 1px;
+        height: 7px;
+        border: 2px solid currentColor;
+        border-radius: 999px 999px 5px 5px;
+      }
+
+      .nav-icon.me::after {
+        position: absolute;
+        top: 1px;
+        left: 5px;
+        width: 7px;
+        height: 7px;
+        content: "";
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .notes {
+        position: sticky;
+        top: 28px;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: #fff;
+        padding: 22px;
+        box-shadow: var(--shadow);
+      }
+
+      .notes h2 {
+        font-size: 24px;
+      }
+
+      .notes p {
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .rules {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .rule {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 13px;
+      }
+
+      .rule strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .rule span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      @media (max-width: 880px) {
+        .mockup-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .notes {
+          position: static;
+          order: -1;
+        }
+
+        .phone {
+          margin: 0 auto;
+          width: min(430px, 100%);
+        }
+
+        .bottom-nav {
+          right: 50%;
+          transform: translateX(50%);
+        }
+      }
+
+      @media (max-width: 430px) {
+        .canvas {
+          padding: 0;
+        }
+
+        .phone {
+          width: 100%;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .screen {
+          min-height: 100vh;
+        }
+
+        .bottom-nav {
+          bottom: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="canvas">
+      <div class="mockup-shell">
+        <section class="phone" aria-label="Study Hub library mobile mockup">
+          <div class="screen">
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Study Library</p>
+                <h1>Find what you need</h1>
+              </div>
+              <a class="upload" href="#">Upload</a>
+            </header>
+
+            <section class="search-panel">
+              <div class="search" role="search">
+                <span class="search-icon" aria-hidden="true"></span>
+                <span>Search CSC 302, past questions, notes</span>
+              </div>
+              <div class="filter-row" aria-label="Library filters">
+                <a class="chip active" href="#">All</a>
+                <a class="chip" href="#">My level</a>
+                <a class="chip" href="#">Past Q</a>
+                <a class="chip" href="#">Notes</a>
+                <a class="chip" href="#">Slides</a>
+              </div>
+            </section>
+
+            <section class="hero">
+              <div class="hero-top">
+                <div>
+                  <h2>Course materials, sorted for your semester</h2>
+                  <p>
+                    Browse approved notes, handouts, slides, and past questions without losing your course context.
+                  </p>
+                </div>
+                <span class="hero-badge">300 Level</span>
+              </div>
+              <div class="hero-stats">
+                <div class="hero-stat">
+                  <strong>128</strong>
+                  <span>Materials</span>
+                </div>
+                <div class="hero-stat">
+                  <strong>12</strong>
+                  <span>Saved</span>
+                </div>
+                <div class="hero-stat">
+                  <strong>9</strong>
+                  <span>Courses</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h2>Fast lane</h2>
+                <a class="section-link" href="#">Edit courses</a>
+              </div>
+              <div class="course-strip">
+                <a class="course-card" href="#">
+                  <span class="course-code">CSC 302</span>
+                  <h3>Database Systems</h3>
+                  <p>24 materials</p>
+                </a>
+                <a class="course-card" href="#">
+                  <span class="course-code">MTH 211</span>
+                  <h3>Linear Algebra</h3>
+                  <p>15 materials</p>
+                </a>
+                <a class="course-card" href="#">
+                  <span class="course-code">GST 204</span>
+                  <h3>Entrepreneurship</h3>
+                  <p>8 materials</p>
+                </a>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h2>Browse library</h2>
+                <a class="section-link" href="#">Filters</a>
+              </div>
+              <nav class="library-tabs" aria-label="Library content tabs">
+                <a class="active" href="#">Materials</a>
+                <a href="#">Practice</a>
+                <a href="#">Questions</a>
+              </nav>
+
+              <div class="material-list">
+                <a class="material" href="#">
+                  <span class="file-icon violet">PDF</span>
+                  <span class="material-body">
+                    <span class="material-title">CSC 302 Normalization and SQL Notes</span>
+                    <span class="material-desc">Clean lecture notes with examples and likely test areas.</span>
+                    <span class="material-meta">
+                      <span class="meta-pill">CSC 302</span>
+                      <span class="meta-pill">Note</span>
+                      <span class="meta-pill">342 downloads</span>
+                    </span>
+                  </span>
+                  <span class="save">+</span>
+                </a>
+
+                <a class="material" href="#">
+                  <span class="file-icon teal">PQ</span>
+                  <span class="material-body">
+                    <span class="material-title">MTH 211 Past Questions 2021 to 2025</span>
+                    <span class="material-desc">Compiled questions with repeated topics highlighted.</span>
+                    <span class="material-meta">
+                      <span class="meta-pill">MTH 211</span>
+                      <span class="meta-pill">Past Q</span>
+                      <span class="meta-pill">Verified</span>
+                    </span>
+                  </span>
+                  <span class="save">+</span>
+                </a>
+
+                <a class="material" href="#">
+                  <span class="file-icon amber">SL</span>
+                  <span class="material-body">
+                    <span class="material-title">GST 204 Business Model Canvas Slides</span>
+                    <span class="material-desc">Lecturer slides, summary points, and presentation guide.</span>
+                    <span class="material-meta">
+                      <span class="meta-pill">GST 204</span>
+                      <span class="meta-pill">Slides</span>
+                      <span class="meta-pill">New</span>
+                    </span>
+                  </span>
+                  <span class="save">+</span>
+                </a>
+              </div>
+            </section>
+
+            <section class="section saved-card">
+              <h3>Saved for later</h3>
+              <p>You have 12 saved library items. Keep them close for revision week and offline downloads.</p>
+              <div class="saved-actions">
+                <a class="primary" href="#">Open saved</a>
+                <a class="secondary" href="#">Recent views</a>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="notes" aria-label="Design notes">
+          <p class="eyebrow">Design direction</p>
+          <h2>Library as the academic search and save surface</h2>
+          <p>
+            This screen should feel more like a useful catalog than a feed. Search stays first, filters stay close,
+            and the content is grouped by the things students actually remember: course, type, and recency.
+          </p>
+
+          <div class="rules">
+            <div class="rule">
+              <strong>Primary job</strong>
+              <span>Help a student find a course material fast, then save or open it with minimal friction.</span>
+            </div>
+            <div class="rule">
+              <strong>Navigation state</strong>
+              <span>The Study bottom nav keeps Library active, separate from the marketplace bottom nav.</span>
+            </div>
+            <div class="rule">
+              <strong>Filter model</strong>
+              <span>Expose quick filters inline and keep deeper filters in a compact sheet or drawer later.</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Study Hub bottom navigation">
+      <a class="nav-item" href="./study-home-mockup.html">
+        <span class="nav-icon home" aria-hidden="true"></span>
+        Study
+      </a>
+      <a class="nav-item active" href="#">
+        <span class="nav-icon library" aria-hidden="true"></span>
+        Library
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon practice" aria-hidden="true"></span>
+        Practice
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon qa" aria-hidden="true"></span>
+        Q&A
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon me" aria-hidden="true"></span>
+        Me
+      </a>
+    </nav>
+  </body>
+</html>

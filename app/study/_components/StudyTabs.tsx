@@ -345,39 +345,6 @@ const DESKTOP_TABS: Tab[] = [
   },
 ];
 
-const MOBILE_TABS: Tab[] = [
-  {
-    href: "/study",
-    label: "Home",
-    icon: <Home className="h-3.5 w-3.5" />,
-    match: "exact",
-  },
-  {
-    href: "/study/materials",
-    label: "Materials",
-    icon: <BookOpen className="h-3.5 w-3.5" />,
-    match: "prefix",
-  },
-  {
-    href: "/study/practice",
-    label: "Practice",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    match: "prefix",
-  },
-  {
-    href: "/study/questions",
-    label: "Q&A",
-    icon: <MessageCircleQuestion className="h-3.5 w-3.5" />,
-    match: "prefix",
-  },
-  {
-    href: "/study/me",
-    label: "Me",
-    icon: <UserRound className="h-3.5 w-3.5" />,
-    match: "exact",
-  },
-];
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function StudyTabs({
@@ -423,62 +390,13 @@ export default function StudyTabs({
       <nav
         aria-label="Study navigation"
         className={cn(
-          "sticky top-0 z-30 -mx-4 border-b border-border bg-background/80 backdrop-blur",
+          "hidden md:block",
           "md:static md:mx-0 md:rounded-2xl md:border md:bg-card"
         )}
       >
         <div className="px-2 py-2 md:px-4">
-          {/* Mobile */}
-          <div className="flex items-center justify-between gap-1 md:hidden">
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-              {MOBILE_TABS.map((tab) => {
-                const active = isActive(pathname, tab);
-
-                return (
-                  <Link
-                    key={tab.href}
-                    href={tab.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full border px-2 py-2 text-xs font-semibold transition-all",
-                      "leading-none select-none",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                      active
-                        ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
-                        : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                    )}
-                  >
-                    {tab.icon}
-                    <span className="truncate">{tab.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-
-            {/* More button — shows active dot when an overflow route is current */}
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              aria-label="More study tools"
-              aria-expanded={sheetOpen}
-              className={cn(
-                "relative ml-1 flex shrink-0 items-center justify-center rounded-full border px-3 py-2 text-xs font-semibold transition-all",
-                "leading-none select-none",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                overflowActive
-                  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-              {overflowActive && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#5B35D5] ring-2 ring-background" />
-              )}
-            </button>
-          </div>
-
           {/* Desktop */}
-          <div className="hidden items-center gap-1 md:flex">
+          <div className="items-center gap-1 md:flex">
             {DESKTOP_TABS.map((tab) => {
               const active = isActive(pathname, tab);
 

@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Study Hub Practice Mockup</title>
+    <style>
+      :root {
+        --ink: #171717;
+        --muted: #6b7280;
+        --soft: #f6f7fb;
+        --line: #e5e7eb;
+        --paper: #ffffff;
+        --violet: #5b35d5;
+        --violet-soft: #eeedfe;
+        --teal: #0f766e;
+        --teal-soft: #e6f5f2;
+        --amber: #b45309;
+        --amber-soft: #fff4df;
+        --blue: #2563eb;
+        --blue-soft: #eaf1ff;
+        --rose: #be123c;
+        --rose-soft: #fff1f2;
+        --shadow: 0 18px 50px rgba(23, 23, 23, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, #f4f6fb 0%, #ffffff 42%),
+          #ffffff;
+        color: var(--ink);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        letter-spacing: 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .canvas {
+        min-height: 100vh;
+        padding: 32px 18px 46px;
+      }
+
+      .mockup-shell {
+        margin: 0 auto;
+        display: grid;
+        max-width: 1120px;
+        grid-template-columns: minmax(320px, 430px) minmax(360px, 1fr);
+        gap: 28px;
+        align-items: start;
+      }
+
+      .phone {
+        overflow: hidden;
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        border-radius: 34px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .screen {
+        min-height: 900px;
+        padding: 18px 16px 98px;
+        background: #fbfbfd;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 4px 2px 14px;
+      }
+
+      .eyebrow {
+        margin: 0 0 3px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        font-size: 24px;
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      .history-btn {
+        display: inline-flex;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        padding: 10px 12px;
+        color: #525866;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 26px;
+        background:
+          linear-gradient(135deg, rgba(91, 53, 213, 0.96), rgba(190, 18, 60, 0.88)),
+          var(--violet);
+        padding: 17px;
+        color: #fff;
+      }
+
+      .hero-grid {
+        position: absolute;
+        inset: 0;
+        opacity: 0.14;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.55) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+        background-size: 25px 25px;
+      }
+
+      .hero-content {
+        position: relative;
+        z-index: 1;
+      }
+
+      .hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .hero h2 {
+        max-width: 280px;
+        font-size: 24px;
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      .hero p {
+        margin-top: 8px;
+        max-width: 300px;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .hero-badge {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        padding: 7px 9px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .hero-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+        margin-top: 17px;
+      }
+
+      .primary,
+      .secondary {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        padding: 10px 12px;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .primary {
+        background: #fff;
+        color: var(--violet);
+      }
+
+      .secondary {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: #fff;
+      }
+
+      .question-strip {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 7px;
+        margin-top: 16px;
+      }
+
+      .question-dot {
+        display: grid;
+        min-height: 36px;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.11);
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .question-dot.done {
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--violet);
+      }
+
+      .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .section h2 {
+        font-size: 16px;
+        line-height: 1.2;
+      }
+
+      .section-link {
+        color: var(--violet);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .search-panel {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--soft);
+        padding: 0 13px;
+        color: #8a8f9c;
+        font-size: 14px;
+      }
+
+      .search-icon,
+      .nav-icon {
+        position: relative;
+        display: inline-block;
+        width: 17px;
+        height: 17px;
+        flex: 0 0 auto;
+      }
+
+      .search-icon::before {
+        position: absolute;
+        inset: 1px 4px 4px 1px;
+        content: "";
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .search-icon::after {
+        position: absolute;
+        right: 1px;
+        bottom: 1px;
+        width: 7px;
+        height: 2px;
+        content: "";
+        border-radius: 999px;
+        background: currentColor;
+        transform: rotate(45deg);
+      }
+
+      .filter-row {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-top: 10px;
+      }
+
+      .chip {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 8px 11px;
+        color: #525866;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .chip.active {
+        border-color: transparent;
+        background: var(--violet);
+        color: #fff;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .metric span {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      .mode-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .mode {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        padding: 13px;
+      }
+
+      .mode.accent {
+        border-color: #dbcffd;
+        background: var(--violet-soft);
+      }
+
+      .mode-icon {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 13px;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .mode-icon.violet {
+        background: var(--violet);
+      }
+
+      .mode-icon.teal {
+        background: var(--teal);
+      }
+
+      .mode h3 {
+        margin-top: 11px;
+        font-size: 14px;
+        line-height: 1.15;
+      }
+
+      .mode p {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .set-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .set-card {
+        border: 1px solid var(--line);
+        border-radius: 21px;
+        background: #fff;
+        padding: 13px;
+      }
+
+      .set-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .set-title {
+        min-width: 0;
+      }
+
+      .set-title h3 {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 15px;
+      }
+
+      .set-title p {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .score-pill {
+        flex: 0 0 auto;
+        align-self: flex-start;
+        border-radius: 999px;
+        background: var(--teal-soft);
+        padding: 7px 9px;
+        color: var(--teal);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .set-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 11px;
+      }
+
+      .meta-pill {
+        border-radius: 999px;
+        background: var(--soft);
+        padding: 5px 7px;
+        color: #525866;
+        font-size: 10px;
+        font-weight: 850;
+      }
+
+      .progress {
+        overflow: hidden;
+        height: 8px;
+        margin-top: 12px;
+        border-radius: 999px;
+        background: var(--soft);
+      }
+
+      .progress span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--violet), var(--teal));
+      }
+
+      .set-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .take,
+      .review {
+        display: inline-flex;
+        min-height: 39px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 13px;
+        padding: 9px 10px;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .take {
+        background: var(--violet);
+        color: #fff;
+      }
+
+      .review {
+        border: 1px solid var(--line);
+        background: var(--soft);
+        color: #525866;
+      }
+
+      .exam-card {
+        border: 1px solid #ffe1b7;
+        border-radius: 22px;
+        background: var(--amber-soft);
+        padding: 14px;
+      }
+
+      .exam-card h3 {
+        font-size: 15px;
+      }
+
+      .exam-card p {
+        margin-top: 5px;
+        color: #7c4b12;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .bottom-nav {
+        position: fixed;
+        right: 50%;
+        bottom: 18px;
+        z-index: 5;
+        display: grid;
+        width: min(398px, calc(100vw - 34px));
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+        border: 1px solid rgba(23, 23, 23, 0.08);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.94);
+        padding: 8px;
+        box-shadow: 0 16px 42px rgba(23, 23, 23, 0.12);
+        transform: translateX(-144px);
+        backdrop-filter: blur(16px);
+      }
+
+      .nav-item {
+        display: grid;
+        min-height: 48px;
+        place-items: center;
+        border-radius: 17px;
+        color: #71717a;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .nav-item.active {
+        background: var(--violet-soft);
+        color: var(--violet);
+      }
+
+      .nav-icon {
+        margin-bottom: 3px;
+      }
+
+      .nav-icon.home::before,
+      .nav-icon.library::before,
+      .nav-icon.practice::before,
+      .nav-icon.qa::before,
+      .nav-icon.me::before {
+        position: absolute;
+        content: "";
+      }
+
+      .nav-icon.home::before {
+        inset: 3px;
+        border: 2px solid currentColor;
+        border-radius: 4px;
+        transform: rotate(45deg);
+      }
+
+      .nav-icon.library::before {
+        inset: 2px 4px;
+        border: 2px solid currentColor;
+        border-radius: 3px;
+      }
+
+      .nav-icon.practice::before {
+        inset: 1px;
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .nav-icon.qa::before {
+        inset: 3px 2px 5px;
+        border: 2px solid currentColor;
+        border-radius: 7px;
+      }
+
+      .nav-icon.me::before {
+        left: 3px;
+        right: 3px;
+        bottom: 1px;
+        height: 7px;
+        border: 2px solid currentColor;
+        border-radius: 999px 999px 5px 5px;
+      }
+
+      .nav-icon.me::after {
+        position: absolute;
+        top: 1px;
+        left: 5px;
+        width: 7px;
+        height: 7px;
+        content: "";
+        border: 2px solid currentColor;
+        border-radius: 999px;
+      }
+
+      .notes {
+        position: sticky;
+        top: 28px;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: #fff;
+        padding: 22px;
+        box-shadow: var(--shadow);
+      }
+
+      .notes h2 {
+        font-size: 24px;
+      }
+
+      .notes p {
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .rules {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .rule {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 13px;
+      }
+
+      .rule strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .rule span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      @media (max-width: 880px) {
+        .mockup-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .notes {
+          position: static;
+          order: -1;
+        }
+
+        .phone {
+          margin: 0 auto;
+          width: min(430px, 100%);
+        }
+
+        .bottom-nav {
+          right: 50%;
+          transform: translateX(50%);
+        }
+      }
+
+      @media (max-width: 430px) {
+        .canvas {
+          padding: 0;
+        }
+
+        .phone {
+          width: 100%;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .screen {
+          min-height: 100vh;
+        }
+
+        .bottom-nav {
+          bottom: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="canvas">
+      <div class="mockup-shell">
+        <section class="phone" aria-label="Study Hub practice mobile mockup">
+          <div class="screen">
+            <header class="topbar">
+              <div>
+                <p class="eyebrow">Practice</p>
+                <h1>Train for your next test</h1>
+              </div>
+              <a class="history-btn" href="#">History</a>
+            </header>
+
+            <section class="hero">
+              <div class="hero-grid" aria-hidden="true"></div>
+              <div class="hero-content">
+                <div class="hero-top">
+                  <div>
+                    <h2>3 revision sets are ready today</h2>
+                    <p>
+                      Start with due questions, then move into timed sets for CSC 302 and MTH 211.
+                    </p>
+                  </div>
+                  <span class="hero-badge">18 streak</span>
+                </div>
+                <div class="hero-actions">
+                  <a class="primary" href="#">Start due</a>
+                  <a class="secondary" href="#">Timed exam</a>
+                </div>
+                <div class="question-strip" aria-hidden="true">
+                  <span class="question-dot done">1</span>
+                  <span class="question-dot done">2</span>
+                  <span class="question-dot">3</span>
+                  <span class="question-dot">4</span>
+                  <span class="question-dot">5</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="section search-panel">
+              <div class="search" role="search">
+                <span class="search-icon" aria-hidden="true"></span>
+                <span>Search practice sets by course or topic</span>
+              </div>
+              <div class="filter-row" aria-label="Practice filters">
+                <a class="chip active" href="#">For you</a>
+                <a class="chip" href="#">Recent</a>
+                <a class="chip" href="#">All sets</a>
+                <a class="chip" href="#">300 level</a>
+                <a class="chip" href="#">2nd sem</a>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h2>Your practice stats</h2>
+                <a class="section-link" href="#">Details</a>
+              </div>
+              <div class="metric-grid">
+                <div class="metric">
+                  <strong>82%</strong>
+                  <span>Best score</span>
+                </div>
+                <div class="metric">
+                  <strong>42</strong>
+                  <span>Answered</span>
+                </div>
+                <div class="metric">
+                  <strong>7</strong>
+                  <span>Sets done</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h2>Practice modes</h2>
+                <a class="section-link" href="#">Create set</a>
+              </div>
+              <div class="mode-grid">
+                <a class="mode accent" href="#">
+                  <span class="mode-icon violet">D</span>
+                  <h3>Due today</h3>
+                  <p>Spaced repetition from weak topics</p>
+                </a>
+                <a class="mode" href="#">
+                  <span class="mode-icon teal">T</span>
+                  <h3>Timed mode</h3>
+                  <p>Exam conditions with countdown</p>
+                </a>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-head">
+                <h2>Recommended sets</h2>
+                <a class="section-link" href="#">Sort</a>
+              </div>
+              <div class="set-list">
+                <a class="set-card" href="#">
+                  <span class="set-top">
+                    <span class="set-title">
+                      <h3>CSC 302 Database Design Drill</h3>
+                      <p>Normalization, ER models, SQL joins</p>
+                    </span>
+                    <span class="score-pill">Resume</span>
+                  </span>
+                  <span class="set-meta">
+                    <span class="meta-pill">25 questions</span>
+                    <span class="meta-pill">30 min</span>
+                    <span class="meta-pill">Medium</span>
+                  </span>
+                  <span class="progress"><span style="width: 58%"></span></span>
+                  <span class="set-actions">
+                    <span class="take">Continue</span>
+                    <span class="review">Review 82%</span>
+                  </span>
+                </a>
+
+                <a class="set-card" href="#">
+                  <span class="set-top">
+                    <span class="set-title">
+                      <h3>MTH 211 Matrix Operations</h3>
+                      <p>Eigenvalues, inverses, determinants</p>
+                    </span>
+                    <span class="score-pill">New</span>
+                  </span>
+                  <span class="set-meta">
+                    <span class="meta-pill">20 questions</span>
+                    <span class="meta-pill">25 min</span>
+                    <span class="meta-pill">Hard</span>
+                  </span>
+                  <span class="progress"><span style="width: 0%"></span></span>
+                  <span class="set-actions">
+                    <span class="take">Start set</span>
+                    <span class="review">Preview</span>
+                  </span>
+                </a>
+              </div>
+            </section>
+
+            <section class="section exam-card">
+              <h3>Exam countdown mode</h3>
+              <p>Build a mixed 45-minute mock test from your saved courses and repeat weak topics automatically.</p>
+              <div class="set-actions">
+                <a class="take" href="#">Build mock test</a>
+                <a class="review" href="#">Weak topics</a>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="notes" aria-label="Design notes">
+          <p class="eyebrow">Design direction</p>
+          <h2>Practice as the fastest route into active recall</h2>
+          <p>
+            This screen should answer one question first: what should I practice right now? The design prioritizes due
+            questions, recent progress, and course-specific sets before broad browsing.
+          </p>
+
+          <div class="rules">
+            <div class="rule">
+              <strong>Primary job</strong>
+              <span>Get students from intent to first question quickly, with due practice as the default path.</span>
+            </div>
+            <div class="rule">
+              <strong>Progress model</strong>
+              <span>Show best score, answered questions, current progress, and review entry on each set.</span>
+            </div>
+            <div class="rule">
+              <strong>Navigation state</strong>
+              <span>The Study bottom nav keeps Practice active and never mixes marketplace destinations.</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Study Hub bottom navigation">
+      <a class="nav-item" href="./study-home-mockup.html">
+        <span class="nav-icon home" aria-hidden="true"></span>
+        Study
+      </a>
+      <a class="nav-item" href="./study-library-mockup.html">
+        <span class="nav-icon library" aria-hidden="true"></span>
+        Library
+      </a>
+      <a class="nav-item active" href="#">
+        <span class="nav-icon practice" aria-hidden="true"></span>
+        Practice
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon qa" aria-hidden="true"></span>
+        Q&A
+      </a>
+      <a class="nav-item" href="#">
+        <span class="nav-icon me" aria-hidden="true"></span>
+        Me
+      </a>
+    </nav>
+  </body>
+</html>

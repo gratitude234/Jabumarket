@@ -26,10 +26,11 @@ export default function BottomNav() {
 
   const inboxUnread = buyerUnread + vendorUnread;
 
+  const isStudyPage = pathname === "/study" || pathname.startsWith("/study/");
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname);
   const isAttemptReviewPage = /^\/study\/history\/[^/]+$/.test(pathname);
   const isUploadPage = /^\/study\/materials\/upload/.test(pathname);
-  if (isConversationPage || isAttemptReviewPage || isUploadPage) return null;
+  if (isStudyPage || isConversationPage || isAttemptReviewPage || isUploadPage) return null;
 
   const meItem = { href: "/me", label: "Me", icon: User, badge: null };
   const riderItem = { href: "/rider/dashboard", label: "Rider", icon: Truck, badge: null };
