@@ -765,7 +765,7 @@ export default function CourseHubPage() {
             <p className="font-extrabold text-foreground">Course not found</p>
             <p className="text-sm text-muted-foreground">No course matches "{code}".</p>
             <Link
-              href={`/study/materials?q=${encodeURIComponent(code)}`}
+              href={`/study/library?q=${encodeURIComponent(code)}`}
               className="inline-flex items-center gap-2 rounded-2xl bg-secondary px-4 py-2 text-sm font-extrabold text-foreground no-underline"
             >
               Search library <ArrowRight className="h-4 w-4" />
@@ -892,7 +892,7 @@ export default function CourseHubPage() {
                 action={
                   pastQuestions.length > 4 ? (
                     <Link
-                      href={`/study/materials?type=past_question&q=${encodeURIComponent(code)}`}
+                      href={`/study/library?type=past_question&q=${encodeURIComponent(code)}`}
                       className="text-xs font-semibold text-[#5B35D5] no-underline"
                     >
                       See all {pastQuestions.length} →
@@ -981,7 +981,7 @@ export default function CourseHubPage() {
                               ))}
                               {list.length > 4 && (
                                 <Link
-                                  href={`/study/materials?type=${encodeURIComponent(type)}&q=${encodeURIComponent(code)}`}
+                                  href={`/study/library?type=${encodeURIComponent(type)}&q=${encodeURIComponent(code)}`}
                                   className="block text-center text-xs font-semibold text-[#5B35D5] no-underline py-1"
                                 >
                                   +{list.length - 4} more

@@ -21,10 +21,10 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   // ✅ On Home, redirect to /explore ONLY when user is searching
   if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
 
-  // ✅ On Study routes, redirect to /study/materials when searching
+  // ✅ On Study routes, redirect to /study/library when searching
   if (pathname.startsWith("/study")) {
-    if (pathname.startsWith("/study/materials")) return qs ? `/study/materials?${qs}` : "/study/materials";
-    return q ? `/study/materials?q=${encodeURIComponent(q)}` : pathname;
+    if (pathname.startsWith("/study/library")) return qs ? `/study/library?${qs}` : "/study/library";
+    return q ? `/study/library?q=${encodeURIComponent(q)}` : pathname;
   }
 
   return qs ? `${pathname}?${qs}` : pathname;
@@ -56,7 +56,11 @@ export default function MobileTopBar() {
 
   // keep input in sync when user navigates back/forward
   useEffect(() => {
-    setQ(initialQ);
+    const timer = window.setTimeout(() => {
+      setQ(initialQ);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [initialQ]);
 
   // ✅ debounced navigation (replace, not push)

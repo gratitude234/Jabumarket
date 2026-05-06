@@ -160,8 +160,7 @@ function ToolRow({
 
 function StudyMeSkeleton() {
   return (
-    <div className="space-y-4 pb-28 md:pb-6">
-      <StudyTabs />
+    <>
       <div className="h-7 w-40 animate-pulse rounded bg-muted" />
       <div className="h-48 animate-pulse rounded-2xl bg-muted" />
       <div className="grid grid-cols-2 gap-3">
@@ -170,7 +169,7 @@ function StudyMeSkeleton() {
         <div className="h-24 animate-pulse rounded-2xl bg-muted" />
         <div className="h-24 animate-pulse rounded-2xl bg-muted" />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -235,14 +234,17 @@ function StudyMeInner() {
     return `${department} - ${level}`;
   }, [prefs?.department, prefs?.level]);
 
-  if (loading) return <StudyMeSkeleton />;
-
   const isContributor = rep.status === "approved";
   const repBadge = roleLabel(rep.status, rep.role);
 
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <StudyTabs contributorStatus={rep.status} />
+      <StudyTabs contributorStatus={loading ? undefined : rep.status} />
+
+      {loading ? (
+        <StudyMeSkeleton />
+      ) : (
+        <>
 
       <PageHeader
         title="Study Profile"
@@ -307,8 +309,8 @@ function StudyMeInner() {
         <h2 className="text-sm font-bold text-foreground">Study actions</h2>
         <div className="grid grid-cols-2 gap-3">
           <ActionCard
-            href="/study/library"
-            title="My Library"
+            href="/study/saved"
+            title="Saved"
             desc={`${counts.saved.toLocaleString("en-NG")} saved resources`}
             icon={<Library className="h-4 w-4" />}
             tone="study"
@@ -348,7 +350,7 @@ function StudyMeInner() {
             tone="study"
           />
           <ToolRow
-            href="/study/materials"
+            href="/study/library"
             title="Find Materials"
             desc="Browse notes, handouts, slides and past questions"
             icon={<BookOpen className="h-4 w-4" />}
@@ -459,6 +461,8 @@ function StudyMeInner() {
           Refreshing study stats
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

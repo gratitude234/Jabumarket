@@ -343,7 +343,7 @@ function Toast({
   );
 }
 
-export default function LibraryClient() {
+export default function SavedClient() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -552,7 +552,7 @@ export default function LibraryClient() {
     try {
       const userId = await getAuthedUserId();
       if (!userId) {
-        router.replace(`/login?next=${encodeURIComponent("/study/library")}`);
+        router.replace(`/login?next=${encodeURIComponent("/study/saved")}`);
         return;
       }
 
@@ -589,7 +589,7 @@ export default function LibraryClient() {
       const loaded = from + rows.length;
       setHasMore(loaded < total);
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to load library");
+      setErr(e?.message ?? "Failed to load saved items");
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -628,7 +628,7 @@ export default function LibraryClient() {
       }
 
       setToast({
-        text: "Removed from Library",
+        text: "Removed from Saved",
         undo: async () => {
           try {
             // Restore UI immediately
@@ -716,7 +716,7 @@ export default function LibraryClient() {
 
         <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground">
           <BookmarkCheck className="h-4 w-4" />
-          Bookmarks
+          Saved
         </span>
       </div>
 
@@ -724,7 +724,7 @@ export default function LibraryClient() {
       <div className="rounded-3xl border border-border bg-background p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-lg font-extrabold tracking-tight text-foreground sm:text-xl">Bookmarks</h1>
+            <h1 className="text-lg font-extrabold tracking-tight text-foreground sm:text-xl">Saved</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Everything you saved — materials, practice sets, and questions.
             </p>
@@ -807,7 +807,7 @@ export default function LibraryClient() {
           </div>
         ) : (
           <p className="mt-3 text-xs text-muted-foreground">
-            Tip: Save items from <span className="font-semibold">Materials</span>, <span className="font-semibold">Practice</span>, and{" "}
+            Tip: Save items from <span className="font-semibold">Library</span>, <span className="font-semibold">Practice</span>, and{" "}
             <span className="font-semibold">Questions</span>.
           </p>
         )}
@@ -826,7 +826,7 @@ export default function LibraryClient() {
         </div>
       ) : err ? (
         <div className="rounded-3xl border border-border bg-background p-6">
-          <p className="text-sm font-semibold text-foreground">Couldn’t load your library</p>
+          <p className="text-sm font-semibold text-foreground">Couldn’t load saved items</p>
           <p className="mt-1 text-sm text-muted-foreground">{err}</p>
           <button
             type="button"
@@ -847,7 +847,7 @@ export default function LibraryClient() {
             Save items you want to revisit quickly — they’ll show up here.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <PrimaryButton href="/study/materials">Browse materials</PrimaryButton>
+            <PrimaryButton href="/study/library">Browse library</PrimaryButton>
             <GhostButton href="/study/practice">Practice mode</GhostButton>
             <GhostButton href="/study/questions">Ask questions</GhostButton>
           </div>
@@ -894,7 +894,7 @@ export default function LibraryClient() {
                     </div>
 
                     <div className="mt-4 flex items-center gap-2">
-                      <GhostButton href="/study/materials">Materials</GhostButton>
+                      <GhostButton href="/study/library">Library</GhostButton>
                       {m?.file_path ? (
                         <a
                           href={`/api/study/materials/${m.id}/download`}

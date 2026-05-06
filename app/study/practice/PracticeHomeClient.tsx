@@ -93,6 +93,7 @@ type LatestAttempt = {
   set_id: string | null;
   created_at: string | null;
   updated_at?: string | null;
+  status?: string | null;
 
   score?: number | null;
   total_questions?: number | null;
@@ -112,6 +113,18 @@ type SetAttemptSummary = {
   lastAttemptId: string | null; // id of the most recent submitted attempt
   inProgressId: string | null;  // id of an in_progress attempt, if any
   inProgressPct: number | null; // progress through in-progress attempt (answered/total)
+};
+
+type DuePracticeData = {
+  total: number;
+  sets: Array<{
+    set_id: string;
+    set_title: string;
+    course_code: string | null;
+    question_count: number;
+    question_ids: string[];
+    miss_counts: Record<string, number>;
+  }>;
 };
 
 function Chip({
@@ -420,6 +433,212 @@ function MiniTabs({ value, onChange }: { value: ViewKey; onChange: (v: ViewKey) 
 }
 
 // ─── Score ring ───────────────────────────────────────────────────────────────
+
+function PracticeHeroAction({
+  icon,
+  eyebrow,
+  title,
+  description,
+  meta,
+  actionLabel,
+  onClick,
+  disabled,
+  loading,
+  primary,
+}: {
+  icon: React.ReactNode;
+  eyebrow: string;
+  title: string;
+  description: string;
+  meta?: string;
+  actionLabel: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  primary?: boolean;
+}) {
+  return (
+    <Card
+      className={cn(
+        "flex min-h-[190px] flex-col justify-between overflow-hidden rounded-3xl p-4",
+        primary && "border-[#5B35D5]/25 bg-[#EEEDFE]/60 dark:bg-[#5B35D5]/10"
+      )}
+    >
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div
+            className={cn(
+              "grid h-10 w-10 shrink-0 place-items-center rounded-2xl",
+              primary ? "bg-[#5B35D5] text-white" : "bg-secondary text-foreground"
+            )}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
+          </div>
+          {meta ? (
+            <span className="max-w-[52%] truncate rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-extrabold text-muted-foreground">
+              {meta}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h2 className="mt-1 line-clamp-2 text-lg font-extrabold leading-tight text-foreground">
+            {title}
+          </h2>
+          <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+            {description}
+          </p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || loading}
+        className={cn(
+          "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          primary
+            ? "bg-[#5B35D5] text-white hover:bg-[#4526B8]"
+            : "border border-border bg-background text-foreground hover:bg-secondary/50",
+          (disabled || loading) && "cursor-not-allowed opacity-60"
+        )}
+      >
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {actionLabel}
+        {!loading ? <ArrowRight className="h-4 w-4" /> : null}
+      </button>
+    </Card>
+  );
+}
+
+function PracticeHero({
+  dueLoading,
+  dueData,
+  resumeAttempt,
+  timedExamSet,
+  quickLoading,
+  onReviewDue,
+  onResume,
+  onStartTimed,
+  onQuickSession,
+}: {
+  dueLoading: boolean;
+  dueData: DuePracticeData | null;
+  resumeAttempt: LatestAttempt | null;
+  timedExamSet: QuizSetRow | null;
+  quickLoading: boolean;
+  onReviewDue: (setId: string) => void;
+  onResume: (setId: string) => void;
+  onStartTimed: (setId: string) => void;
+  onQuickSession: () => void;
+}) {
+  const primaryDueSet = dueData?.sets?.[0] ?? null;
+  const dueCourse = primaryDueSet?.course_code ?? primaryDueSet?.set_title ?? null;
+  const dueMeta = dueLoading
+    ? "Checking"
+    : dueData && dueData.total > 0
+    ? `${dueData.total} Q`
+    : "Clear";
+
+  const resumeTitle = resumeAttempt?.study_quiz_sets?.title?.trim() || "No saved session";
+  const resumeCourse = resumeAttempt?.study_quiz_sets?.course_code?.trim() || null;
+  const timedTitle = timedExamSet?.title?.trim() || "No timed exam yet";
+  const timedMeta = timedExamSet?.time_limit_minutes
+    ? `${timedExamSet.time_limit_minutes} min`
+    : undefined;
+
+  return (
+    <section className="space-y-4 rounded-[2rem] border border-border bg-card p-4 shadow-sm md:p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#5B35D5]">
+            Practice command center
+          </p>
+          <h1 className="mt-1 text-2xl font-extrabold leading-tight text-foreground md:text-3xl">
+            What should I practice now?
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Start with spaced review, continue an unfinished set, or jump into a timed exam.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onQuickSession}
+          disabled={quickLoading}
+          className={cn(
+            "inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-bold text-foreground transition md:w-auto",
+            "hover:bg-secondary/50 disabled:cursor-not-allowed disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          )}
+        >
+          {quickLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 text-[#5B35D5]" />}
+          Quick session
+        </button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <PracticeHeroAction
+          primary={Boolean(primaryDueSet)}
+          icon={<CalendarClock className="h-5 w-5" />}
+          eyebrow="Due today"
+          title={
+            dueLoading
+              ? "Checking your reviews"
+              : primaryDueSet
+              ? dueCourse ?? "Review questions"
+              : "No reviews due"
+          }
+          description={
+            dueLoading
+              ? "Looking for questions scheduled for today."
+              : primaryDueSet
+              ? `${primaryDueSet.question_count} question${primaryDueSet.question_count === 1 ? "" : "s"} from your spaced review queue.`
+              : "You are clear for now. Use quick session if you still want a short drill."
+          }
+          meta={dueMeta}
+          actionLabel={primaryDueSet ? "Review now" : "All caught up"}
+          onClick={primaryDueSet ? () => onReviewDue(primaryDueSet.set_id) : undefined}
+          disabled={!primaryDueSet}
+          loading={dueLoading}
+        />
+
+        <PracticeHeroAction
+          icon={<Play className="h-5 w-5" />}
+          eyebrow="Resume"
+          title={resumeTitle}
+          description={
+            resumeAttempt?.set_id
+              ? `Continue${resumeCourse ? ` ${resumeCourse}` : ""} from where you stopped.`
+              : "No unfinished session right now. Start a quick one when you want momentum."
+          }
+          meta={resumeCourse ?? "Ready"}
+          actionLabel={resumeAttempt?.set_id ? "Resume" : "Start quick"}
+          onClick={resumeAttempt?.set_id ? () => onResume(resumeAttempt.set_id as string) : onQuickSession}
+          loading={!resumeAttempt?.set_id && quickLoading}
+        />
+
+        <PracticeHeroAction
+          icon={<Clock className="h-5 w-5" />}
+          eyebrow="Timed exam"
+          title={timedTitle}
+          description={
+            timedExamSet
+              ? `${timedExamSet.course_code ?? "Practice"} in exam mode with the timer on.`
+              : "No timed set is available in the current list yet."
+          }
+          meta={timedMeta ?? timedExamSet?.course_code ?? "Exam mode"}
+          actionLabel={timedExamSet ? "Start timed" : "Unavailable"}
+          onClick={timedExamSet ? () => onStartTimed(timedExamSet.id) : undefined}
+          disabled={!timedExamSet}
+        />
+      </div>
+    </section>
+  );
+}
 
 function ScoreRingSmall({ pct }: { pct: number | null }) {
   const size = 48;
@@ -1020,17 +1239,7 @@ function PracticeHomeInner() {
   const [schemaHint, setSchemaHint] = useState<string | null>(null);
 
   // Due Today (SRS)
-  const [dueData, setDueData] = useState<{
-    total: number;
-    sets: Array<{
-      set_id: string;
-      set_title: string;
-      course_code: string | null;
-      question_count: number;
-      question_ids: string[];
-      miss_counts: Record<string, number>;
-    }>;
-  } | null>(null);
+  const [dueData, setDueData] = useState<DuePracticeData | null>(null);
   const [dueLoading, setDueLoading] = useState(true);
   const [quickLoading, setQuickLoading] = useState(false);
 
@@ -1248,7 +1457,7 @@ function PracticeHomeInner() {
           .from("study_practice_attempts")
           .select(
             `
-            id,set_id,created_at,updated_at,score,total_questions,
+            id,set_id,created_at,updated_at,status,score,total_questions,
             study_quiz_sets(id,title,course_code)
           `
           )
@@ -1639,6 +1848,22 @@ function PracticeHomeInner() {
     return sets;
   }, [viewParam, forYouSets, sets]);
 
+  const resumeAttempt = useMemo(
+    () => recentAttempts.find((attempt) => attempt.status === "in_progress" && attempt.set_id) ?? null,
+    [recentAttempts]
+  );
+
+  const timedExamSet = useMemo(() => {
+    const seen = new Set<string>();
+    const candidates = [...visibleSets, ...forYouSets, ...sets].filter((set) => {
+      if (!set.id || seen.has(set.id)) return false;
+      seen.add(set.id);
+      return true;
+    });
+
+    return candidates.find((set) => (set.time_limit_minutes ?? 0) > 0) ?? null;
+  }, [visibleSets, forYouSets, sets]);
+
   const showRecentEmpty = viewParam === "recent" && recentAttempts.length === 0;
 
   function openPreview(s: QuizSetRow) {
@@ -1723,94 +1948,26 @@ function PracticeHomeInner() {
         </Link>
       )}
 
-      {/* ── Due Today card (SRS) ─────────────────────────────────────── */}
-      {!dueLoading && dueData && dueData.total > 0 ? (
-        <div className="overflow-hidden rounded-3xl border border-[#5B35D5]/20 bg-card shadow-sm">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-3 px-4 py-3.5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5B35D5]">
-                <CalendarClock className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold text-foreground">Due for review today</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Questions you’ve missed before, spaced for today
-                </p>
-              </div>
-            </div>
-            <span className="rounded-full border border-[#5B35D5]/20 bg-[#EEEDFE] px-2.5 py-1 text-[11px] font-extrabold text-[#3B24A8]">
-              {dueData.total} Q
-            </span>
-          </div>
+      <PracticeHero
+        dueLoading={dueLoading}
+        dueData={dueData}
+        resumeAttempt={resumeAttempt}
+        timedExamSet={timedExamSet}
+        quickLoading={quickLoading}
+        onReviewDue={(setId) => router.push(`/study/practice/${setId}?mode=study&due=1`)}
+        onResume={(setId) => startSet(setId)}
+        onStartTimed={(setId) => startSet(setId, "exam")}
+        onQuickSession={handleQuickSession}
+      />
 
-          {/* Per-course rows */}
-          <div className="border-t border-[#5B35D5]/10">
-            {dueData.sets.map((s, i) => (
-              <div
-                key={s.set_id}
-                className={cn(
-                  "flex items-center justify-between gap-3 px-4 py-3",
-                  i < dueData.sets.length - 1 && "border-b border-[#5B35D5]/10"
-                )}
-              >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <div
-                    className="h-2 w-2 shrink-0 rounded-full bg-[#5B35D5]"
-                    style={{ opacity: Math.max(0.3, 1 - i * 0.25) }}
-                  />
-                  <span className="text-sm font-semibold text-foreground">
-                    {s.course_code ?? s.set_title}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    · {s.question_count} question{s.question_count !== 1 ? "s" : ""}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/study/practice/${s.set_id}?mode=study&due=1`)}
-                  className={cn(
-                    "shrink-0 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-bold text-white",
-                    "hover:bg-[#4526B8]",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B35D5] focus-visible:ring-offset-2"
-                  )}
-                >
-                  Review →
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={handleQuickSession}
-        disabled={quickLoading}
-        className={cn(
-          "flex w-full items-center justify-between gap-3",
-          "rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm",
-          "transition hover:bg-secondary/20 disabled:opacity-60",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEEDFE] dark:bg-[#5B35D5]/10">
-            {quickLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-[#5B35D5]" />
-            ) : (
-              <Zap className="h-4 w-4 text-[#5B35D5]" />
-            )}
-          </div>
-          <div className="text-left">
-            <p className="text-sm font-extrabold text-foreground">Quick session</p>
-            <p className="text-xs text-muted-foreground">
-              Random set for your level — no setup needed
-            </p>
-          </div>
-        </div>
-        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-      </button>
+      <div className="pt-2">
+        <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
+          Browse practice sets
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Search, filter, or review your recent activity when you want something specific.
+        </p>
+      </div>
 
       {/* Tabs: For you / Recent / All */}
       <MiniTabs value={viewParam} onChange={setView} />
@@ -1995,7 +2152,7 @@ function PracticeHomeInner() {
             description="Sets you've recently attempted will appear here."
             action={
               <Link
-                href="/study/materials"
+                href="/study/library"
                 className={cn(
                   "inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-foreground no-underline",
                   "hover:opacity-90",
@@ -2089,7 +2246,7 @@ function PracticeHomeInner() {
                         </button>
                       ) : null}
                       <Link
-                        href="/study/materials"
+                        href="/study/library"
                         className={cn(
                           "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground no-underline",
                           "hover:bg-secondary/50",

@@ -1,8 +1,11 @@
 import "server-only";
 
-import type { AiChatMessage } from "./nvidia";
-
 const DEFAULT_MODEL = "gemini-2.5-flash-lite";
+
+export type AiChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 export type GeminiTextConfig = {
   messages: AiChatMessage[];

@@ -338,7 +338,7 @@ function QuestionsInner() {
     try {
       await toggleSaved({ itemType: "question", questionId });
       setToast({
-        text: wasSaved ? "Removed from Library" : "Saved to Library",
+        text: wasSaved ? "Removed from Saved" : "Saved",
         undo: async () => {
           try {
             setSavedIds((prev) => { const n = new Set(prev); wasSaved ? n.add(questionId) : n.delete(questionId); return n; });

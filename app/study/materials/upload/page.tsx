@@ -813,7 +813,7 @@ export default function UploadMaterialsPage() {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Link
-            href="/study/materials"
+            href="/study/library"
             className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary/50"
           >
             <ArrowLeft className="h-4 w-4" /> Back
@@ -1182,7 +1182,7 @@ export default function UploadMaterialsPage() {
                               Create course
                             </button>
                             <Link
-                              href="/study/materials"
+                              href="/study/library"
                               className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground no-underline hover:bg-secondary/50"
                             >
                               Browse materials
@@ -1207,7 +1207,7 @@ export default function UploadMaterialsPage() {
                               <Flag className="h-3.5 w-3.5" /> Flag this course →
                             </button>
                             <Link
-                              href="/study/materials"
+                              href="/study/library"
                               className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground no-underline hover:bg-secondary/50"
                             >
                               Browse materials

@@ -24,10 +24,10 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   // - Home search goes to Explore
   if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
 
-  // - Anywhere in /study: route search to /study/materials
+  // - Anywhere in /study: route search to /study/library
   if (pathname.startsWith("/study")) {
-    // keep you on materials if you’re already there
-    if (pathname.startsWith("/study/materials")) {
+    // keep you on library if you’re already there
+    if (pathname.startsWith("/study/library")) {
       const copy = new URLSearchParams(sp.toString());
       if (q) copy.set("q", q);
       else copy.delete("q");
@@ -35,10 +35,10 @@ function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
       return qs ? `${pathname}?${qs}` : pathname;
     }
 
-    // otherwise: only send to materials when the user is actually searching.
+    // otherwise: only send to library when the user is actually searching.
     // If the query is empty, DO NOT redirect away from the current /study page.
-    // (TopNav is hidden on mobile but still runs its effects; forcing /study -> /study/materials breaks the Study homepage.)
-    return q ? `/study/materials?q=${encodeURIComponent(q)}` : pathname;
+    // (TopNav is hidden on mobile but still runs its effects; forcing /study -> /study/library breaks the Study homepage.)
+    return q ? `/study/library?q=${encodeURIComponent(q)}` : pathname;
   }
 
   // default: update q on current route
@@ -71,7 +71,11 @@ export default function TopNav() {
   const [q, setQ] = useState(initialQ);
 
   useEffect(() => {
-    setQ(initialQ);
+    const timer = window.setTimeout(() => {
+      setQ(initialQ);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [initialQ]);
 
   // ✅ debounced replace

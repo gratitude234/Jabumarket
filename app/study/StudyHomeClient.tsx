@@ -85,14 +85,18 @@ function StudyHomeInner() {
   }, []);
 
   useEffect(() => {
-    try {
-      if (localStorage.getItem("jabu:setupNudgeDismissed") === "1") {
-        setNudgeDismissed(true);
+    const timer = window.setTimeout(() => {
+      try {
+        if (localStorage.getItem("jabu:setupNudgeDismissed") === "1") {
+          setNudgeDismissed(true);
+        }
+      } catch {
+        // non-critical
       }
-    } catch {
-      // non-critical
-    }
-    setNudgeResolved(true);
+      setNudgeResolved(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -156,32 +160,35 @@ function StudyHomeInner() {
   useEffect(() => {
     if (loading) return;
 
-    if (!userId) {
-      setTotalAttempts(null);
-      return;
-    }
-
     let cancelled = false;
-
-    async function fetchTotalAttempts() {
-      try {
-        const { count, error } = await supabase
-          .from("study_practice_attempts")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("status", "submitted");
-
-        if (cancelled) return;
-        setTotalAttempts(!error ? count ?? 0 : 0);
-      } catch {
-        if (!cancelled) setTotalAttempts(0);
+    const timer = window.setTimeout(() => {
+      if (!userId) {
+        setTotalAttempts(null);
+        return;
       }
-    }
 
-    setTotalAttempts(null);
-    void fetchTotalAttempts();
+      async function fetchTotalAttempts() {
+        try {
+          const { count, error } = await supabase
+            .from("study_practice_attempts")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .eq("status", "submitted");
+
+          if (cancelled) return;
+          setTotalAttempts(!error ? count ?? 0 : 0);
+        } catch {
+          if (!cancelled) setTotalAttempts(0);
+        }
+      }
+
+      setTotalAttempts(null);
+      void fetchTotalAttempts();
+    }, 0);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [loading, userId]);
 
@@ -285,46 +292,51 @@ function MyCourses() {
     if (!prefs?.department_id && !prefs?.level) return;
 
     let cancelled = false;
-    setCoursesLoading(true);
+    const timer = window.setTimeout(() => {
+      setCoursesLoading(true);
 
-    (async () => {
-      try {
-        let q = supabase
-          .from("study_courses")
-          .select("id,course_code,course_title")
-          .eq("status", "approved")
-          .order("course_code", { ascending: true })
-          .limit(8);
+      (async () => {
+        try {
+          let q = supabase
+            .from("study_courses")
+            .select("id,course_code,course_title")
+            .eq("status", "approved")
+            .order("course_code", { ascending: true })
+            .limit(8);
 
-        if (prefs?.department_id) q = q.eq("department_id", prefs.department_id);
-        if (prefs?.level) q = q.eq("level", prefs.level);
+          if (prefs?.department_id) q = q.eq("department_id", prefs.department_id);
+          if (prefs?.level) q = q.eq("level", prefs.level);
 
-        const { data, error } = await q;
-        if (cancelled || error || !data?.length) {
+          const { data, error } = await q;
+          if (cancelled || error || !data?.length) {
+            if (!cancelled) { setCourses([]); setCoursesLoading(false); }
+            return;
+          }
+
+          const withCounts = await Promise.all(
+            (data as Pick<CourseRow, "id" | "course_code" | "course_title">[]).map(
+              async (course) => {
+                const { count } = await supabase
+                  .from("study_materials")
+                  .select("id", { count: "exact", head: true })
+                  .eq("course_id", course.id)
+                  .eq("approved", true);
+                return { ...course, materialCount: count ?? 0 };
+              }
+            )
+          );
+
+          if (!cancelled) { setCourses(withCounts); setCoursesLoading(false); }
+        } catch {
           if (!cancelled) { setCourses([]); setCoursesLoading(false); }
-          return;
         }
+      })();
+    }, 0);
 
-        const withCounts = await Promise.all(
-          (data as Pick<CourseRow, "id" | "course_code" | "course_title">[]).map(
-            async (course) => {
-              const { count } = await supabase
-                .from("study_materials")
-                .select("id", { count: "exact", head: true })
-                .eq("course_id", course.id)
-                .eq("approved", true);
-              return { ...course, materialCount: count ?? 0 };
-            }
-          )
-        );
-
-        if (!cancelled) { setCourses(withCounts); setCoursesLoading(false); }
-      } catch {
-        if (!cancelled) { setCourses([]); setCoursesLoading(false); }
-      }
-    })();
-
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [prefsLoading, prefs?.department_id, prefs?.level]);
 
   if (prefsLoading) {
@@ -349,7 +361,7 @@ function MyCourses() {
           Set up your profile to see courses for your department and level.
         </p>
         <Link
-          href="/study/profile"
+          href="/study/onboarding"
           className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#4a2bb0]"
         >
           Set up profile <ArrowRight className="h-4 w-4" />
@@ -366,7 +378,7 @@ function MyCourses() {
           <p className="text-xs text-muted-foreground">Your department&apos;s course hubs</p>
         </div>
         <Link
-          href="/study/materials"
+          href="/study/library"
           className="inline-flex items-center gap-1 text-xs font-semibold text-[#5B35D5] hover:underline"
         >
           All materials <ArrowRight className="h-3.5 w-3.5" />
@@ -411,7 +423,7 @@ function MyCourses() {
             Materials for your courses will appear here as students upload them.
           </p>
           <Link
-            href="/study/materials"
+            href="/study/library"
             className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B35D5] hover:underline"
           >
             Browse all materials <ArrowRight className="h-3.5 w-3.5" />

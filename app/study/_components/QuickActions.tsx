@@ -35,7 +35,7 @@ type QuickActionMoreTile = {
 
 const TILES: readonly (QuickActionLinkTile | QuickActionMoreTile)[] = [
   {
-    href: "/study/materials",
+    href: "/study/library",
     label: "PDF → Qs",
     sublabel: "AI-generated",
     icon: Sparkles,
@@ -43,8 +43,8 @@ const TILES: readonly (QuickActionLinkTile | QuickActionMoreTile)[] = [
     isNew: true,
   },
   {
-    href: "/study/materials",
-    label: "Materials",
+    href: "/study/library",
+    label: "Library",
     sublabel: "Notes & past Qs",
     icon: BookOpen,
     primary: false,

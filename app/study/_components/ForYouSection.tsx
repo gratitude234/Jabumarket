@@ -452,7 +452,7 @@ export function ForYouSection({
           }
           action={
             <Link
-              href="/study/materials"
+              href="/study/library"
               className={cn(
                 "inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2",
                 "text-sm font-semibold text-foreground hover:bg-secondary/50"

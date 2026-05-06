@@ -120,7 +120,7 @@ export default function DayOneHero({
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <Link
-              href="/study/materials"
+              href="/study/library"
               onClick={() =>
                 track("study_home_day_one_cta_tapped", { cta: "browse_materials" })
               }

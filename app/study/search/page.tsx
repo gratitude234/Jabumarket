@@ -219,7 +219,7 @@ function CourseResults({ items }: { items: CourseHit[] }) {
       {items.map((c) => (
         <Link
           key={c.id}
-          href={`/study/materials?q=${encodeURIComponent(c.course_code)}`}
+          href={`/study/library?q=${encodeURIComponent(c.course_code)}`}
           className={cn(
             "flex items-start gap-3 rounded-2xl border border-border bg-card p-3 hover:bg-secondary/40",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"

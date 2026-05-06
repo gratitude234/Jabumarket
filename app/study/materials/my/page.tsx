@@ -225,7 +225,7 @@ export default function MyUploadsPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Link
-          href="/study/materials"
+          href="/study/library"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground no-underline transition hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />

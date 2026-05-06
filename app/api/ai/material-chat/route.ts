@@ -14,9 +14,15 @@ import {
   truncateText,
 } from "@/lib/extractMaterialContent";
 
-const MODEL = "gemini-2.5-flash-lite";
 const FILE_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
-const STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`;
+
+function geminiModelName() {
+  return process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash-lite";
+}
+
+function geminiStreamUrl() {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelName()}:streamGenerateContent?alt=sse`;
+}
 
 type HistoryEntry = { role: "user" | "model"; text: string };
 type StudyMaterialRow = {
@@ -264,7 +270,7 @@ For lists, put each item on its own line with a dash prefix (e.g. "- item").`;
 
   let geminiRes: Response;
   try {
-    geminiRes = await fetch(`${STREAM_URL}&key=${apiKey}`, {
+    geminiRes = await fetch(`${geminiStreamUrl()}&key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),

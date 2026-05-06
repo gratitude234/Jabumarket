@@ -16,22 +16,20 @@ import {
 } from "@/lib/extractMaterialContent";
 
 const MODEL = "gemini-2.5-flash-lite";
-const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const QUESTION_GEN_TEXT_CHARS = 24_000;
-const QUESTION_GEN_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
-const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+const GEMINI_QUESTION_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_QUESTION_TIMEOUT_MS) ?? 60_000;
 
 function parsePositiveInt(value: string | undefined) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function nvidiaModelName() {
-  return process.env.NVIDIA_CHAT_MODEL?.trim() || "mistralai/mistral-large-3-675b-instruct-2512";
-}
-
 function geminiModelName() {
   return process.env.GEMINI_MODEL?.trim() || MODEL;
+}
+
+function geminiGenerateUrl() {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelName()}:generateContent`;
 }
 
 type StudyMaterialRow = {
@@ -159,8 +157,7 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       messages: [userMessage(`DOCUMENT CONTENT:\n\n${truncated}\n\n${systemPrompt}`)],
       temperature: 0.3,
       maxTokens: Math.min(6000, count * 380),
-      timeoutMs: QUESTION_GEN_TIMEOUT_MS,
-      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+      timeoutMs: GEMINI_QUESTION_TIMEOUT_MS,
     });
 
     if (!result.ok) {
@@ -173,9 +170,8 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
       questions: result.data.questions,
       ai: {
         provider: result.provider,
-        model: result.provider === "nvidia" ? nvidiaModelName() : geminiModelName(),
+        model: geminiModelName(),
         inputMode: "extracted-text",
-        reason: result.fallbackReason,
       },
     });
   }
@@ -209,7 +205,7 @@ Return ONLY a valid JSON object with no markdown, no backticks, no preamble:
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "AI service not configured." }, { status: 500 });
 
-    const geminiRes = await fetch(`${BASE_URL}?key=${apiKey}`, {
+    const geminiRes = await fetch(`${geminiGenerateUrl()}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(geminiBody),

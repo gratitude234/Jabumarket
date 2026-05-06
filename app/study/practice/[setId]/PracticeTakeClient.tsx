@@ -1046,7 +1046,7 @@ if (err || !meta) {
 
               {meta?.course_code && (
                 <Link
-                  href={`/study/materials?course=${encodeURIComponent(meta.course_code)}`}
+                  href={`/study/library?course=${encodeURIComponent(meta.course_code)}`}
                   className="flex w-full items-center gap-3 p-4 no-underline transition-colors hover:bg-secondary/40"
                 >
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 dark:bg-emerald-950/30">

@@ -19,13 +19,17 @@ type StudyNavItem = {
 
 const STUDY_NAV_ITEMS: StudyNavItem[] = [
   { href: "/study", label: "Study", icon: Home, match: "exact" },
-  { href: "/study/materials", label: "Library", icon: BookOpen, match: "prefix" },
+  { href: "/study/library", label: "Library", icon: BookOpen, match: "prefix" },
   { href: "/study/practice", label: "Practice", icon: Zap, match: "prefix" },
   { href: "/study/questions", label: "Q&A", icon: MessageCircleQuestion, match: "prefix" },
   { href: "/study/me", label: "Me", icon: UserRound, match: "exact" },
 ];
 
 function isActive(pathname: string, item: StudyNavItem) {
+  if (item.href === "/study/library" && /^\/study\/materials\/[^/]+$/.test(pathname)) {
+    return true;
+  }
+
   if (item.match === "exact") return pathname === item.href;
   return pathname === item.href || pathname.startsWith(item.href + "/");
 }

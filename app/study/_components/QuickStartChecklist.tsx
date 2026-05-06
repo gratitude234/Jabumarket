@@ -138,7 +138,7 @@ export default function QuickStartChecklist({
       key: "checklist_material",
       label: "Bookmark or upload a material",
       done: bookmarksDone,
-      href: "/study/materials",
+      href: "/study/library",
     },
   ];
 

@@ -1,24 +1,26 @@
 import { Suspense } from "react";
-import LibraryClient from "./LibraryClient";
+import MaterialsClient from "../materials/MaterialsClient";
+import { Card, SkeletonCard } from "../_components/StudyUI";
 
 function LibraryFallback() {
   return (
     <div className="space-y-4 pb-28 md:pb-6">
-      <div className="rounded-3xl border border-border bg-background p-4">
+      <Card className="rounded-3xl">
         <div className="h-6 w-40 rounded bg-muted" />
-        <div className="mt-2 h-4 w-72 max-w-full rounded bg-muted" />
+        <div className="mt-2 h-4 w-64 rounded bg-muted" />
         <div className="mt-4 h-11 w-full rounded-2xl bg-muted" />
-      </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-9 w-20 rounded-full bg-muted" />
+          ))}
+        </div>
+      </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-3xl border border-border bg-background p-4">
-            <div className="h-4 w-2/3 rounded bg-muted" />
-            <div className="mt-2 h-3 w-1/2 rounded bg-muted" />
-            <div className="mt-4 h-10 w-full rounded-2xl bg-muted" />
-          </div>
+          <SkeletonCard key={i} lines={3} className="rounded-3xl" />
         ))}
-      </div>
+      </section>
     </div>
   );
 }
@@ -26,7 +28,7 @@ function LibraryFallback() {
 export default function StudyLibraryPage() {
   return (
     <Suspense fallback={<LibraryFallback />}>
-      <LibraryClient />
+      <MaterialsClient />
     </Suspense>
   );
 }

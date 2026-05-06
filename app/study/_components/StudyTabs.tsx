@@ -1,26 +1,18 @@
 "use client";
 
-// app/study/_components/StudyTabs.tsx
-
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
-  Calculator,
-  History,
   Home,
   MessageCircleQuestion,
-  MoreHorizontal,
-  Trophy,
   UserRound,
-  X,
   Zap,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { StudyPrefsProvider, useStudyPrefs } from "./StudyPrefsContext";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ContributorStatus =
   | "not_applied"
@@ -31,247 +23,18 @@ export type ContributorStatus =
 type Tab = {
   href: string;
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   match: "exact" | "prefix";
 };
 
-type OverflowItem = {
-  href: string;
-  label: string;
-  description: string;
-  icon: React.ElementType;
-  /** Tailwind bg + text classes for the icon bubble */
-  color: string;
-  badge?: string;
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function isActive(pathname: string, tab: Pick<Tab, "href" | "match">) {
+  if (tab.href === "/study/library" && /^\/study\/materials\/[^/]+$/.test(pathname)) {
+    return true;
+  }
+
   if (tab.match === "exact") return pathname === tab.href;
   return pathname === tab.href || pathname.startsWith(tab.href + "/");
 }
-
-const OVERFLOW_PREFIXES = [
-  "/study/history",
-  "/study/library",
-  "/study/gpa",
-  "/study/leaderboard",
-];
-
-function isOverflowActive(pathname: string) {
-  return OVERFLOW_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
-}
-
-// ─── More sheet ───────────────────────────────────────────────────────────────
-
-function MoreSheet({
-  open,
-  onClose,
-  items,
-  pathname,
-}: {
-  open: boolean;
-  onClose: () => void;
-  items: OverflowItem[];
-  pathname: string;
-}) {
-  const dragStartY = useRef<number | null>(null);
-  const [dragOffset, setDragOffset] = useState(0);
-  const isDragging = useRef(false);
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      queueMicrotask(() => setDragOffset(0));
-      return;
-    }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    dragStartY.current = e.touches[0].clientY;
-    isDragging.current = true;
-    setDragging(true);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging.current || dragStartY.current === null) return;
-    const delta = e.touches[0].clientY - dragStartY.current;
-    if (delta > 0) setDragOffset(delta);
-  };
-
-  const handleTouchEnd = () => {
-    if (dragOffset > 120) {
-      onClose();
-    } else {
-      setDragOffset(0);
-    }
-    isDragging.current = false;
-    dragStartY.current = null;
-    setDragging(false);
-  };
-
-  return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[60] transition-opacity duration-200",
-        open
-          ? "pointer-events-auto opacity-100"
-          : "pointer-events-none opacity-0"
-      )}
-      inert={!open || undefined}
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-      />
-
-      {/* Sheet panel */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="More study tools"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          transform: open
-            ? `translateY(${dragOffset}px)`
-            : "translateY(100%)",
-          transition: dragging
-            ? "none"
-            : open
-            ? "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)"
-            : "transform 0.25s ease-in",
-          maxHeight: "85dvh",
-        }}
-        className="absolute inset-x-0 bottom-0 flex flex-col rounded-t-[28px] border-t border-border bg-card shadow-2xl"
-      >
-        {/* Drag handle */}
-        <div className="flex shrink-0 justify-center pb-1 pt-3">
-          <div className="h-1 w-10 rounded-full bg-border" />
-        </div>
-
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-2">
-          <div>
-            <p className="text-base font-extrabold tracking-tight text-foreground">
-              More
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Tools, calculators, rankings and extras
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close More sheet"
-            className={cn(
-              "grid h-8 w-8 place-items-center rounded-full bg-muted text-muted-foreground",
-              "hover:bg-secondary hover:text-foreground transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            )}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Scrollable grid */}
-        <div
-          className="grid grid-cols-1 gap-2 overflow-y-auto overscroll-contain px-4 pt-1 sm:grid-cols-2"
-          style={{
-            paddingBottom:
-              "max(1.5rem, env(safe-area-inset-bottom, 0px) + 1rem)",
-          }}
-        >
-          {items.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(item.href + "/");
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3.5 rounded-2xl border p-3.5 transition-all duration-150",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                  "active:scale-[0.98]",
-                  active
-                    ? "border-[#5B35D5]/20 bg-[#EEEDFE]"
-                    : "border-border/60 bg-background hover:bg-secondary/50 hover:border-border"
-                )}
-              >
-                {/* Colored icon bubble */}
-                <div
-                  className={cn(
-                    "grid h-11 w-11 shrink-0 place-items-center rounded-xl",
-                    item.color
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p
-                      className={cn(
-                        "text-sm font-bold",
-                        active ? "text-[#3B24A8]" : "text-foreground"
-                      )}
-                    >
-                      {item.label}
-                    </p>
-                    {item.badge ? (
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-0.5 text-[10px] font-bold",
-                          item.badge === "Pending"
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
-                            : item.badge === "Reapply"
-                            ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
-                            : "bg-[#EEEDFE] text-[#3B24A8] border border-[#5B35D5]/20"
-                        )}
-                      >
-                        {item.badge}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                    {item.description}
-                  </p>
-                </div>
-
-                {/* Active dot */}
-                {active && (
-                  <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B35D5]" />
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Onboarding Banner ────────────────────────────────────────────────────────
 
 function useStudyOnboardingBanner() {
   const { loading, hasPrefs } = useStudyPrefs();
@@ -281,6 +44,7 @@ function useStudyOnboardingBanner() {
 function StudyOnboardingBannerInner() {
   const { shouldShowBanner } = useStudyOnboardingBanner();
   if (!shouldShowBanner) return null;
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10">
       <p className="text-sm font-medium text-[#3B24A8] dark:text-indigo-200">
@@ -290,7 +54,7 @@ function StudyOnboardingBannerInner() {
         href="/study/onboarding"
         className="shrink-0 rounded-xl bg-[#5B35D5] px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-[#4526B8]"
       >
-        Set up →
+        Set up
       </Link>
     </div>
   );
@@ -304,18 +68,16 @@ function StudyOnboardingBanner() {
   );
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────────
-
 const DESKTOP_TABS: Tab[] = [
   {
     href: "/study",
-    label: "Home",
+    label: "Study",
     icon: <Home className="h-3.5 w-3.5" />,
     match: "exact",
   },
   {
-    href: "/study/materials",
-    label: "Materials",
+    href: "/study/library",
+    label: "Library",
     icon: <BookOpen className="h-3.5 w-3.5" />,
     match: "prefix",
   },
@@ -332,20 +94,12 @@ const DESKTOP_TABS: Tab[] = [
     match: "prefix",
   },
   {
-    href: "/study/history",
-    label: "History",
-    icon: <History className="h-3.5 w-3.5" />,
-    match: "prefix",
-  },
-  {
     href: "/study/me",
     label: "Me",
     icon: <UserRound className="h-3.5 w-3.5" />,
     match: "exact",
   },
 ];
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function StudyTabs({
   contributorStatus,
@@ -354,35 +108,6 @@ export default function StudyTabs({
 }) {
   void contributorStatus;
   const pathname = usePathname();
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const overflowActive = isOverflowActive(pathname);
-
-  const overflowItems: OverflowItem[] = [
-    {
-      href: "/study/history",
-      label: "History",
-      description: "Practice history & saved items",
-      icon: History,
-      color:
-        "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400",
-    },
-    {
-      href: "/study/gpa",
-      label: "GPA Calculator",
-      description: "Track your CGPA across semesters",
-      icon: Calculator,
-      color:
-        "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
-    },
-    {
-      href: "/study/leaderboard",
-      label: "Leaderboard",
-      description: "Top contributors and practice streaks",
-      icon: Trophy,
-      color:
-        "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
-    },
-  ];
 
   return (
     <>
@@ -395,7 +120,6 @@ export default function StudyTabs({
         )}
       >
         <div className="px-2 py-2 md:px-4">
-          {/* Desktop */}
           <div className="items-center gap-1 md:flex">
             {DESKTOP_TABS.map((tab) => {
               const active = isActive(pathname, tab);
@@ -410,7 +134,7 @@ export default function StudyTabs({
                     "leading-none select-none",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                     active
-                      ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5] font-semibold"
+                      ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]"
                       : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                   )}
                 >
@@ -419,37 +143,9 @@ export default function StudyTabs({
                 </Link>
               );
             })}
-
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              aria-label="More study tools"
-              aria-expanded={sheetOpen}
-              className={cn(
-                "relative ml-auto flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-semibold transition-all",
-                "leading-none select-none",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                overflowActive
-                  ? "border-[#5B35D5]/30 bg-[#EEEDFE] text-[#5B35D5]"
-                  : "border-border/60 bg-background text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-              <span>More</span>
-              {overflowActive && (
-                <span className="h-1.5 w-1.5 rounded-full bg-[#5B35D5]" />
-              )}
-            </button>
           </div>
         </div>
       </nav>
-
-      <MoreSheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        items={overflowItems}
-        pathname={pathname}
-      />
     </>
   );
 }

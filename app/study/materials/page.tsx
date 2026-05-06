@@ -1,34 +1,21 @@
-import { Suspense } from "react";
-import MaterialsClient from "./MaterialsClient";
-import { Card, SkeletonCard } from "../_components/StudyUI";
+import { redirect } from "next/navigation";
 
-function MaterialsFallback() {
-  return (
-    <div className="space-y-4 pb-28 md:pb-6">
-      <Card className="rounded-3xl">
-        <div className="h-6 w-40 rounded bg-muted" />
-        <div className="mt-2 h-4 w-64 rounded bg-muted" />
-        <div className="mt-4 h-11 w-full rounded-2xl bg-muted" />
-        <div className="mt-3 flex flex-wrap gap-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-9 w-20 rounded-full bg-muted" />
-          ))}
-        </div>
-      </Card>
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <SkeletonCard key={i} lines={3} className="rounded-3xl" />
-        ))}
-      </section>
-    </div>
-  );
-}
+export default async function StudyMaterialsPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const query = new URLSearchParams();
 
-export default function StudyMaterialsPage() {
-  return (
-    <Suspense fallback={<MaterialsFallback />}>
-      <MaterialsClient />
-    </Suspense>
-  );
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => query.append(key, item));
+    } else if (value !== undefined) {
+      query.set(key, value);
+    }
+  }
+
+  const qs = query.toString();
+  redirect(qs ? `/study/library?${qs}` : "/study/library");
 }

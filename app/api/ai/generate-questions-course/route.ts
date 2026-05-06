@@ -18,7 +18,6 @@ import { adminSupabase } from "@/lib/supabase/admin";
 import { extractMaterialContent, truncateText } from "@/lib/extractMaterialContent";
 
 const MODEL = "gemini-2.5-flash-lite";
-const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const DEFAULT_QUESTION_COUNT = 10;
 const MAX_QUESTION_COUNT = 15;
@@ -26,12 +25,19 @@ const MATERIAL_LIMIT = 3;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const COURSE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 h
 const QUESTION_GEN_TEXT_CHARS = 24_000;
-const QUESTION_GEN_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
-const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+const GEMINI_QUESTION_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_QUESTION_TIMEOUT_MS) ?? 60_000;
 
 function parsePositiveInt(value: string | undefined) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function geminiModelName() {
+  return process.env.GEMINI_MODEL?.trim() || MODEL;
+}
+
+function geminiGenerateUrl() {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelName()}:generateContent`;
 }
 
 type SourceMaterial = {
@@ -299,7 +305,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
 
   let rawText: string | null = null;
   let aiMeta: {
-    provider: "nvidia" | "gemini";
+    provider: "gemini";
     model: string;
     inputMode: "extracted-text" | "inline-file";
     reason?: string;
@@ -313,8 +319,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
       messages: [userMessage(textPrompt)],
       temperature: 0.25,
       maxTokens: Math.min(4096, questionCount * 320),
-      timeoutMs: QUESTION_GEN_TIMEOUT_MS,
-      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
+      timeoutMs: GEMINI_QUESTION_TIMEOUT_MS,
     });
     if (!result.ok) {
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
@@ -322,12 +327,8 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
     rawText = JSON.stringify(result.data);
     aiMeta = {
       provider: result.provider,
-      model:
-        result.provider === "nvidia"
-          ? process.env.NVIDIA_CHAT_MODEL?.trim() || "mistralai/mistral-large-3-675b-instruct-2512"
-          : process.env.GEMINI_MODEL?.trim() || MODEL,
+      model: geminiModelName(),
       inputMode: "extracted-text",
-      reason: result.fallbackReason,
     };
   }
 
@@ -342,7 +343,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
     const controller = new AbortController();
     const hardTimeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
-    const geminiPromise = fetch(`${BASE_URL}?key=${apiKey}`, {
+    const geminiPromise = fetch(`${geminiGenerateUrl()}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -377,7 +378,7 @@ Return ONLY a valid JSON object — no markdown, no backticks, no preamble, no e
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
     rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    aiMeta = { provider: "gemini", model: process.env.GEMINI_MODEL?.trim() || MODEL, inputMode: "inline-file" };
+    aiMeta = { provider: "gemini", model: geminiModelName(), inputMode: "inline-file" };
     if (!rawText.trim()) {
       return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
     }

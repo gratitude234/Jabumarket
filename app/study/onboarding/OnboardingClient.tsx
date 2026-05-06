@@ -1106,7 +1106,7 @@ export default function OnboardingClient() {
                     </button>
                   ) : (step4Data?.materials ?? 0) > 0 ? (
                     <Link
-                      href="/study/materials"
+                      href="/study/library"
                       className="flex w-full items-center gap-3 rounded-2xl bg-secondary px-5 py-4 hover:opacity-90 transition"
                     >
                       <BookOpen className="h-5 w-5 text-foreground" />

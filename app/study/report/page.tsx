@@ -84,7 +84,7 @@ function StudyReportInner() {
     setMsg("Report submitted ✅ Thanks for helping keep Jabu Study safe.");
     setTimeout(() => {
       if (target === "tutor") return router.push("/study/tutors");
-      if (target === "material") return router.push("/study/materials");
+      if (target === "material") return router.push("/study/library");
       return router.push("/study/questions");
     }, 900);
   }

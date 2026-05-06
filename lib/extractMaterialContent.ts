@@ -1,6 +1,6 @@
 // lib/extractMaterialContent.ts
-// Server-side utility that turns uploaded study materials into text for NVIDIA,
-// or inline file payloads for Gemini fallback. Supports PDF, images, DOCX, and PPTX.
+// Server-side utility that turns uploaded study materials into text or inline
+// file payloads for Gemini. Supports PDF, images, DOCX, and PPTX.
 // Never import this from a "use client" file.
 
 import JSZip from "jszip";
@@ -45,9 +45,8 @@ function shouldExtractPdfText(): boolean {
   const explicitDisable = process.env.DISABLE_PDF_TEXT_EXTRACTION?.trim().toLowerCase();
   if (explicitDisable === "true") return false;
 
-  // Prefer Mistral/NVIDIA whenever a PDF has selectable text. If pdf-parse fails
-  // in a runtime, extraction falls back per request instead of disabling all
-  // deployed PDFs up front.
+  // Prefer extracted text whenever a PDF has selectable text. If pdf-parse fails
+  // in a runtime, Gemini can read the PDF directly for that request.
   return true;
 }
 
@@ -160,9 +159,9 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
 /**
  * Extracts content from a study material buffer for AI generation.
  *
- * - Text PDFs    -> selectable text extracted for NVIDIA first where supported
- * - PDFs on Vercel/scanned PDFs -> inline file fallback for Gemini
- * - Images       -> inline file fallback for Gemini
+ * - Text PDFs    -> selectable text extracted before sending to Gemini
+ * - PDFs on Vercel/scanned PDFs -> inline file payload for Gemini
+ * - Images       -> inline file payload for Gemini
  * - DOCX         -> text extracted with mammoth
  * - PPTX         -> slide text extracted from DrawingML XML via jszip
  */
@@ -211,7 +210,7 @@ export async function extractMaterialContent(
       kind: "inline",
       mimeType: IMAGE_MIME[ext],
       base64: Buffer.from(buffer).toString("base64"),
-      reason: "Images are read directly by Gemini because NVIDIA only receives extracted text in this version.",
+      reason: "Images are read directly by Gemini.",
     };
   }
 

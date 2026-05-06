@@ -21,7 +21,7 @@ export function HistorySavedTabs({ active }: { active: ActiveView }) {
         History
       </Link>
       <Link
-        href="/study/library"
+        href="/study/saved"
         className={cn(
           "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all leading-none select-none",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",

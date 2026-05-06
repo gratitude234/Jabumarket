@@ -426,7 +426,7 @@ function PreviewModal({
                 <div>
                   <p className="text-sm font-semibold text-foreground">Preview not available</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Tap "Open" to view this file in a new tab.
+                    Tap &quot;Open&quot; to view this file in a new tab.
                   </p>
                 </div>
               </div>
@@ -607,6 +607,7 @@ export default function MaterialsClient() {
   const [draftSort, setDraftSort] = useState<SortKey>(sortParam);
   const [draftVerified, setDraftVerified] = useState(verifiedOnly);
   const [draftFeatured, setDraftFeatured] = useState(featuredOnly);
+  const [draftMine, setDraftMine] = useState(false);
 
   // Options
   const [courses, setCourses] = useState<Course[]>([]);
@@ -768,7 +769,7 @@ export default function MaterialsClient() {
 
     try {
       await toggleSaved({ itemType: "material", materialId });
-      setToast(wasSaved ? "Removed from Library" : "Saved to Library");
+      setToast(wasSaved ? "Removed from Saved" : "Saved");
     } catch (e: any) {
       setSavedIds((prev) => {
         const n = new Set(prev);
@@ -1177,6 +1178,7 @@ export default function MaterialsClient() {
     setDraftSort(sortParam);
     setDraftVerified(verifiedOnly);
     setDraftFeatured(featuredOnly);
+    setDraftMine(mineOnly);
     setDrawerOpen(true);
   }
 
@@ -1196,7 +1198,7 @@ export default function MaterialsClient() {
         sort: draftSort !== "newest" ? draftSort : null,
         verified: draftVerified ? "1" : null,
         featured: draftFeatured ? "1" : null,
-        mine: mineParam ? mineParam : null,
+        mine: draftMine ? "1" : mineOnly || mineExplicitOff ? "0" : null,
       })
     );
     setDrawerOpen(false);
@@ -1238,6 +1240,40 @@ export default function MaterialsClient() {
   const showingTo = Math.min(total, materials.length);
 
   const activeTypeLabel = MATERIAL_TYPES.find((t) => t.key === typeParam)?.label ?? "All";
+
+  const courseChips = useMemo(() => {
+    if (hasFastLanePrefs && fastLaneCourses.length > 0) {
+      return fastLaneCourses.slice(0, 8).map((course) => ({
+        id: course.id,
+        code: course.course_code,
+        title: course.course_title,
+        count: course.materialCount,
+      }));
+    }
+
+    const filtered = courses.filter((course) => {
+      if (scopeDeptId && course.department_id !== scopeDeptId) return false;
+      if (!scopeDeptId && scopeDept && course.department !== scopeDept) return false;
+      if (typeof scopeLevel === "number" && Number.isFinite(scopeLevel) && course.level !== scopeLevel) return false;
+      if (scopeSemesterDb && mapSemesterParamToDb(course.semester) !== scopeSemesterDb) return false;
+      return true;
+    });
+
+    const map = new Map<string, { id: string; code: string; title: string | null; count?: number }>();
+    for (const course of filtered.length ? filtered : courses) {
+      const code = (course.course_code ?? "").toString().trim().toUpperCase();
+      if (!code || map.has(code)) continue;
+      map.set(code, {
+        id: course.id,
+        code,
+        title: course.course_title,
+      });
+    }
+
+    return Array.from(map.values())
+      .sort((a, b) => a.code.localeCompare(b.code))
+      .slice(0, 8);
+  }, [courses, fastLaneCourses, hasFastLanePrefs, scopeDept, scopeDeptId, scopeLevel, scopeSemesterDb]);
 
   async function onPreviewMaterial(m: MaterialRow) {
     const res = await fetch(`/api/study/materials/${m.id}/download?preview=1`);
@@ -1282,8 +1318,216 @@ export default function MaterialsClient() {
         </Link>
       )}
 
+      <Card className="rounded-3xl border bg-background/85 p-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search materials..."
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          {q ? (
+            <button
+              type="button"
+              onClick={() => setQ("")}
+              className={cn(
+                "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-background hover:bg-secondary/50",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              )}
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={openFilters}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground",
+              "hover:bg-secondary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+          </button>
+        </div>
+
+        {hasAnyFilters ? (
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
+            <button
+              type="button"
+              onClick={clearAll}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold",
+                "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              )}
+            >
+              <X className="h-3 w-3" />
+              Clear all
+            </button>
+
+            {courseParam ? (
+              <button
+                type="button"
+                onClick={() => router.replace(buildHref(pathname, {
+                  q: qParam || null,
+                  level: levelParam || null,
+                  semester: semesterParam || null,
+                  faculty: facultyParam || null,
+                  faculty_id: facultyIdParam || null,
+                  dept: deptParam || null,
+                  dept_id: deptIdParam || null,
+                  course: null,
+                  session: sessionParam || null,
+                  type: typeParam !== "all" ? typeParam : null,
+                  sort: sortParam !== "newest" ? sortParam : null,
+                  verified: verifiedOnly ? "1" : null,
+                  featured: featuredOnly ? "1" : null,
+                  mine: mineParam || null,
+                }))}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none"
+              >
+                {courseParam} <span className="text-[#5B4FD9]">x</span>
+              </button>
+            ) : null}
+
+            {typeParam !== "all" ? (
+              <button
+                type="button"
+                onClick={() => router.replace(buildHref(pathname, {
+                  q: qParam || null,
+                  level: levelParam || null,
+                  semester: semesterParam || null,
+                  faculty: facultyParam || null,
+                  faculty_id: facultyIdParam || null,
+                  dept: deptParam || null,
+                  dept_id: deptIdParam || null,
+                  course: courseParam || null,
+                  session: sessionParam || null,
+                  type: null,
+                  sort: sortParam !== "newest" ? sortParam : null,
+                  verified: verifiedOnly ? "1" : null,
+                  featured: featuredOnly ? "1" : null,
+                  mine: mineParam || null,
+                }))}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#5B4FD9]/30 bg-[#EEEDFE] px-3 py-1.5 text-xs font-medium text-[#3A2EB8] transition hover:bg-[#5B4FD9]/15 focus-visible:outline-none"
+              >
+                {activeTypeLabel} <span className="text-[#5B4FD9]">x</span>
+              </button>
+            ) : null}
+
+            {sortParam !== "newest" || levelParam || semesterParam || deptParam || deptIdParam || sessionParam || verifiedOnly || featuredOnly || mineOnly ? (
+              <button
+                type="button"
+                onClick={openFilters}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+              >
+                Advanced filters
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Tip: Try <span className="font-semibold">GST101</span> or &quot;past question&quot;.
+          </p>
+        )}
+      </Card>
+
+      {fastLaneLoading || courseChips.length > 0 ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-extrabold text-foreground">
+              {hasFastLanePrefs ? "My courses" : "Courses"}
+            </p>
+            {courseParam ? (
+              <button
+                type="button"
+                onClick={() => router.replace(buildHref(pathname, {
+                  q: qParam || null,
+                  level: levelParam || null,
+                  semester: semesterParam || null,
+                  faculty: facultyParam || null,
+                  faculty_id: facultyIdParam || null,
+                  dept: deptParam || null,
+                  dept_id: deptIdParam || null,
+                  course: null,
+                  session: sessionParam || null,
+                  type: typeParam !== "all" ? typeParam : null,
+                  sort: sortParam !== "newest" ? sortParam : null,
+                  verified: verifiedOnly ? "1" : null,
+                  featured: featuredOnly ? "1" : null,
+                  mine: mineParam || null,
+                }))}
+                className="text-xs font-bold text-[#5B35D5] hover:underline dark:text-indigo-300"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {fastLaneLoading
+              ? Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="flex shrink-0 animate-pulse rounded-2xl border border-border bg-card px-4 py-3"
+                  >
+                    <div>
+                      <div className="h-3 w-16 rounded bg-muted" />
+                      <div className="mt-2 h-2.5 w-20 rounded bg-muted" />
+                    </div>
+                  </div>
+                ))
+              : courseChips.map((course) => {
+                  const active = courseParam.toUpperCase() === course.code.toUpperCase();
+                  return (
+                    <button
+                      key={course.id}
+                      type="button"
+                      onClick={() => router.replace(buildHref(pathname, {
+                        q: qParam || null,
+                        level: levelParam || null,
+                        semester: semesterParam || null,
+                        faculty: facultyParam || null,
+                        faculty_id: facultyIdParam || null,
+                        dept: deptParam || null,
+                        dept_id: deptIdParam || null,
+                        course: active ? null : course.code,
+                        session: sessionParam || null,
+                        type: typeParam !== "all" ? typeParam : null,
+                        sort: sortParam !== "newest" ? sortParam : null,
+                        verified: verifiedOnly ? "1" : null,
+                        featured: featuredOnly ? "1" : null,
+                        mine: mineParam || null,
+                      }))}
+                      className={cn(
+                        "flex shrink-0 rounded-2xl border px-3 py-2 text-left transition",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                        active
+                          ? "border-[#5B35D5]/25 bg-[#EEEDFE] text-[#3B24A8]"
+                          : "border-border bg-card text-foreground hover:border-[#AFA9EC] hover:bg-[#EEEDFE] dark:hover:border-[#5B35D5]/40 dark:hover:bg-[#5B35D5]/10"
+                      )}
+                    >
+                      <div className="max-w-36">
+                        <p className="truncate text-[12px] font-extrabold">{course.code}</p>
+                        <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                          {typeof course.count === "number"
+                            ? `${course.count} material${course.count === 1 ? "" : "s"}`
+                            : course.title || "Course materials"}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+          </div>
+        </div>
+      ) : null}
+
       {fastLaneLoading ? (
-        <div className="space-y-3">
+        <div className="hidden space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-extrabold text-foreground">My courses</p>
             <span className="text-xs font-bold text-[#5B35D5] dark:text-indigo-300">All →</span>
@@ -1303,11 +1547,11 @@ export default function MaterialsClient() {
           </div>
         </div>
       ) : hasFastLanePrefs && fastLaneCourses.length > 0 ? (
-        <div className="space-y-3">
+        <div className="hidden space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-extrabold text-foreground">My courses</p>
             <Link
-              href="/study/materials"
+              href="/study/library"
               className="text-xs font-bold text-[#5B35D5] hover:underline dark:text-indigo-300"
             >
               All →
@@ -1338,7 +1582,7 @@ export default function MaterialsClient() {
       ) : null}
 
       {/* ✅ Sticky search/filter: keep full width like Study Home */}
-      <div className="sticky top-16 z-30">
+      <div className="hidden">
         <Card className="rounded-3xl border bg-background/85 backdrop-blur">
           <div className="flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2">
             <Search className="h-4 w-4 text-muted-foreground" />
@@ -1463,7 +1707,7 @@ export default function MaterialsClient() {
             </div>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
-              Tip: Try <span className="font-semibold">GST101</span> or "past question".
+              Tip: Try <span className="font-semibold">GST101</span> or &quot;past question&quot;.
             </p>
           )}
         </Card>
@@ -1507,7 +1751,7 @@ export default function MaterialsClient() {
             "inline-flex shrink-0 items-center gap-2 rounded-full border border-border/60 bg-background px-3 py-2 text-sm font-semibold text-muted-foreground transition",
             "hover:bg-secondary/50 hover:text-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          )}>More ↓</button>
+          )}>More</button>
       </div>
 
       {/* Error */}
@@ -1648,6 +1892,7 @@ export default function MaterialsClient() {
                 setDraftSort("newest");
                 setDraftVerified(false);
                 setDraftFeatured(false);
+                setDraftMine(false);
               }}
               className={cn(
                 "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground",
@@ -1726,6 +1971,7 @@ export default function MaterialsClient() {
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="My materials only" desc="Use your Study Hub profile scope" checked={draftMine} onChange={setDraftMine} />
           <ToggleRow label="Verified only" desc="Show only verified materials" checked={draftVerified} onChange={setDraftVerified} />
           <ToggleRow label="Featured only" desc="Show highlighted materials" checked={draftFeatured} onChange={setDraftFeatured} />
         </div>

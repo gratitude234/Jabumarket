@@ -8,16 +8,22 @@ import { isWithinScope } from "@/lib/studyAdmin/scope";
 import type { StudyModeratorScope } from "@/lib/studyAdmin/requireStudyModerator";
 
 const MODEL = "gemini-2.5-flash-lite";
-const BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const QUESTION_BANK_TEXT_CHARS = 24_000;
-const OUTLINE_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
-const QUESTION_TIMEOUT_MS = parsePositiveInt(process.env.NVIDIA_QUESTION_TIMEOUT_MS) ?? 25_000;
-const GEMINI_FALLBACK_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_FALLBACK_TIMEOUT_MS) ?? 60_000;
+const OUTLINE_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_OUTLINE_TIMEOUT_MS) ?? 60_000;
+const QUESTION_TIMEOUT_MS = parsePositiveInt(process.env.GEMINI_QUESTION_TIMEOUT_MS) ?? 60_000;
 
 function parsePositiveInt(value: string | undefined) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function geminiModelName() {
+  return process.env.GEMINI_MODEL?.trim() || MODEL;
+}
+
+function geminiGenerateUrl() {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelName()}:generateContent`;
 }
 
 export type BankTopic = {
@@ -120,7 +126,7 @@ async function callGeminiJson<T>(parts: Array<{ text: string } | { inline_data: 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("AI service not configured.");
 
-  const res = await fetch(`${BASE_URL}?key=${apiKey}`, {
+  const res = await fetch(`${geminiGenerateUrl()}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -177,7 +183,6 @@ Return ONLY JSON:
       temperature: 0.25,
       maxTokens: 1200,
       timeoutMs: OUTLINE_TIMEOUT_MS,
-      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
     });
     if (!result.ok) throw new Error(result.error);
 
@@ -267,7 +272,6 @@ Return ONLY JSON:
       temperature: 0.25,
       maxTokens: Math.min(4096, args.count * 360),
       timeoutMs: QUESTION_TIMEOUT_MS,
-      fallbackTimeoutMs: GEMINI_FALLBACK_TIMEOUT_MS,
     });
     if (!result.ok) throw new Error(result.error);
 

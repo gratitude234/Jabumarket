@@ -44,7 +44,7 @@ type GeneratedQuestion = {
 };
 
 type AiGenerationMeta = {
-  provider: "nvidia" | "gemini";
+  provider: "gemini";
   model: string;
   inputMode: "extracted-text" | "inline-file";
   reason?: string;
@@ -149,7 +149,7 @@ function formatMaterialType(t: string | null) {
 
 function formatAiProvider(ai: AiGenerationMeta | null) {
   if (!ai) return null;
-  return ai.provider === "nvidia" ? "NVIDIA Mistral" : "Gemini fallback";
+  return "Gemini";
 }
 
 function formatAiModel(ai: AiGenerationMeta | null) {
@@ -644,7 +644,7 @@ export default function MaterialDetailClient({
     setSaved(!wasSaved);
     try {
       await toggleSaved({ itemType: "material", materialId: m.id });
-      showToast(wasSaved ? "Removed from Library" : "Saved to Library");
+      showToast(wasSaved ? "Removed from Saved" : "Saved");
     } catch (e: any) {
       setSaved(wasSaved);
       showToast(e?.message ?? "Could not save. Try again.");
@@ -817,7 +817,7 @@ export default function MaterialDetailClient({
       {/* Back */}
       <div>
         <Link
-          href={fromCourse ? `/study/courses/${encodeURIComponent(fromCourse)}` : "/study/materials"}
+          href={fromCourse ? `/study/courses/${encodeURIComponent(fromCourse)}` : "/study/library"}
           className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <ArrowLeft className="h-4 w-4" />
           {fromCourse ?? "Materials"}
@@ -873,7 +873,17 @@ export default function MaterialDetailClient({
         </div>
 
         {/* Action area */}
-        <div className="space-y-3 bg-card px-5 pt-4 pb-5">
+        <div className="space-y-4 bg-card px-5 pb-5 pt-4">
+          <div className="rounded-3xl border border-border bg-background p-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">File actions</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Download, save, or share this material.</p>
+              </div>
+              <span className="shrink-0 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                {badge}
+              </span>
+            </div>
 
           {/* Primary action row */}
           <div className="flex items-center gap-2">
@@ -904,15 +914,22 @@ export default function MaterialDetailClient({
             </button>
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-3 text-xs text-muted-foreground">
             {downloads.toLocaleString("en-NG")} downloads
             {upvoteCount > 0 && ` · ${upvoteCount} found helpful`}
           </p>
 
-          <div className="border-t border-border/60" />
+          </div>
 
           {/* AI feature cluster */}
-          <div className="space-y-2">
+          {(isAiGenSupported(m) || kind === "pdf") && (
+          <div className="space-y-3 rounded-3xl border border-[#5B4FD9]/20 bg-[#EEEDFE]/40 p-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#5B4FD9]">AI study tools</p>
+              <p className="mt-1 text-sm font-semibold text-[#3A2EB8]">Turn this file into practice or ask questions about it.</p>
+            </div>
+
+            <div className="space-y-2">
             {/* Generate practice questions */}
             {isAiGenSupported(m) && (
               <button type="button"
@@ -942,17 +959,14 @@ export default function MaterialDetailClient({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className={cn("text-sm font-bold", chatOpen ? "text-[#3A2EB8]" : "text-foreground")}>Ask AI</p>
-                  <p className="text-xs text-muted-foreground">Ask anything</p>
+                  <p className="text-xs text-muted-foreground">Ask anything about this PDF</p>
                 </div>
               </button>
             )}
-          </div>
-        </div>
-      </div>
+            </div>
 
-
-      {/* Chat panel */}
-      {kind === "pdf" && chatOpen && (
+            {/* Chat panel */}
+            {kind === "pdf" && chatOpen && (
         <div id="material-chat-panel" className="overflow-hidden rounded-2xl border border-[#5B4FD9]/25 bg-card">
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <div className="flex items-center gap-2">
@@ -999,7 +1013,11 @@ export default function MaterialDetailClient({
             </button>
           </div>
         </div>
-      )}
+            )}
+          </div>
+          )}
+        </div>
+      </div>
 
       {/* Inline preview */}
       {hasFile && (
@@ -1080,8 +1098,11 @@ export default function MaterialDetailClient({
 
       {/* Related materials */}
       {relatedMaterials.length > 0 && (
-        <div>
-          <p className="mb-3 text-sm font-semibold text-foreground">More for {course?.course_code ?? "this course"}</p>
+        <div className="rounded-3xl border border-border bg-card p-4">
+          <div className="mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Related materials</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">More for {course?.course_code ?? "this course"}</p>
+          </div>
           <div className="space-y-2">
             {relatedMaterials.map((r) => (
               <Link key={r.id} href={`/study/materials/${r.id}`}
