@@ -8,16 +8,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import HeaderCard from "./_components/HeaderCard";
 import Tabs from "./_components/Tabs";
-import ContextBanner from "./_components/ContextBanner";
 import ProfileTab from "./_components/ProfileTab";
 import ListingsTab from "./_components/ListingsTab";
 import VerificationTab from "./_components/VerificationTab";
 import AccountTab from "./_components/AccountTab";
 
-import QuickActions from "./_components/QuickActions";
+import DashboardTab from "./_components/DashboardTab";
 import type { TabKey, Me, Vendor, StudyMeResponse, RoleFlags } from "./_components/types";
 import { initials } from "./_components/utils";
 import { clearMealDrafts } from "@/lib/mealDraft";
+import { useNavContext } from "@/contexts/NavContext";
 
 /* ─── Loading skeleton ─────────────────────────────────────── */
 
@@ -58,6 +58,7 @@ function MeSkeleton() {
 function MeInner() {
   const router = useRouter();
   const sp = useSearchParams();
+  const { isRider } = useNavContext();
 
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<Me | null>(null);
@@ -68,6 +69,8 @@ function MeInner() {
   const [materialsCount, setMaterialsCount] = useState(0);
   const [menuItemsCount, setMenuItemsCount] = useState(0);
   const [ordersTodayCount, setOrdersTodayCount] = useState(0);
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
 
   const activeTab = (sp.get("tab") as TabKey) || "profile";
 
@@ -86,26 +89,26 @@ function MeInner() {
       isStudyContributor = study.status === "approved" && !!study.role;
     }
 
-    return { isVendor, isVerifiedVendor, isFoodVendor, studyLoading, studyStatus, studyRole, isStudyContributor };
-  }, [vendor, study, studyLoading]);
+    return { isVendor, isVerifiedVendor, isFoodVendor, isRider, studyLoading, studyStatus, studyRole, isStudyContributor };
+  }, [vendor, study, studyLoading, isRider]);
 
   const availableTabs = useMemo(() => {
     if (roles.isFoodVendor) {
       return [
-        { key: "dashboard" as TabKey, label: "Dashboard" },
+        { key: "profile" as TabKey, label: "Dashboard" },
         { key: "study" as TabKey, label: "Study" },
         { key: "account" as TabKey, label: "Account" },
       ];
     }
     if (!roles.isVendor) {
       return [
-        { key: "profile" as TabKey, label: "Profile" },
+        { key: "profile" as TabKey, label: "Dashboard" },
         { key: "study" as TabKey, label: "Study" },
         { key: "account" as TabKey, label: "Account" },
       ];
     }
     return [
-      { key: "profile" as TabKey, label: "Profile" },
+      { key: "profile" as TabKey, label: "Dashboard" },
       { key: "listings" as TabKey, label: "Listings" },
       { key: "verification" as TabKey, label: "Verification" },
       { key: "account" as TabKey, label: "Account" },
@@ -116,9 +119,8 @@ function MeInner() {
   useEffect(() => {
     const ok = availableTabs.some((t) => t.key === activeTab);
     if (!ok) {
-      const defaultTab = roles.isFoodVendor ? "dashboard" : "profile";
       const url = new URL(window.location.href);
-      url.searchParams.set("tab", defaultTab);
+      url.searchParams.set("tab", "profile");
       router.replace(url.pathname + url.search);
     }
   }, [roles.isVendor, roles.isFoodVendor, activeTab, availableTabs, router]);
@@ -138,13 +140,16 @@ function MeInner() {
         return;
       }
 
+      const metadata = user.user_metadata as Record<string, unknown>;
+      const fullName = typeof metadata.full_name === "string" ? metadata.full_name : null;
+
       const nextMe: Me = {
         id: user.id,
         email: user.email ?? null,
-        full_name: (user.user_metadata as any)?.full_name ?? null,
+        full_name: fullName,
       };
 
-      const [vendorRes, materialsRes] = await Promise.all([
+      const [vendorRes, materialsRes, ordersRes, savedRes] = await Promise.all([
         supabase
           .from("vendors")
           .select("id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at,bank_name,bank_account_number,bank_account_name")
@@ -154,13 +159,26 @@ function MeInner() {
           .from("study_materials")
           .select("id", { count: "exact", head: true })
           .eq("uploader_id", user.id),
+        supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("buyer_id", user.id),
+        supabase
+          .from("listing_saves")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id),
       ]);
 
       if (!mounted) return;
 
       setMe(nextMe);
-      setVendor(vendorRes.error ? null : ((vendorRes.data as any) ?? null));
+      setVendor(vendorRes.error || !vendorRes.data ? null : (vendorRes.data as Vendor));
       setMaterialsCount(materialsRes.count ?? 0);
+      setOrdersCount(ordersRes.count ?? 0);
+      setSavedCount(savedRes.count ?? 0);
+      setListingsCount(0);
+      setMenuItemsCount(0);
+      setOrdersTodayCount(0);
 
       if (vendorRes.data?.id) {
         const listingsRes = await supabase
@@ -245,25 +263,24 @@ function MeInner() {
         materialsCount={materialsCount}
         menuItemsCount={menuItemsCount}
         ordersTodayCount={ordersTodayCount}
+        ordersCount={ordersCount}
+        savedCount={savedCount}
       />
-
-      {/* Context-sensitive banner */}
-      <ContextBanner roles={roles} vendor={vendor} />
-
-      {/* Role-aware quick actions */}
-      <QuickActions roles={roles} />
 
       {/* Tabs + content card */}
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
         <Tabs active={activeTab} onChange={setTab} items={availableTabs} />
         <div className="p-4">
           {(activeTab === "profile" || activeTab === "dashboard") && (
-            <ProfileTab
+            <DashboardTab
               roles={roles}
-              me={me}
               vendor={vendor}
-              onVendorUpdated={(v) => setVendor(v)}
-              onMeUpdated={(m) => setMe(m)}
+              listingsCount={listingsCount}
+              materialsCount={materialsCount}
+              menuItemsCount={menuItemsCount}
+              ordersTodayCount={ordersTodayCount}
+              ordersCount={ordersCount}
+              savedCount={savedCount}
             />
           )}
 
@@ -304,7 +321,16 @@ function MeInner() {
           )}
 
           {activeTab === "account" && (
-            <AccountTab me={me} onSignOut={signOut} />
+            <div className="space-y-6">
+              <ProfileTab
+                roles={roles}
+                me={me}
+                vendor={vendor}
+                onVendorUpdated={(v) => setVendor(v)}
+                onMeUpdated={(m) => setMe(m)}
+              />
+              <AccountTab me={me} onSignOut={signOut} />
+            </div>
           )}
         </div>
       </div>

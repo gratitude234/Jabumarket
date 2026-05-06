@@ -72,6 +72,7 @@ export type RoleFlags = {
   isVendor: boolean;
   isVerifiedVendor: boolean;
   isFoodVendor: boolean;
+  isRider: boolean;
 
   // Study
   studyLoading: boolean;
