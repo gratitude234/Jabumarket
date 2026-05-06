@@ -14,7 +14,7 @@ import VerificationTab from "./_components/VerificationTab";
 import AccountTab from "./_components/AccountTab";
 
 import DashboardTab from "./_components/DashboardTab";
-import type { TabKey, Me, Vendor, StudyMeResponse, RoleFlags } from "./_components/types";
+import type { TabKey, Me, Vendor, RoleFlags } from "./_components/types";
 import { initials } from "./_components/utils";
 import { clearMealDrafts } from "@/lib/mealDraft";
 import { useNavContext } from "@/contexts/NavContext";
@@ -63,10 +63,7 @@ function MeInner() {
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<Me | null>(null);
   const [vendor, setVendor] = useState<Vendor | null>(null);
-  const [study, setStudy] = useState<StudyMeResponse | null>(null);
-  const [studyLoading, setStudyLoading] = useState(true);
   const [listingsCount, setListingsCount] = useState(0);
-  const [materialsCount, setMaterialsCount] = useState(0);
   const [menuItemsCount, setMenuItemsCount] = useState(0);
   const [ordersTodayCount, setOrdersTodayCount] = useState(0);
   const [ordersCount, setOrdersCount] = useState(0);
@@ -79,31 +76,19 @@ function MeInner() {
     const isVerifiedVendor = !!vendor?.verified || vendor?.verification_status === "verified";
     const isFoodVendor = !!vendor?.id && vendor?.vendor_type === "food";
 
-    let studyStatus = null as RoleFlags["studyStatus"];
-    let studyRole = null as RoleFlags["studyRole"];
-    let isStudyContributor = false;
-
-    if (study && "ok" in study && study.ok === true) {
-      studyStatus = study.status;
-      studyRole = study.role;
-      isStudyContributor = study.status === "approved" && !!study.role;
-    }
-
-    return { isVendor, isVerifiedVendor, isFoodVendor, isRider, studyLoading, studyStatus, studyRole, isStudyContributor };
-  }, [vendor, study, studyLoading, isRider]);
+    return { isVendor, isVerifiedVendor, isFoodVendor, isRider };
+  }, [vendor, isRider]);
 
   const availableTabs = useMemo(() => {
     if (roles.isFoodVendor) {
       return [
         { key: "profile" as TabKey, label: "Dashboard" },
-        { key: "study" as TabKey, label: "Study" },
         { key: "account" as TabKey, label: "Account" },
       ];
     }
     if (!roles.isVendor) {
       return [
         { key: "profile" as TabKey, label: "Dashboard" },
-        { key: "study" as TabKey, label: "Study" },
         { key: "account" as TabKey, label: "Account" },
       ];
     }
@@ -149,16 +134,12 @@ function MeInner() {
         full_name: fullName,
       };
 
-      const [vendorRes, materialsRes, ordersRes, savedRes] = await Promise.all([
+      const [vendorRes, ordersRes, savedRes] = await Promise.all([
         supabase
           .from("vendors")
           .select("id,user_id,name,whatsapp,phone,location,vendor_type,verified,verification_status,verified_at,rejected_at,rejection_reason,created_at,bank_name,bank_account_number,bank_account_name")
           .eq("user_id", user.id)
           .maybeSingle(),
-        supabase
-          .from("study_materials")
-          .select("id", { count: "exact", head: true })
-          .eq("uploader_id", user.id),
         supabase
           .from("orders")
           .select("id", { count: "exact", head: true })
@@ -173,7 +154,6 @@ function MeInner() {
 
       setMe(nextMe);
       setVendor(vendorRes.error || !vendorRes.data ? null : (vendorRes.data as Vendor));
-      setMaterialsCount(materialsRes.count ?? 0);
       setOrdersCount(ordersRes.count ?? 0);
       setSavedCount(savedRes.count ?? 0);
       setListingsCount(0);
@@ -209,29 +189,6 @@ function MeInner() {
     return () => { mounted = false; };
   }, [router]);
 
-  // Load study role
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadStudy() {
-      setStudyLoading(true);
-      try {
-        const res = await fetch("/api/study/rep-applications/me", { method: "GET" });
-        const json = (await res.json()) as StudyMeResponse;
-        if (!mounted) return;
-        setStudy(json);
-      } catch {
-        if (!mounted) return;
-        setStudy({ ok: false });
-      } finally {
-        if (mounted) setStudyLoading(false);
-      }
-    }
-
-    loadStudy();
-    return () => { mounted = false; };
-  }, []);
-
   function setTab(tab: TabKey) {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
@@ -260,7 +217,6 @@ function MeInner() {
         vendorName={vendor?.name ?? null}
         vendorId={vendor?.id ?? null}
         listingsCount={listingsCount}
-        materialsCount={materialsCount}
         menuItemsCount={menuItemsCount}
         ordersTodayCount={ordersTodayCount}
         ordersCount={ordersCount}
@@ -276,7 +232,6 @@ function MeInner() {
               roles={roles}
               vendor={vendor}
               listingsCount={listingsCount}
-              materialsCount={materialsCount}
               menuItemsCount={menuItemsCount}
               ordersTodayCount={ordersTodayCount}
               ordersCount={ordersCount}
@@ -286,17 +241,6 @@ function MeInner() {
 
           {activeTab === "listings" && (
             <ListingsTab vendorId={vendor?.id ?? null} />
-          )}
-
-          {activeTab === "study" && (
-            <ProfileTab
-              roles={roles}
-              me={me}
-              vendor={vendor}
-              onVendorUpdated={(v) => setVendor(v)}
-              onMeUpdated={(m) => setMe(m)}
-              studyOnly
-            />
           )}
 
           {activeTab === "verification" && roles.isVendor && (

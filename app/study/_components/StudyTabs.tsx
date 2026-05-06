@@ -13,6 +13,7 @@ import {
   MessageCircleQuestion,
   MoreHorizontal,
   Trophy,
+  UserRound,
   X,
   Zap,
 } from "lucide-react";
@@ -80,10 +81,11 @@ function MoreSheet({
   const dragStartY = useRef<number | null>(null);
   const [dragOffset, setDragOffset] = useState(0);
   const isDragging = useRef(false);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setDragOffset(0);
+      queueMicrotask(() => setDragOffset(0));
       return;
     }
     const prev = document.body.style.overflow;
@@ -101,6 +103,7 @@ function MoreSheet({
   const handleTouchStart = (e: React.TouchEvent) => {
     dragStartY.current = e.touches[0].clientY;
     isDragging.current = true;
+    setDragging(true);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -117,6 +120,7 @@ function MoreSheet({
     }
     isDragging.current = false;
     dragStartY.current = null;
+    setDragging(false);
   };
 
   return (
@@ -147,7 +151,7 @@ function MoreSheet({
           transform: open
             ? `translateY(${dragOffset}px)`
             : "translateY(100%)",
-          transition: isDragging.current
+          transition: dragging
             ? "none"
             : open
             ? "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)"
@@ -333,6 +337,12 @@ const DESKTOP_TABS: Tab[] = [
     icon: <History className="h-3.5 w-3.5" />,
     match: "prefix",
   },
+  {
+    href: "/study/me",
+    label: "Me",
+    icon: <UserRound className="h-3.5 w-3.5" />,
+    match: "exact",
+  },
 ];
 
 const MOBILE_TABS: Tab[] = [
@@ -360,6 +370,12 @@ const MOBILE_TABS: Tab[] = [
     icon: <MessageCircleQuestion className="h-3.5 w-3.5" />,
     match: "prefix",
   },
+  {
+    href: "/study/me",
+    label: "Me",
+    icon: <UserRound className="h-3.5 w-3.5" />,
+    match: "exact",
+  },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -369,6 +385,7 @@ export default function StudyTabs({
 }: {
   contributorStatus?: ContributorStatus;
 }) {
+  void contributorStatus;
   const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);
   const overflowActive = isOverflowActive(pathname);

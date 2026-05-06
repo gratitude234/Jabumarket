@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BadgeCheck, BookOpen, Settings, ShieldCheck, Store, Truck, User } from "lucide-react";
+import { BadgeCheck, Settings, ShieldCheck, Store, Truck, User } from "lucide-react";
 import type { RoleFlags } from "./types";
 import { cn, pillTone, avatarGradient } from "./utils";
 
@@ -22,7 +22,6 @@ export default function HeaderCard(props: {
   vendorName: string | null;
   vendorId?: string | null;
   listingsCount?: number;
-  materialsCount?: number;
   menuItemsCount?: number;
   ordersTodayCount?: number;
   ordersCount?: number;
@@ -45,7 +44,7 @@ export default function HeaderCard(props: {
       : [
           { label: "Orders", value: props.ordersCount ?? 0 },
           { label: "Saved", value: props.savedCount ?? 0 },
-          { label: "Materials", value: props.materialsCount ?? 0 },
+          { label: "Listings", value: props.listingsCount ?? 0 },
         ];
 
   return (
@@ -76,7 +75,7 @@ export default function HeaderCard(props: {
           </span>
         ) : (
           <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", pillTone("base"))}>
-            <User className="h-3 w-3" /> Student
+            <User className="h-3 w-3" /> Buyer
           </span>
         )}
 
@@ -89,19 +88,6 @@ export default function HeaderCard(props: {
         {roles.isVendor && !roles.isVerifiedVendor && (
           <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", pillTone("warn"))}>
             <ShieldCheck className="h-3 w-3" /> Not verified
-          </span>
-        )}
-
-        {!roles.studyLoading && roles.isStudyContributor && (
-          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", pillTone("good"))}>
-            <BookOpen className="h-3 w-3" />
-            {roles.studyRole === "dept_librarian" ? "Dept Librarian" : "Course Rep"}
-          </span>
-        )}
-
-        {!roles.studyLoading && !roles.isStudyContributor && roles.studyStatus === "pending" && (
-          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", pillTone("warn"))}>
-            <BookOpen className="h-3 w-3" /> Rep pending
           </span>
         )}
 

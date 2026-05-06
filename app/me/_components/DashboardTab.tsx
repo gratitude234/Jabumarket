@@ -5,11 +5,9 @@ import type { ReactNode } from "react";
 import {
   BadgeCheck,
   Bookmark,
-  BookOpen,
   ChefHat,
   ChevronRight,
   ClipboardList,
-  FileText,
   GraduationCap,
   MessageCircle,
   PackagePlus,
@@ -25,24 +23,24 @@ import { cn } from "./utils";
 
 type DashboardCounts = {
   listingsCount: number;
-  materialsCount: number;
   menuItemsCount: number;
   ordersTodayCount: number;
   ordersCount: number;
   savedCount: number;
 };
 
+type Tone = "market" | "green" | "blue" | "zinc";
+
 type ActionCard = {
   href: string;
   title: string;
   desc: string;
   icon: ReactNode;
-  tone: "market" | "study" | "green" | "blue" | "zinc";
+  tone: Tone;
 };
 
-const toneClass: Record<ActionCard["tone"], { icon: string }> = {
+const toneClass: Record<Tone, { icon: string }> = {
   market: { icon: "border-orange-100 bg-orange-50 text-orange-700" },
-  study: { icon: "border-violet-100 bg-violet-50 text-violet-700" },
   green: { icon: "border-emerald-100 bg-emerald-50 text-emerald-700" },
   blue: { icon: "border-blue-100 bg-blue-50 text-blue-700" },
   zinc: { icon: "border-zinc-200 bg-zinc-50 text-zinc-700" },
@@ -53,15 +51,13 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 function ActionCard({ action }: { action: ActionCard }) {
-  const tone = toneClass[action.tone];
-
   return (
     <Link
       href={action.href}
       className="group rounded-2xl border border-zinc-100 bg-white p-3 no-underline transition hover:border-zinc-200 hover:bg-zinc-50"
     >
       <div className="flex items-start gap-3">
-        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl border", tone.icon)}>
+        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl border", toneClass[action.tone].icon)}>
           {action.icon}
         </span>
         <span className="min-w-0 flex-1">
@@ -85,17 +81,15 @@ function DashboardRow({
   title: string;
   desc: string;
   icon: ReactNode;
-  tone: ActionCard["tone"];
+  tone: Tone;
   badge?: string;
 }) {
-  const classes = toneClass[tone];
-
   return (
     <Link
       href={href}
       className="flex items-center gap-3 rounded-2xl border border-zinc-100 bg-white p-3.5 no-underline transition hover:border-zinc-200 hover:bg-zinc-50"
     >
-      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl border", classes.icon)}>
+      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl border", toneClass[tone].icon)}>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
@@ -120,7 +114,6 @@ export default function DashboardTab({
   roles,
   vendor,
   listingsCount,
-  materialsCount,
   menuItemsCount,
   ordersTodayCount,
   ordersCount,
@@ -146,50 +139,81 @@ export default function DashboardTab({
           tone: "green",
         },
         {
-          href: "/my-orders",
-          title: "My Orders",
-          desc: countLabel(ordersCount, "order"),
-          icon: <UtensilsCrossed className="h-4 w-4" />,
-          tone: "blue",
+          href: "/vendor/setup",
+          title: "Food Settings",
+          desc: "Profile, bank, hours",
+          icon: <Settings className="h-4 w-4" />,
+          tone: "zinc",
         },
         {
-          href: "/study",
-          title: "Study Hub",
-          desc: "Materials, CBT, GPA, Q&A",
-          icon: <BookOpen className="h-4 w-4" />,
-          tone: "study",
+          href: "/inbox",
+          title: "Messages",
+          desc: "Buyer chats and order issues",
+          icon: <MessageCircle className="h-4 w-4" />,
+          tone: "blue",
         },
       ]
-    : [
-        {
-          href: "/my-orders",
-          title: "My Orders",
-          desc: countLabel(ordersCount, "order"),
-          icon: <ShoppingBag className="h-4 w-4" />,
-          tone: "market",
-        },
-        {
-          href: "/saved",
-          title: "Saved",
-          desc: countLabel(savedCount, "listing"),
-          icon: <Bookmark className="h-4 w-4" />,
-          tone: "green",
-        },
-        {
-          href: roles.isVendor ? "/my-listings" : "/post",
-          title: roles.isVendor ? "My Listings" : "Post Item",
-          desc: roles.isVendor ? countLabel(listingsCount, "listing") : "Sell an item or service",
-          icon: roles.isVendor ? <ClipboardList className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />,
-          tone: "blue",
-        },
-        {
-          href: "/study",
-          title: "Study Hub",
-          desc: "Materials, CBT, GPA, Q&A",
-          icon: <BookOpen className="h-4 w-4" />,
-          tone: "study",
-        },
-      ];
+    : roles.isVendor
+      ? [
+          {
+            href: "/my-listings",
+            title: "My Listings",
+            desc: countLabel(listingsCount, "listing"),
+            icon: <ClipboardList className="h-4 w-4" />,
+            tone: "blue",
+          },
+          {
+            href: "/vendor/orders",
+            title: "Vendor Orders",
+            desc: "Manage buyer orders",
+            icon: <ShoppingBag className="h-4 w-4" />,
+            tone: "market",
+          },
+          {
+            href: "/me?tab=verification",
+            title: "Verification",
+            desc: roles.isVerifiedVendor ? "Store verified" : "Build buyer trust",
+            icon: roles.isVerifiedVendor ? <BadgeCheck className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />,
+            tone: roles.isVerifiedVendor ? "green" : "zinc",
+          },
+          {
+            href: "/vendor/setup",
+            title: "Store Settings",
+            desc: "Profile and bank details",
+            icon: <Settings className="h-4 w-4" />,
+            tone: "zinc",
+          },
+        ]
+      : [
+          {
+            href: "/my-orders",
+            title: "My Orders",
+            desc: countLabel(ordersCount, "order"),
+            icon: <ShoppingBag className="h-4 w-4" />,
+            tone: "market",
+          },
+          {
+            href: "/saved",
+            title: "Saved Items",
+            desc: countLabel(savedCount, "listing"),
+            icon: <Bookmark className="h-4 w-4" />,
+            tone: "green",
+          },
+          {
+            href: "/post",
+            title: "Post Item",
+            desc: "Sell an item or service",
+            icon: <PackagePlus className="h-4 w-4" />,
+            tone: "blue",
+          },
+          {
+            href: "/inbox",
+            title: "Messages",
+            desc: "Buyer and seller chats",
+            icon: <MessageCircle className="h-4 w-4" />,
+            tone: "zinc",
+          },
+        ];
 
   return (
     <div className="space-y-6">
@@ -201,23 +225,6 @@ export default function DashboardTab({
           ))}
         </div>
       </section>
-
-      <Link
-        href="/study"
-        className="group flex items-center gap-4 rounded-2xl border border-violet-100 bg-violet-50 p-4 no-underline transition hover:border-violet-200 hover:bg-violet-100/70"
-      >
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-violet-700 shadow-sm">
-          <GraduationCap className="h-6 w-6" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-xs font-bold uppercase tracking-wide text-violet-700">Study Hub</span>
-          <span className="mt-1 block text-base font-bold text-zinc-950">Continue from Study Hub</span>
-          <span className="mt-1 block text-xs leading-relaxed text-zinc-600">
-            Jump into materials, practice tests, GPA tools and course questions.
-          </span>
-        </span>
-        <ChevronRight className="h-5 w-5 shrink-0 text-violet-500" />
-      </Link>
 
       <section className="space-y-3">
         <SectionTitle>Marketplace</SectionTitle>
@@ -245,8 +252,8 @@ export default function DashboardTab({
           />
           <DashboardRow
             href="/inbox"
-            title="Inbox"
-            desc="Buyer, seller and order messages"
+            title="Messages"
+            desc="Buyer, seller and order conversations"
             icon={<MessageCircle className="h-4 w-4" />}
             tone="zinc"
           />
@@ -338,37 +345,22 @@ export default function DashboardTab({
               tone="blue"
             />
           )}
-
-          {roles.isStudyContributor ? (
-            <>
-              <DashboardRow
-                href="/study/materials/upload"
-                title="Upload Study Material"
-                desc="Add files for your approved scope"
-                icon={<FileText className="h-4 w-4" />}
-                tone="study"
-                badge="Rep"
-              />
-              <DashboardRow
-                href="/study/materials/my"
-                title="My Study Uploads"
-                desc={countLabel(materialsCount, "material")}
-                icon={<BookOpen className="h-4 w-4" />}
-                tone="study"
-              />
-            </>
-          ) : (
-            <DashboardRow
-              href="/study/apply-rep"
-              title={roles.studyStatus === "pending" ? "Study Rep Application" : "Become a Course Rep"}
-              desc={roles.studyStatus === "pending" ? "Your application is under review" : "Apply to upload and manage materials"}
-              icon={<ShieldCheck className="h-4 w-4" />}
-              tone="study"
-              badge={roles.studyStatus === "pending" ? "Pending" : undefined}
-            />
-          )}
         </div>
       </section>
+
+      <Link
+        href="/study/me"
+        className="flex items-center gap-3 rounded-2xl border border-zinc-100 bg-zinc-50 p-3 no-underline transition hover:border-zinc-200 hover:bg-white"
+      >
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-200 bg-white text-zinc-700">
+          <GraduationCap className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-zinc-900">Study Hub profile</span>
+          <span className="mt-0.5 block truncate text-xs text-zinc-500">Manage your academic profile separately</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
+      </Link>
     </div>
   );
 }
