@@ -579,6 +579,7 @@ export default function MaterialsClient() {
   const sessionParam = sp.get("session") ?? "";
   const verifiedParam = sp.get("verified") ?? "";
   const featuredParam = sp.get("featured") ?? "";
+  const personalizedParam = sp.get("personalized") ?? "1";
   const typeParam = (sp.get("type") ?? "all") as MaterialTypeKey;
   const sortParam = (sp.get("sort") ?? "newest") as SortKey;
 
@@ -589,6 +590,7 @@ export default function MaterialsClient() {
 
   const verifiedOnly = verifiedParam === "1";
   const featuredOnly = featuredParam === "1";
+  const personalizedOff = personalizedParam === "0";
 
   // Local input state
   const [q, setQ] = useState(qParam);
@@ -689,6 +691,7 @@ export default function MaterialsClient() {
       verifiedOnly ? "v1" : "v0",
       featuredOnly ? "f1" : "f0",
       mineOnly ? "m1" : mineExplicitOff ? "m0x" : "m0",
+      personalizedOff ? "p0" : "p1",
     ].join("|");
   }, [
     qParam,
@@ -706,6 +709,7 @@ export default function MaterialsClient() {
     featuredOnly,
     mineOnly,
     mineExplicitOff,
+    personalizedOff,
   ]);
 
   // Reset list when filters change
@@ -863,7 +867,7 @@ export default function MaterialsClient() {
   // After prefs load, scope the default view to the student's dept+level (mine=0, show all).
   useEffect(() => {
     if (!prefsLoaded) return;
-    if (mineParam) return;
+    if (mineParam || personalizedOff) return;
     // Only redirect if we actually have a dept_id to scope by and it isn't already in the URL.
     if (!scopeDeptId || deptIdParam) return;
 
@@ -886,7 +890,7 @@ export default function MaterialsClient() {
 
     router.replace(href, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefsLoaded]);
+  }, [prefsLoaded, personalizedOff]);
 
   const hasFastLanePrefs = Boolean(scopeLevel || scopeDeptId || scopeDept);
 
@@ -1068,6 +1072,7 @@ export default function MaterialsClient() {
       if (featuredOnly) url.searchParams.set("featured", "1");
       if (sortParam) url.searchParams.set("sort", String(sortParam));
       if (mineOnly) url.searchParams.set("mine", "1");
+      if (personalizedOff) url.searchParams.set("personalized", "0");
 
       const res = await fetch(url.toString(), { cache: "no-store" });
       const json = await res.json();
@@ -1137,6 +1142,7 @@ export default function MaterialsClient() {
           verified: verifiedOnly ? "1" : null,
           featured: featuredOnly ? "1" : null,
           mine: mineParam ? mineParam : null,
+          personalized: personalizedOff ? "0" : null,
         })
       );
     }, 350);
@@ -1163,6 +1169,7 @@ export default function MaterialsClient() {
     featuredOnly,
     mineOnly,
     mineParam,
+    personalizedOff,
   ]);
 
   function openFilters() {
@@ -1199,6 +1206,7 @@ export default function MaterialsClient() {
         verified: draftVerified ? "1" : null,
         featured: draftFeatured ? "1" : null,
         mine: draftMine ? "1" : mineOnly || mineExplicitOff ? "0" : null,
+        personalized: personalizedOff ? "0" : null,
       })
     );
     setDrawerOpen(false);
@@ -1209,6 +1217,7 @@ export default function MaterialsClient() {
     router.replace(
       buildHref(pathname, {
         mine: mineOnly ? "0" : (mineParam || null),
+        personalized: personalizedOff ? "0" : null,
       })
     );
   }
@@ -1300,6 +1309,33 @@ export default function MaterialsClient() {
   return (
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={repStatus ?? undefined} />
+
+      {prefsLoaded && scopeDept && !personalizedOff ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
+          <span className="min-w-0">
+            Showing your {myBadge ?? "academic"} materials first.
+          </span>
+          <Link
+            href={buildHref(pathname, {
+              q: qParam || null,
+              type: typeParam !== "all" ? typeParam : null,
+              sort: sortParam !== "newest" ? sortParam : null,
+              personalized: "0",
+              mine: "0",
+            })}
+            className="shrink-0 text-xs font-bold underline underline-offset-2"
+          >
+            Browse all
+          </Link>
+        </div>
+      ) : personalizedOff ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <span>Browsing all Study materials.</span>
+          <Link href="/study/library" className="shrink-0 text-xs font-bold text-[#5B35D5] underline underline-offset-2">
+            Back to my scope
+          </Link>
+        </div>
+      ) : null}
 
       {/* M-7: Onboarding nudge — shown when user has no department prefs set and hasn't dismissed it */}
       {prefsLoaded && !scopeDept && typeof window !== "undefined" && !window.localStorage.getItem("jabuStudy_skipOnboarding") && (

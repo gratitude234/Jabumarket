@@ -92,6 +92,7 @@ export async function GET(req: Request) {
     const type = (url.searchParams.get("type") || "").trim();
     const verifiedOnly = (url.searchParams.get("verified") || "") === "1";
     const featuredOnly = (url.searchParams.get("featured") || "") === "1";
+    const personalized = (url.searchParams.get("personalized") || "1") !== "0";
     const sort = ((url.searchParams.get("sort") || "newest") as SortKey) || "newest";
     const mineOnly = (url.searchParams.get("mine") || "") === "1";
 
@@ -101,7 +102,7 @@ export async function GET(req: Request) {
     const to = from + pageSize - 1;
 
     const supabase = await createSupabaseServerClient();
-    const scope = await getUserScope(supabase);
+    const scope = personalized ? await getUserScope(supabase) : null;
 
     if (mineOnly) {
       const { data: authData } = await supabase.auth.getUser();
@@ -205,6 +206,9 @@ export async function GET(req: Request) {
 
     if (semester) {
       const sem = mapSemesterParamToDb(semester);
+      if (sem) query = query.eq("semester", sem);
+    } else if (scope?.semester) {
+      const sem = mapSemesterParamToDb(scope.semester);
       if (sem) query = query.eq("semester", sem);
     }
 

@@ -25,10 +25,11 @@ export default function StudyHomeClient() {
 }
 
 function StudyHomeInner() {
-  const { loading, displayName, prefs, hasPrefs, rep, userId, updateSemester } =
+  const { loading, displayName, prefs, hasPrefs, isProfileComplete, scopeLabel, rep, userId, updateSemester } =
     useStudyPrefs();
 
   const [chips, setChips] = useState<Chips>({});
+  const [browseWithoutSetup, setBrowseWithoutSetup] = useState(false);
   const [semesterPrompt, setSemesterPrompt] = useState<{
     show: boolean;
     suggested: string | null;
@@ -89,6 +90,9 @@ function StudyHomeInner() {
       try {
         if (localStorage.getItem("jabu:setupNudgeDismissed") === "1") {
           setNudgeDismissed(true);
+        }
+        if (localStorage.getItem("jabuStudy_browseWithoutSetup") === "1") {
+          setBrowseWithoutSetup(true);
         }
       } catch {
         // non-critical
@@ -234,9 +238,39 @@ function StudyHomeInner() {
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs contributorStatus={rep.status} />
 
+      {!loading && !isProfileComplete && !browseWithoutSetup ? (
+        <SetupFirstPanel
+          onBrowse={() => {
+            try {
+              localStorage.setItem("jabuStudy_browseWithoutSetup", "1");
+            } catch {
+              // non-critical
+            }
+            setBrowseWithoutSetup(true);
+          }}
+        />
+      ) : null}
+
+      {!loading && !isProfileComplete && !browseWithoutSetup ? null : (
+        <>
+          {!loading && !isProfileComplete ? (
+            <div className="rounded-3xl border border-[#5B35D5]/20 bg-[#EEEDFE] p-4 text-sm text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
+              <p className="font-extrabold">Complete your academic profile</p>
+              <p className="mt-1 text-xs">
+                Browsing is open, but Study Hub works best after you save your official faculty, department, level and semester.
+              </p>
+              <Link
+                href="/study/onboarding?next=/study"
+                className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-2 text-xs font-bold text-white no-underline"
+              >
+                Finish setup <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          ) : null}
+
       <BannerSlot
         examCountdown={examCountdown}
-        hasPrefs={hasPrefs}
+        hasPrefs={isProfileComplete}
         nudgeDismissed={nudgeResolved && !loading ? nudgeDismissed : true}
         semesterPrompt={semesterPrompt}
         switchingSemester={switchingSemester}
@@ -261,14 +295,46 @@ function StudyHomeInner() {
       ) : null}
 
       {userId && totalAttempts !== null
-        ? isNewUser
-          ? <QuickStartChecklist userId={userId} hasPrefs={hasPrefs} />
+          ? isNewUser
+          ? <QuickStartChecklist userId={userId} hasPrefs={isProfileComplete} />
           : <StatsStrip userId={userId} />
         : null}
 
       <ForYouSection chips={chips} setChips={setChips} onClearFilters={clearFilters} />
 
-      <MyCourses />
+      <MyCourses scopeLabel={scopeLabel} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SetupFirstPanel({ onBrowse }: { onBrowse: () => void }) {
+  return (
+    <div className="rounded-3xl border border-[#5B35D5]/20 bg-card p-5 shadow-sm">
+      <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
+        <div>
+          <p className="text-lg font-extrabold text-foreground">Set up your academic profile</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Save your official faculty, department, level and semester so Study Hub can show your courses, materials, practice sets and Q&A first.
+          </p>
+        </div>
+        <Link
+          href="/study/onboarding?next=/study"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-bold text-white no-underline hover:bg-[#4a2bb0]"
+        >
+          Start setup <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+      <div className="mt-4 border-t border-border pt-4">
+        <button
+          type="button"
+          onClick={onBrowse}
+          className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+        >
+          Browse without setup
+        </button>
+      </div>
     </div>
   );
 }
@@ -282,13 +348,24 @@ type CourseRow = {
   materialCount: number;
 };
 
-function MyCourses() {
-  const { prefs, loading: prefsLoading, hasPrefs } = useStudyPrefs();
+function MyCourses({ scopeLabel }: { scopeLabel: string | null }) {
+  const { prefs, loading: prefsLoading, isProfileComplete, courses: scopedCourses } = useStudyPrefs();
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
 
   useEffect(() => {
     if (prefsLoading) return;
+    if (!isProfileComplete) return;
+    if (scopedCourses.length > 0) {
+      setCoursesLoading(false);
+      setCourses(scopedCourses.map((course) => ({
+        id: course.id,
+        course_code: course.course_code,
+        course_title: course.course_title ?? "",
+        materialCount: 0,
+      })));
+      return;
+    }
     if (!prefs?.department_id && !prefs?.level) return;
 
     let cancelled = false;
@@ -337,7 +414,7 @@ function MyCourses() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [prefsLoading, prefs?.department_id, prefs?.level]);
+  }, [isProfileComplete, prefsLoading, prefs?.department_id, prefs?.level, scopedCourses]);
 
   if (prefsLoading) {
     return (
@@ -352,13 +429,13 @@ function MyCourses() {
     );
   }
 
-  if (!hasPrefs) {
+  if (!isProfileComplete) {
     return (
       <div className="rounded-3xl border border-border bg-card p-6 text-center">
         <BookOpen className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
         <p className="font-semibold text-foreground">Your courses will appear here</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Set up your profile to see courses for your department and level.
+          Set up your official profile to see courses for your department, level and semester.
         </p>
         <Link
           href="/study/onboarding"
@@ -375,7 +452,7 @@ function MyCourses() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-bold text-foreground">My Courses</h2>
-          <p className="text-xs text-muted-foreground">Your department&apos;s course hubs</p>
+          <p className="text-xs text-muted-foreground">{scopeLabel ?? "Your course hubs"}</p>
         </div>
         <Link
           href="/study/library"

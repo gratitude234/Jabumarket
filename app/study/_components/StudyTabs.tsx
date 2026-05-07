@@ -37,8 +37,8 @@ function isActive(pathname: string, tab: Pick<Tab, "href" | "match">) {
 }
 
 function useStudyOnboardingBanner() {
-  const { loading, hasPrefs } = useStudyPrefs();
-  return { shouldShowBanner: !loading && !hasPrefs };
+  const { loading, isProfileComplete } = useStudyPrefs();
+  return { shouldShowBanner: !loading && !isProfileComplete };
 }
 
 function StudyOnboardingBannerInner() {

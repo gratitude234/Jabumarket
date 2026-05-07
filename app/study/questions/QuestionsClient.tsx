@@ -159,13 +159,14 @@ function QuestionsInner() {
   const router   = useRouter();
   const pathname = usePathname();
   const sp       = useSearchParams();
-  const { prefs, hasPrefs } = useStudyPrefs();
+  const { prefs, isProfileComplete, courseCodes, scopeLabel } = useStudyPrefs();
 
   const qParam        = sp.get("q") ?? "";
   const courseParam   = sp.get("course") ?? "";
   const levelParam    = (sp.get("level") ?? "") as LevelKey;
   const unsolvedParam = sp.get("unsolved") === "1";
   const sortParam     = (sp.get("sort") ?? "newest") as SortKey;
+  const personalizedOff = sp.get("personalized") === "0";
 
   const autoAppliedRef = useRef(false);
   const [autoFilteredLevel, setAutoFilteredLevel] = useState<string | null>(null);
@@ -173,7 +174,7 @@ function QuestionsInner() {
   useEffect(() => {
     if (autoAppliedRef.current) return;
     autoAppliedRef.current = true;
-    if (!levelParam && prefs?.level) {
+    if (!personalizedOff && !levelParam && prefs?.level) {
       const lvl = String(prefs.level);
       setAutoFilteredLevel(lvl);
       router.replace(buildHref(pathname, {
@@ -182,7 +183,7 @@ function QuestionsInner() {
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs]);
+  }, [prefs, personalizedOff]);
 
   const [q,          setQ]          = useState(qParam);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -224,6 +225,7 @@ function QuestionsInner() {
       router.replace(buildHref(pathname, {
         q: qNorm || null, course: cNorm || null, level: levelParam || null,
         unsolved: unsolvedParam ? 1 : null, sort: sortParam !== "newest" ? sortParam : null,
+        personalized: personalizedOff ? "0" : null,
       }));
     }, 350);
     return () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); };
@@ -234,14 +236,15 @@ function QuestionsInner() {
       q: normalizeQuery(q) || null, course: normalizeQuery(courseParam).toUpperCase() || null,
       level: draftLevel || null, unsolved: draftUnsolved ? 1 : null,
       sort: draftSort !== "newest" ? draftSort : null,
+      personalized: personalizedOff ? "0" : null,
     }));
     setDrawerOpen(false);
   }
 
-  function clearAll() { setQ(""); router.replace(pathname); }
+  function clearAll() { setQ(""); router.replace(personalizedOff ? `${pathname}?personalized=0` : pathname); }
 
   function setQuickFilter(key: "unsolved" | "sort", value: string) {
-    const base = { q: qParam || null, course: courseParam || null, level: levelParam || null };
+    const base = { q: qParam || null, course: courseParam || null, level: levelParam || null, personalized: personalizedOff ? "0" : null };
     if (key === "unsolved") {
       router.replace(buildHref(pathname, { ...base, unsolved: value === "1" ? 1 : null, sort: sortParam !== "newest" ? sortParam : null }));
     } else {
@@ -256,8 +259,8 @@ function QuestionsInner() {
 
   const filtersKey = useMemo(() =>
     [normalizeQuery(qParam).toLowerCase(), normalizeQuery(courseParam).toUpperCase(),
-     levelParam, String(unsolvedParam), sortParam].join("|"),
-    [qParam, courseParam, levelParam, unsolvedParam, sortParam]
+     levelParam, String(unsolvedParam), sortParam, personalizedOff ? "p0" : "p1", courseCodes.join(",")].join("|"),
+    [qParam, courseParam, levelParam, unsolvedParam, sortParam, personalizedOff, courseCodes]
   );
 
   useEffect(() => { setPage(1); setItems([]); setTotal(0); setHasMore(false); setErr(null); }, [filtersKey]);
@@ -289,7 +292,9 @@ function QuestionsInner() {
       if (qNorm) query = query.or(`title.ilike.%${qNorm}%,body.ilike.%${qNorm}%`);
       const cNorm = normalizeQuery(courseParam).toUpperCase();
       if (cNorm) query = query.eq("course_code", cNorm);
+      else if (!personalizedOff && isProfileComplete && courseCodes.length > 0) query = query.in("course_code", courseCodes);
       if (levelParam) query = query.eq("level", levelParam);
+      else if (!personalizedOff && isProfileComplete && prefs?.level) query = query.eq("level", String(prefs.level));
       if (unsolvedParam) query = query.or("solved.is.null,solved.eq.false");
 
       if      (sortParam === "upvoted")    query = query.order("upvotes_count", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
@@ -358,13 +363,32 @@ function QuestionsInner() {
     <div className="space-y-4 pb-28 md:pb-6">
       <StudyTabs />
 
-      {!hasPrefs && (
+      {!isProfileComplete && (
         <Link href="/study/onboarding"
           className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
           <span>Set your department to see questions from your courses.</span>
           <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
       )}
+
+      {isProfileComplete && !personalizedOff ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
+          <span className="min-w-0">Showing questions for {scopeLabel ?? "your courses"}.</span>
+          <Link
+            href="/study/questions?personalized=0"
+            className="shrink-0 text-xs font-bold underline underline-offset-2"
+          >
+            Browse all questions
+          </Link>
+        </div>
+      ) : personalizedOff ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <span>Browsing all Study questions.</span>
+          <Link href="/study/questions" className="shrink-0 text-xs font-bold text-[#5B35D5] underline underline-offset-2">
+            Back to my courses
+          </Link>
+        </div>
+      ) : null}
 
       {/* Page header */}
       <div>

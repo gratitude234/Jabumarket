@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function ListingImage({
   src,
@@ -14,11 +14,8 @@ export default function ListingImage({
   className?: string;
   sizes?: string;
 }) {
-  const [imgSrc, setImgSrc] = useState(src);
-
-  useEffect(() => {
-    setImgSrc(src);
-  }, [src]);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imgSrc = failedSrc === src ? "/images/placeholder.svg" : src;
 
   return (
     <Image
@@ -27,7 +24,7 @@ export default function ListingImage({
       fill
       sizes={sizes ?? "(max-width: 640px) 100vw, 33vw"}
       className={["h-full w-full object-cover", className].filter(Boolean).join(" ")}
-      onError={() => setImgSrc("/images/placeholder.svg")}
+      onError={() => setFailedSrc(src)}
     />
   );
 }

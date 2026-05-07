@@ -22,6 +22,16 @@ export type Prefs = {
   session?: string | null;
 };
 
+export type StudyCourseScope = {
+  id: string;
+  course_code: string;
+  course_title: string | null;
+  level: number | null;
+  semester: string | null;
+};
+
+export type StudyProfileStatus = "complete" | "incomplete" | "missing";
+
 export type RepRole = "course_rep" | "dept_librarian" | null;
 export type RepStatus = "not_applied" | "pending" | "approved" | "rejected";
 
@@ -38,6 +48,19 @@ type RepMeResponse =
       } | null;
     }
   | { ok: false; code?: string; message?: string };
+
+type PersonalizationResponse =
+  | {
+      ok: true;
+      profileStatus: StudyProfileStatus;
+      prefs: Prefs | null;
+      missingFields: string[];
+      scopeLabel: string | null;
+      courses: StudyCourseScope[];
+      courseIds: string[];
+      courseCodes: string[];
+    }
+  | { ok: false; error?: string };
 
 export type RepState = {
   loading: boolean;
@@ -61,6 +84,13 @@ interface StudyPrefsCtx {
   prefs: Prefs | null;
   /** True when the user has at least one meaningful pref set */
   hasPrefs: boolean;
+  isProfileComplete: boolean;
+  profileStatus: StudyProfileStatus;
+  missingFields: string[];
+  scopeLabel: string | null;
+  courses: StudyCourseScope[];
+  courseIds: string[];
+  courseCodes: string[];
   /** Rep / librarian application state */
   rep: RepState;
   /**
@@ -84,6 +114,12 @@ export function StudyPrefsProvider({ children }: { children: React.ReactNode }) 
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [profileStatus, setProfileStatus] = useState<StudyProfileStatus>("missing");
+  const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [scopeLabel, setScopeLabel] = useState<string | null>(null);
+  const [courses, setCourses] = useState<StudyCourseScope[]>([]);
+  const [courseIds, setCourseIds] = useState<string[]>([]);
+  const [courseCodes, setCourseCodes] = useState<string[]>([]);
   const [rep, setRep] = useState<RepState>({
     loading: true,
     status: "not_applied",
@@ -126,14 +162,9 @@ export function StudyPrefsProvider({ children }: { children: React.ReactNode }) 
         .then((r) => r.json() as Promise<RepMeResponse>)
         .catch(() => null);
 
-      const prefsPromise = supabase
-        .from("study_preferences")
-        .select(
-          "level, faculty_id, department_id, semester, session," +
-            " faculty:study_faculties(name), department:study_departments(name)"
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const prefsPromise = fetch("/api/study/personalization", { cache: "no-store" })
+        .then((r) => r.json() as Promise<PersonalizationResponse>)
+        .catch(() => null);
 
       const [repJson, prefsRes] = await Promise.all([repPromise, prefsPromise]);
 
@@ -148,17 +179,23 @@ export function StudyPrefsProvider({ children }: { children: React.ReactNode }) 
       }
 
       // ── Prefs ──────────────────────────────────────────────────────────────
-      if (!prefsRes.error && prefsRes.data) {
-        const d = prefsRes.data as any;
-        setPrefs({
-          faculty:        d.faculty?.name    ?? null,
-          department:     d.department?.name ?? null,
-          level:          d.level            ?? null,
-          faculty_id:     d.faculty_id       ?? null,
-          department_id:  d.department_id    ?? null,
-          semester:       d.semester         ?? null,
-          session:        d.session          ?? null,
-        });
+      if (prefsRes && (prefsRes as any).ok) {
+        const p = prefsRes as Extract<PersonalizationResponse, { ok: true }>;
+        setPrefs(p.prefs);
+        setProfileStatus(p.profileStatus);
+        setMissingFields(p.missingFields ?? []);
+        setScopeLabel(p.scopeLabel ?? null);
+        setCourses(p.courses ?? []);
+        setCourseIds(p.courseIds ?? []);
+        setCourseCodes(p.courseCodes ?? []);
+      } else {
+        setPrefs(null);
+        setProfileStatus("missing");
+        setMissingFields([]);
+        setScopeLabel(null);
+        setCourses([]);
+        setCourseIds([]);
+        setCourseCodes([]);
       }
 
       setLoading(false);
@@ -182,6 +219,7 @@ export function StudyPrefsProvider({ children }: { children: React.ReactNode }) 
       ),
     [prefs]
   );
+  const isProfileComplete = profileStatus === "complete";
 
   // ── Helpers exposed to consumers ───────────────────────────────────────────
   function updateSemester(semester: string, session: string) {
@@ -197,6 +235,13 @@ export function StudyPrefsProvider({ children }: { children: React.ReactNode }) 
         displayName,
         prefs,
         hasPrefs,
+        isProfileComplete,
+        profileStatus,
+        missingFields,
+        scopeLabel,
+        courses,
+        courseIds,
+        courseCodes,
         rep,
         updateSemester,
       }}

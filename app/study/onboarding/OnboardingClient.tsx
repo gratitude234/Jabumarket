@@ -626,8 +626,15 @@ export default function OnboardingClient() {
       const { error } = await supabase.from("study_preferences").upsert(prefsPayload);
       if (error) throw error;
 
-      // Clear the skip flag now that real prefs are saved
-      try { localStorage.removeItem("jabuStudy_skipOnboarding"); } catch {}
+      // Clear browse/setup escape flags now that real prefs are saved.
+      try {
+        localStorage.removeItem("jabuStudy_skipOnboarding");
+        localStorage.removeItem("jabuStudy_browseWithoutSetup");
+      } catch {}
+
+      router.replace("/study");
+      router.refresh();
+      return;
 
       // Transition to results screen (step 4) instead of immediate redirect
       setStep(4);
@@ -812,7 +819,7 @@ export default function OnboardingClient() {
                   <div className="rounded-2xl border border-border bg-card p-3">
                     <p className="text-xs font-extrabold text-foreground">Can’t find your department?</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Switch to manual typing. You can still continue and use Study normally.
+                      Switch to manual typing only if your department is missing. Official choices unlock full personalization.
                     </p>
                   </div>
                 </>
@@ -853,7 +860,7 @@ export default function OnboardingClient() {
                   <div className="rounded-2xl border border-border bg-card p-3">
                     <p className="text-xs font-extrabold text-foreground">Tip</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Keep it short and clear. You can edit this later in settings.
+                      Manual entries are saved, but full personalization starts after your department is added to the official list.
                     </p>
                   </div>
                 </>

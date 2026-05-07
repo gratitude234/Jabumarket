@@ -1189,7 +1189,12 @@ export default function PracticeHomeClient() {
 }
 
 function PracticeHomeInner() {
-  const { hasPrefs, userId: authedUserId } = useStudyPrefs();
+  const {
+    isProfileComplete,
+    userId: authedUserId,
+    courseCodes,
+    prefs: contextPrefs,
+  } = useStudyPrefs();
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -1208,6 +1213,7 @@ function PracticeHomeInner() {
   // published-only toggle
   const publishedParam = sp.get("published") ?? "";
   const publishedOnly = publishedParam === "1";
+  const personalizedOff = sp.get("personalized") === "0";
 
   // Local state
   const [q, setQ] = useState(qParam);
@@ -1322,9 +1328,11 @@ function PracticeHomeInner() {
       sortParam,
       publishedOnly ? "p1" : "p0",
       viewParam,
+      personalizedOff ? "personalized0" : "personalized1",
+      courseCodes.join(","),
       authedUserId ?? "anon",
     ].join("|");
-  }, [qParam, courseParam, levelParam, semesterParam, difficultyParam, sortParam, publishedOnly, viewParam, authedUserId]);
+  }, [qParam, courseParam, levelParam, semesterParam, difficultyParam, sortParam, publishedOnly, viewParam, personalizedOff, courseCodes, authedUserId]);
 
   useEffect(() => setQ(qParam), [qParam]);
 
@@ -1640,15 +1648,24 @@ function PracticeHomeInner() {
 
       const course = courseParam.trim().toUpperCase();
       if (course) query = query.eq("course_code", course);
+      else if (viewParam === "for_you" && !personalizedOff && courseCodes.length > 0) {
+        query = query.in("course_code", courseCodes);
+      }
 
       if (levelParam) {
         const lv = Number(levelParam);
         if (Number.isFinite(lv)) query = query.eq("level", lv);
+      } else if (viewParam === "for_you" && !personalizedOff && typeof contextPrefs?.level === "number") {
+        query = query.eq("level", contextPrefs.level);
       }
 
       if (semesterParam) {
         const semMap: Record<string, string> = { "1st": "first", "2nd": "second", "summer": "summer" };
         const s = semMap[semesterParam.trim()] ?? semesterParam.trim().toLowerCase();
+        if (s) query = query.eq("semester", s);
+      } else if (viewParam === "for_you" && !personalizedOff && contextPrefs?.semester) {
+        const semMap: Record<string, string> = { "1st": "first", "2nd": "second", "summer": "summer" };
+        const s = semMap[contextPrefs.semester.trim()] ?? contextPrefs.semester.trim().toLowerCase();
         if (s) query = query.eq("semester", s);
       }
 
@@ -1884,8 +1901,8 @@ function PracticeHomeInner() {
     setQuickLoading(true);
     let navigated = false;
     try {
-      const level = userPrefs?.level ?? null;
-      const semester = userPrefs?.semester ?? null;
+      const level = contextPrefs?.level ?? userPrefs?.level ?? null;
+      const semester = contextPrefs?.semester ?? userPrefs?.semester ?? null;
       const semMap: Record<string, string> = { "1st": "first", "2nd": "second", summer: "summer" };
       const normalizedSemester = semester
         ? semMap[semester.trim()] ?? semester.trim().toLowerCase()
@@ -1900,6 +1917,7 @@ function PracticeHomeInner() {
 
       if (typeof level === "number") query = query.eq("level", level);
       if (normalizedSemester) query = query.eq("semester", normalizedSemester);
+      if (courseCodes.length > 0) query = query.in("course_code", courseCodes);
 
       const { data: candidates } = await query.limit(20);
       const preferred = ((candidates ?? []) as QuizSetRow[]).filter((row) => typeof row.id === "string");
@@ -1938,7 +1956,7 @@ function PracticeHomeInner() {
       <StudyTabs />
 
       {/* M-7: Onboarding nudge */}
-      {!hasPrefs && (
+      {!isProfileComplete && (
         <Link
           href="/study/onboarding"
           className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200"
@@ -1947,6 +1965,18 @@ function PracticeHomeInner() {
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Link>
       )}
+
+      {isProfileComplete && viewParam === "for_you" && !personalizedOff ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm text-[#3B24A8] dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200">
+          <span>For You is scoped to your courses, level and semester.</span>
+          <Link
+            href={buildHref(pathname, { view: "all", personalized: "0" })}
+            className="shrink-0 text-xs font-bold underline underline-offset-2"
+          >
+            Browse all
+          </Link>
+        </div>
+      ) : null}
 
       <PracticeHero
         dueLoading={dueLoading}

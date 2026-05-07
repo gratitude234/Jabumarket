@@ -128,7 +128,7 @@ export function ForYouSection({
   setChips,
   onClearFilters,
 }: ForYouSectionProps) {
-  const { prefs, hasPrefs, loading: prefsLoading } = useStudyPrefs();
+  const { prefs, isProfileComplete, courseIds, loading: prefsLoading } = useStudyPrefs();
   const quickLevel = prefs?.level ?? 100;
   const [items, setItems] = useState<MaterialMini[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -161,17 +161,24 @@ export function ForYouSection({
   }, []);
 
   useEffect(() => {
-    if (prefsLoading || weakLoading || attemptsCount === null || !hasPrefs || !prefs) return;
+    if (prefsLoading || weakLoading || attemptsCount === null || !isProfileComplete || !prefs) return;
     const activePrefs = prefs;
     let cancelled = false;
 
     async function fetchForYou() {
       setFetching(true);
 
+      if (courseIds.length === 0) {
+        setItems([]);
+        setFetching(false);
+        return;
+      }
+
       let query = supabase
         .from("study_materials")
         .select("id,title,course_code,level,semester,material_type,downloads,created_at")
-        .eq("approved", true);
+        .eq("approved", true)
+        .in("course_id", courseIds);
 
       if (activePrefs.department_id) {
         query = query.eq("department_id", activePrefs.department_id);
@@ -216,7 +223,8 @@ export function ForYouSection({
     chips.level,
     chips.semester,
     chips.type,
-    hasPrefs,
+    courseIds,
+    isProfileComplete,
     prefs,
     prefsLoading,
     weakLoading,
@@ -244,7 +252,7 @@ export function ForYouSection({
   const hasChips = Boolean(summary);
   const loading = prefsLoading || weakLoading || fetching;
 
-  if (prefsLoading || !hasPrefs) return null;
+  if (prefsLoading || !isProfileComplete) return null;
 
   function toggleFiltersOpen() {
     setFiltersOpen((wasOpen) => {

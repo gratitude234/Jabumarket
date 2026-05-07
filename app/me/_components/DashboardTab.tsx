@@ -349,15 +349,15 @@ export default function DashboardTab({
       </section>
 
       <Link
-        href="/study/me"
+        href="/study"
         className="flex items-center gap-3 rounded-2xl border border-zinc-100 bg-zinc-50 p-3 no-underline transition hover:border-zinc-200 hover:bg-white"
       >
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-200 bg-white text-zinc-700">
           <GraduationCap className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-zinc-900">Study Hub profile</span>
-          <span className="mt-0.5 block truncate text-xs text-zinc-500">Manage your academic profile separately</span>
+          <span className="block truncate text-sm font-semibold text-zinc-900">Study Hub</span>
+          <span className="mt-0.5 block truncate text-xs text-zinc-500">Open your study homepage</span>
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
       </Link>
