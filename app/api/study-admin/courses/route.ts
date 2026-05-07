@@ -10,7 +10,9 @@ type CourseRow = {
   course_title: string | null;
   level: number;
   semester: string;
+  department: string | null;
   department_id: string | null;
+  faculty: string | null;
   faculty_id: string | null;
   status: string;
   created_at: string;
@@ -32,7 +34,7 @@ export async function GET(req: Request) {
 
     let query = admin
       .from("study_courses")
-      .select("id, course_code, course_title, level, semester, department_id, faculty_id, status, created_at", { count: "exact" })
+      .select("id, course_code, course_title, level, semester, department, department_id, faculty, faculty_id, status, created_at", { count: "exact" })
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -106,7 +108,7 @@ export async function POST(req: Request) {
         approved_by: userId,
         approved_at: now,
       })
-      .select("id, course_code, course_title, level, semester, department_id, faculty_id, status, created_at")
+      .select("id, course_code, course_title, level, semester, department, department_id, faculty, faculty_id, status, created_at")
       .single();
 
     if (error) throw error;
@@ -183,6 +185,7 @@ export async function PATCH(req: Request) {
       id: string;
       course_code?: string;
       course_title?: string | null;
+      department_id?: string | null;
       deactivate?: boolean;
     };
 
@@ -197,8 +200,58 @@ export async function PATCH(req: Request) {
     if (body.course_title !== undefined) updates.course_title = body.course_title?.trim() ?? null;
     if (body.deactivate) updates.status = "rejected";
 
+    if (body.department_id !== undefined) {
+      const nextDepartmentId = body.department_id?.trim();
+      if (!nextDepartmentId) {
+        return NextResponse.json({ ok: false, code: "MISSING_DEPARTMENT", message: "department_id cannot be empty" }, { status: 400 });
+      }
+
+      const { data: deptRow, error: deptErr } = await admin
+        .from("study_departments")
+        .select("name, faculty_id")
+        .eq("id", nextDepartmentId)
+        .single();
+      if (deptErr || !deptRow) {
+        return NextResponse.json({ ok: false, code: "INVALID_DEPARTMENT", message: "Department not found" }, { status: 400 });
+      }
+
+      const resolvedFacultyId = (deptRow as { name: string; faculty_id: string | null }).faculty_id;
+      if (!resolvedFacultyId) {
+        return NextResponse.json({ ok: false, code: "MISSING_FACULTY", message: "Department has no faculty scope" }, { status: 400 });
+      }
+
+      const { data: facultyRow, error: facultyErr } = await admin
+        .from("study_faculties")
+        .select("name")
+        .eq("id", resolvedFacultyId)
+        .single();
+      if (facultyErr || !facultyRow) {
+        return NextResponse.json({ ok: false, code: "INVALID_FACULTY", message: "Faculty not found for department" }, { status: 400 });
+      }
+
+      updates.department_id = nextDepartmentId;
+      updates.department = (deptRow as { name: string }).name;
+      updates.faculty_id = resolvedFacultyId;
+      updates.faculty = (facultyRow as { name: string }).name;
+    }
+
     const { error } = await admin.from("study_courses").update(updates).eq("id", body.id);
     if (error) throw error;
+
+    if (body.department_id !== undefined) {
+      const materialUpdates = {
+        department_id: updates.department_id,
+        department: updates.department,
+        faculty_id: updates.faculty_id,
+        faculty: updates.faculty,
+      };
+
+      const { error: matErr } = await admin
+        .from("study_materials")
+        .update(materialUpdates)
+        .eq("course_id", body.id);
+      if (matErr) throw matErr;
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2, Pencil, Check, X, Ban, Trash2 } from "lucide-react";
@@ -14,14 +14,16 @@ type CourseRow = {
   course_title: string | null;
   level: number;
   semester: string;
+  department: string | null;
   department_id: string | null;
+  faculty: string | null;
   faculty_id: string | null;
   status: string;
   created_at: string;
 };
 
 type Faculty = { id: string; name: string };
-type Department = { id: string; name: string; faculty_id: string };
+type Department = { id: string; name: string; faculty_id: string; is_active?: boolean | null };
 
 const LEVELS = [100, 200, 300, 400, 500, 600, 700];
 const SEMESTERS = ["first", "second", "summer"];
@@ -51,6 +53,7 @@ export default function StudyAdminCoursesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editCode, setEditCode] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [editDeptId, setEditDeptId] = useState("");
   const [editBusy, setEditBusy] = useState(false);
 
   // Add course modal
@@ -66,6 +69,10 @@ export default function StudyAdminCoursesPage() {
 
   // Departments for modal (filtered by faculty)
   const [modalDepts, setModalDepts] = useState<Department[]>([]);
+  const activeDepartments = useMemo(
+    () => allDepartments.filter((d) => d.is_active !== false),
+    [allDepartments]
+  );
 
   // Load faculties and departments once
   useEffect(() => {
@@ -78,8 +85,7 @@ export default function StudyAdminCoursesPage() {
 
     supabase
       .from("study_departments")
-      .select("id, name, faculty_id")
-      .eq("is_active", true)
+      .select("id, name, faculty_id, is_active")
       .order("name")
       .then(({ data }) => {
         setAllDepartments((data as Department[]) ?? []);
@@ -91,11 +97,11 @@ export default function StudyAdminCoursesPage() {
   useEffect(() => {
     setNewDeptId("");
     if (!newFacultyId) {
-      setModalDepts(allDepartments);
+      setModalDepts(activeDepartments);
     } else {
-      setModalDepts(allDepartments.filter((d) => d.faculty_id === newFacultyId));
+      setModalDepts(activeDepartments.filter((d) => d.faculty_id === newFacultyId));
     }
-  }, [newFacultyId, allDepartments]);
+  }, [newFacultyId, activeDepartments]);
 
   async function getToken(): Promise<string | null> {
     const { data } = await supabase.auth.getSession();
@@ -151,11 +157,17 @@ export default function StudyAdminCoursesPage() {
       const res = await fetch("/api/study-admin/courses", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ id: editId, course_code: editCode, course_title: editTitle }),
+        body: JSON.stringify({
+          id: editId,
+          course_code: editCode,
+          course_title: editTitle,
+          ...(editDeptId ? { department_id: editDeptId } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.message || "Save failed");
       setEditId(null);
+      setEditDeptId("");
       await load();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Save failed");
@@ -240,6 +252,16 @@ export default function StudyAdminCoursesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / 50));
 
+  function departmentLabel(departmentId: string | null, fallback?: string | null) {
+    const dept = allDepartments.find((d) => d.id === departmentId);
+    const name = dept?.name ?? fallback ?? "Unassigned";
+    return dept?.is_active === false ? `${name} (inactive)` : name;
+  }
+
+  function moveOptions(courseDepartmentId: string | null) {
+    return allDepartments.filter((d) => d.is_active !== false || d.id === courseDepartmentId);
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -272,7 +294,11 @@ export default function StudyAdminCoursesPage() {
               onChange={(e) => { setDeptFilter(e.target.value); setPage(1); }}
             >
               <option value="">All</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}{d.is_active === false ? " (inactive)" : ""}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex flex-col gap-1">
@@ -322,6 +348,7 @@ export default function StudyAdminCoursesPage() {
                   <th className="px-4 py-3 font-medium">Title</th>
                   <th className="px-4 py-3 font-medium">Level</th>
                   <th className="px-4 py-3 font-medium">Semester</th>
+                  <th className="px-4 py-3 font-medium">Department</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
@@ -358,6 +385,24 @@ export default function StudyAdminCoursesPage() {
                     <td className="px-4 py-3 text-zinc-600">{c.level}</td>
                     <td className="px-4 py-3 text-zinc-600 capitalize">{c.semester}</td>
                     <td className="px-4 py-3">
+                      {editId === c.id ? (
+                        <select
+                          className="h-8 max-w-[260px] rounded-xl border px-2 text-sm"
+                          value={editDeptId}
+                          onChange={(e) => setEditDeptId(e.target.value)}
+                        >
+                          <option value="">Select department...</option>
+                          {moveOptions(c.department_id).map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}{d.is_active === false ? " (inactive)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-zinc-700">{departmentLabel(c.department_id, c.department)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={cn(
                         "rounded-full px-2 py-0.5 text-xs font-medium",
                         c.status === "approved" ? "bg-emerald-50 text-emerald-700" :
@@ -381,7 +426,7 @@ export default function StudyAdminCoursesPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditId(null)}
+                              onClick={() => { setEditId(null); setEditDeptId(""); }}
                               className="inline-flex h-7 items-center gap-1 rounded-xl border px-3 text-xs"
                             >
                               <X className="h-3 w-3" /> Cancel
@@ -391,7 +436,7 @@ export default function StudyAdminCoursesPage() {
                           <>
                             <button
                               type="button"
-                              onClick={() => { setEditId(c.id); setEditCode(c.course_code); setEditTitle(c.course_title ?? ""); }}
+                              onClick={() => { setEditId(c.id); setEditCode(c.course_code); setEditTitle(c.course_title ?? ""); setEditDeptId(c.department_id ?? ""); }}
                               className="inline-flex h-7 items-center gap-1 rounded-xl border px-3 text-xs hover:bg-zinc-50"
                             >
                               <Pencil className="h-3 w-3" /> Edit
