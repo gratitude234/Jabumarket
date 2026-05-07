@@ -13,6 +13,13 @@ const LEVELS    = ["100", "200", "300", "400", "500", "600"] as const;
 const TITLE_MAX = 120;
 const BODY_MAX  = 3000;
 
+type PersonalizationPayload = {
+  ok?: boolean;
+  profileStatus?: "complete" | "incomplete" | "missing";
+  prefs?: { level?: number | null } | null;
+  courses?: Array<{ course_code?: string | null; course_title?: string | null }>;
+};
+
 export default function AskQuestionClient() {
   const router = useRouter();
   const sp     = useSearchParams();
@@ -23,7 +30,7 @@ export default function AskQuestionClient() {
   const [userId,    setUserId]    = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [courseOptions, setCourseOptions] = useState<Array<{ code: string; title: string | null }>>([]);
-  const [profileComplete, setProfileComplete] = useState(false);
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
 
   const [title,   setTitle]   = useState("");
   const [body,    setBody]    = useState("");
@@ -54,11 +61,11 @@ export default function AskQuestionClient() {
 
       try {
         const res = await fetch("/api/study/personalization", { cache: "no-store" });
-        const json = await res.json();
+        const json = (await res.json()) as PersonalizationPayload;
         if (!json?.ok) return;
 
         setProfileComplete(json.profileStatus === "complete");
-        const nextCourses = ((json.courses as any[]) ?? [])
+        const nextCourses = (json.courses ?? [])
           .map((row) => ({
             code: String(row.course_code ?? "").trim().toUpperCase(),
             title: row.course_title ? String(row.course_title) : null,
@@ -201,7 +208,7 @@ export default function AskQuestionClient() {
         </div>
       )}
 
-      {userId && !profileComplete ? (
+      {userId && profileComplete === false ? (
         <Link
           href="/study/onboarding?next=/study/questions/ask"
           className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200"

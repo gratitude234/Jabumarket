@@ -681,10 +681,13 @@ export default function OnboardingClient() {
             : Promise.resolve({ count: 0, error: null }),
         ]);
 
+        const countFrom = (result: PromiseSettledResult<{ count: number | null }>) =>
+          result.status === "fulfilled" ? result.value.count ?? null : null;
+
         setStep4Data({
-          materials: matsResult.status === "fulfilled" ? ((matsResult.value as { count: number | null }).count ?? null) : null,
-          quizSets: setsResult.status === "fulfilled" ? ((setsResult.value as { count: number | null }).count ?? null) : null,
-          questions: qsResult.status === "fulfilled" ? ((qsResult.value as { count: number | null }).count ?? null) : null,
+          materials: countFrom(matsResult as PromiseSettledResult<{ count: number | null }>),
+          quizSets: countFrom(setsResult as PromiseSettledResult<{ count: number | null }>),
+          questions: countFrom(qsResult as PromiseSettledResult<{ count: number | null }>),
         });
       } catch {
         setStep4Data({ materials: null, quizSets: null, questions: null });

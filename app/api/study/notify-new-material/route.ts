@@ -3,6 +3,22 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MAX_NOTIFICATIONS = 200;
 
+type MaterialNotificationCourse = {
+  course_code: string | null;
+  department_id: string | null;
+  level: number | null;
+  semester: string | null;
+};
+
+type MaterialNotificationRow = {
+  id: string;
+  title: string | null;
+  semester: string | null;
+  study_courses: MaterialNotificationCourse | MaterialNotificationCourse[] | null;
+};
+
+type StudyPreferenceUser = { user_id: string };
+
 export async function POST(req: Request) {
   try {
     // This route is called server-to-server only — require CRON_SECRET as bearer
@@ -12,8 +28,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const material_id = typeof body?.material_id === "string" ? body.material_id.trim() : "";
+    const body = (await req.json().catch(() => ({}))) as { material_id?: unknown };
+    const material_id = typeof body.material_id === "string" ? body.material_id.trim() : "";
 
     if (!material_id) {
       return NextResponse.json({ ok: false, error: "material_id is required" }, { status: 400 });
@@ -32,12 +48,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Material not found" }, { status: 404 });
     }
 
-    const course = (material as any).study_courses ?? null;
+    const materialRow = material as MaterialNotificationRow;
+    const course = Array.isArray(materialRow.study_courses)
+      ? materialRow.study_courses[0] ?? null
+      : materialRow.study_courses;
     const department_id = course?.department_id ?? null;
     const level = course?.level ?? null;
     const course_code = course?.course_code ?? null;
-    const semester = String((material as any).semester ?? course?.semester ?? "").trim().toLowerCase();
-    const title = String((material as any).title ?? "Untitled material");
+    const semester = String(materialRow.semester ?? course?.semester ?? "").trim().toLowerCase();
+    const title = String(materialRow.title ?? "Untitled material");
 
     if (!department_id) {
       return NextResponse.json({ ok: true, notified: 0, skipped: "no department_id" });
@@ -60,10 +79,13 @@ export async function POST(req: Request) {
       return usersQuery;
     }
 
-    let { data: users, error: usersErr } = await fetchUsers(false);
+    let { data: users, error: usersErr } = (await fetchUsers(false)) as {
+      data: StudyPreferenceUser[] | null;
+      error: { message?: string } | null;
+    };
     if (!usersErr && semester && (!users || users.length === 0)) {
       const fallback = await fetchUsers(true);
-      users = fallback.data;
+      users = fallback.data as StudyPreferenceUser[] | null;
       usersErr = fallback.error;
     }
 
@@ -107,13 +129,13 @@ export async function POST(req: Request) {
         tag:   `new-material-${material_id}`,
       };
       await Promise.allSettled(
-        (users ?? []).map((u: any) => sendUserPush(u.user_id, pushPayload))
+        (users ?? []).map((u: StudyPreferenceUser) => sendUserPush(u.user_id, pushPayload))
       );
     } catch { /* push failures must never crash the notification route */ }
 
     return NextResponse.json({ ok: true, notified: totalInserted });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Notification failures are non-fatal — always return ok
-    return NextResponse.json({ ok: true, notified: 0, error: e?.message });
+    return NextResponse.json({ ok: true, notified: 0, error: e instanceof Error ? e.message : "Notification failed" });
   }
 }

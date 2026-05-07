@@ -54,6 +54,14 @@ type UserPrefs = {
   department: string | null;
 };
 
+type StudyPreferenceScopeRow = {
+  faculty_id: string | null;
+  department_id: string | null;
+  level: number | null;
+  semester: string | null;
+  session: string | null;
+};
+
 async function getLeaderboardEntryState() {
   const supabase = await createSupabaseServerClient();
   const { data: authData } = await supabase.auth.getUser();
@@ -66,7 +74,7 @@ async function getLeaderboardEntryState() {
     .eq("user_id", currentUserId)
     .maybeSingle();
 
-  const row = data as any;
+  const row = data as StudyPreferenceScopeRow | null;
   const profileComplete = Boolean(
     row?.faculty_id &&
       row?.department_id &&

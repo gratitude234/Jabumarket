@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
+  ArrowRight,
   ArrowLeft,
   Sparkles,
   X,
@@ -46,6 +47,12 @@ type StudyPreferencesRow = {
 type StudyPlanRow = {
   plan: unknown;
   created_at: string | null;
+};
+type PersonalizationPayload = {
+  ok?: boolean;
+  profileStatus?: "complete" | "incomplete" | "missing";
+  scopeLabel?: string | null;
+  courses?: Array<{ course_code?: string | null }>;
 };
 
 function parseStoredPlan(value: unknown): StudyPlan | null {
@@ -515,7 +522,7 @@ export default function AiStudyPlanPage() {
         // Fetch study personalization, preferences + latest saved plan
         const [personalization, { data: prefs }, { data: latestPlan, error: latestPlanError }] = await Promise.all([
           fetch("/api/study/personalization", { cache: "no-store" })
-            .then((r) => r.json())
+            .then((r) => r.json() as Promise<PersonalizationPayload>)
             .catch(() => null),
           supabase
             .from("study_preferences")
@@ -621,11 +628,11 @@ export default function AiStudyPlanPage() {
 
         if (personalizedCourses.length > 0) {
           const codes = personalizedCourses
-            .map((course: any) => String(course.course_code ?? "").trim().toUpperCase())
+            .map((course: { course_code?: string | null }) => String(course.course_code ?? "").trim().toUpperCase())
             .filter(Boolean);
           setCourses(codes);
           setPrefillSource(
-            personalization.scopeLabel ?? (prefsData?.department
+            personalization?.scopeLabel ?? (prefsData?.department
               ? `${prefsData.level ? `${prefsData.level}L · ` : ""}${prefsData.department}`
               : prefsData?.level
               ? `${prefsData.level}L`
