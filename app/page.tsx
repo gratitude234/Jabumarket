@@ -2,29 +2,20 @@
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
 import {
   ArrowRight,
   BadgeCheck,
+  Bell,
   BookOpen,
-  Bookmark,
   CheckCircle2,
+  ChevronDown,
   Circle,
-  Clock,
-  Cpu,
   Image as ImageIcon,
   Laptop,
-  MapPin,
-  MessageCircle,
-  PackageCheck,
-  Plus,
   Search,
-  ShieldCheck,
   Shirt,
   ShoppingBag,
-  ShoppingBasket,
   Smartphone,
-  Sparkles,
   Star,
   Store,
   Truck,
@@ -42,13 +33,6 @@ function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
   if (!Number.isFinite(n)) return "\u20A60";
   return `\u20A6${n.toLocaleString("en-NG")}`;
-}
-
-function formatCompactCount(n: number | null | undefined) {
-  const value = Number(n ?? 0);
-  if (!Number.isFinite(value)) return "0";
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
-  return value.toLocaleString("en-NG");
 }
 
 function timeAgo(iso?: string | null) {
@@ -102,25 +86,6 @@ type ListingPreview = {
   status?: string | null;
 };
 
-type VendorPreview = {
-  id: string;
-  name: string | null;
-  location: string | null;
-  verified: boolean | null;
-  verification_status:
-    | "unverified"
-    | "requested"
-    | "under_review"
-    | "verified"
-    | "rejected"
-    | "suspended"
-    | "pending"
-    | "approved"
-    | null;
-  vendor_type: "food" | "mall" | "student" | "other" | null;
-  avatar_url?: string | null;
-};
-
 type FoodVendorPreview = {
   id: string;
   name: string | null;
@@ -129,6 +94,7 @@ type FoodVendorPreview = {
   opens_at: string | null;
   closes_at: string | null;
   accepts_delivery: boolean | null;
+  delivery_fee?: number | null;
   day_schedule: DayEntry[] | null;
 };
 
@@ -139,27 +105,16 @@ type MenuPreviewItem = {
   stock_count: number | null;
 };
 
-const categories = [
-  { name: "Phones", icon: Smartphone, href: "/explore?category=Phones" },
-  { name: "Laptops", icon: Laptop, href: "/explore?category=Laptops" },
-  { name: "Electronics", icon: Cpu, href: "/explore?category=Electronics" },
-  { name: "Fashion", icon: Shirt, href: "/explore?category=Fashion" },
-  { name: "Provisions", icon: ShoppingBasket, href: "/explore?category=Provisions" },
-  { name: "Books", icon: BookOpen, href: "/explore?category=Books+%26+Stationery" },
-  { name: "Beauty", icon: Sparkles, href: "/explore?category=Beauty" },
-  { name: "Services", icon: Wrench, href: "/explore?category=Services&type=service" },
+const categoryChips = [
+  { name: "Phones", href: "/explore?category=Phones", active: true },
+  { name: "Laptops", href: "/explore?category=Laptops" },
+  { name: "Fashion", href: "/explore?category=Fashion" },
+  { name: "Books", href: "/explore?category=Books+%26+Stationery" },
+  { name: "Services", href: "/explore?category=Services&type=service" },
 ];
 
-function isVendorVerified(v: VendorPreview) {
-  return (
-    v.verified === true ||
-    v.verification_status === "verified" ||
-    v.verification_status === "approved"
-  );
-}
-
 function getFoodStatus(open: boolean | null, opensAt: string | null) {
-  if (open === true) return { label: "Open now", tone: "open" as const };
+  if (open === true) return { label: "Open", tone: "open" as const };
   if (open === false && opensAt) {
     const mins = minutesUntilWATTime(opensAt);
     if (mins !== null && mins <= 120) {
@@ -171,37 +126,38 @@ function getFoodStatus(open: boolean | null, opensAt: string | null) {
   return { label: "Hours vary", tone: "unknown" as const };
 }
 
-function ScrollRow({ children }: { children: ReactNode }) {
-  return (
-    <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-3 md:overflow-visible md:px-0">
-      {children}
-    </div>
-  );
+function displayFirstName(name: string | null | undefined, email: string | null | undefined) {
+  const value = name?.trim() || email?.split("@")[0]?.trim() || "Jabu student";
+  return value.split(/\s+/)[0] || "Jabu student";
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "J";
 }
 
 function SectionHeader({
   title,
   href,
-  cta,
-  subtitle,
+  cta = "See all",
 }: {
   title: string;
   href?: string;
   cta?: string;
-  subtitle?: string;
 }) {
   return (
-    <div className="flex items-end justify-between gap-3">
-      <div className="min-w-0">
-        <h2 className="text-base font-bold tracking-tight text-zinc-950">{title}</h2>
-        {subtitle ? <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">{subtitle}</p> : null}
-      </div>
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">{title}</h2>
       {href ? (
         <Link
           href={href}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50"
+          className="inline-flex items-center gap-1 text-xs font-bold text-brand-market hover:text-orange-700"
         >
-          {cta ?? "See all"}
+          {cta}
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       ) : null}
@@ -212,10 +168,31 @@ function SectionHeader({
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
 
+  const userRes = await supabase.auth.getUser();
+  const user = userRes.data.user;
+  const metadata = user?.user_metadata ?? {};
+  let displayName =
+    typeof metadata.full_name === "string"
+      ? metadata.full_name
+      : typeof metadata.name === "string"
+        ? metadata.name
+        : null;
+
+  if (user?.id && !displayName) {
+    const profileRes = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", user.id)
+      .maybeSingle();
+    const profile = profileRes.data as { full_name: string | null; email: string | null } | null;
+    displayName = profile?.full_name?.trim() || profile?.email?.split("@")[0] || null;
+  }
+
+  const firstName = displayFirstName(displayName, user?.email ?? null);
+
   const [
     latestListingsRes,
     featuredListingsRes,
-    verifiedVendorsRes,
     foodVendorsRes,
     activeListingCountRes,
     verifiedVendorCountRes,
@@ -239,16 +216,8 @@ export default async function HomePage() {
       .limit(6),
     supabase
       .from("vendors")
-      .select("id, name, location, verified, verification_status, vendor_type, avatar_url")
-      .or("verified.eq.true,verification_status.eq.verified")
-      .is("suspended_at", null)
-      .not("name", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(18),
-    supabase
-      .from("vendors")
       .select(
-        "id, name, description, avatar_url, opens_at, closes_at, accepts_delivery, day_schedule",
+        "id, name, description, avatar_url, opens_at, closes_at, accepts_delivery, delivery_fee, day_schedule",
         { count: "exact" },
       )
       .eq("vendor_type", "food")
@@ -256,7 +225,7 @@ export default async function HomePage() {
       .or("verified.eq.true,verification_status.eq.verified")
       .is("suspended_at", null)
       .order("name", { ascending: true })
-      .limit(24),
+      .limit(12),
     supabase.from("listings").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase
       .from("vendors")
@@ -267,22 +236,13 @@ export default async function HomePage() {
 
   const listings = ((latestListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
   const featuredListings = ((featuredListingsRes.data ?? []) as ListingPreview[]).filter(Boolean);
-  const rawVendors = ((verifiedVendorsRes.data ?? []) as VendorPreview[]).filter(Boolean);
   const foodVendors = ((foodVendorsRes.data ?? []) as FoodVendorPreview[]).filter(Boolean);
 
   const foodVendorIds = foodVendors.map((v) => v.id);
-  const vendorIds = Array.from(new Set([...rawVendors.map((v) => v.id), ...foodVendorIds]));
-  const listingIds = Array.from(
-    new Set([...listings.map((l) => l.id), ...featuredListings.map((l) => l.id)]),
-  );
-
-  const [reviewsRes, listingStatsRes, menuRes] = await Promise.all([
-    vendorIds.length > 0
-      ? supabase.from("vendor_reviews").select("vendor_id, rating").in("vendor_id", vendorIds)
+  const [reviewsRes, menuRes] = await Promise.all([
+    foodVendorIds.length > 0
+      ? supabase.from("vendor_reviews").select("vendor_id, rating").in("vendor_id", foodVendorIds)
       : { data: [] as { vendor_id: string; rating: number }[] },
-    listingIds.length > 0
-      ? supabase.from("listing_stats").select("listing_id, saves").in("listing_id", listingIds)
-      : { data: [] as { listing_id: string; saves: number }[] },
     foodVendorIds.length > 0
       ? supabase
           .from("vendor_menu_items")
@@ -290,7 +250,7 @@ export default async function HomePage() {
           .in("vendor_id", foodVendorIds)
           .eq("active", true)
           .order("sort_order", { ascending: true })
-          .limit(96)
+          .limit(48)
       : { data: [] as MenuPreviewItem[] },
   ]);
 
@@ -302,329 +262,289 @@ export default async function HomePage() {
       : { avg: r.rating, count: 1 };
   }
 
-  const savesMap: Record<string, number> = {};
-  for (const s of listingStatsRes.data ?? []) {
-    savesMap[s.listing_id] = Number(s.saves ?? 0);
-  }
-
   const menuMap: Record<string, MenuPreviewItem[]> = {};
   for (const item of (menuRes.data ?? []) as MenuPreviewItem[]) {
     if (!item.vendor_id) continue;
     if (!menuMap[item.vendor_id]) menuMap[item.vendor_id] = [];
-    if (menuMap[item.vendor_id].length < 4) menuMap[item.vendor_id].push(item);
+    if (menuMap[item.vendor_id].length < 3) menuMap[item.vendor_id].push(item);
   }
-
-  const vendors = rawVendors
-    .map((v) => ({
-      ...v,
-      _score: (ratingMap[v.id] ? 2 : 0) + (v.avatar_url ? 1 : 0) + (isVendorVerified(v) ? 1 : 0),
-    }))
-    .sort((a, b) => b._score - a._score)
-    .slice(0, 6);
 
   const foodCards = foodVendors
     .map((v) => {
       const open = isOpenNow(v);
       const status = getFoodStatus(open, v.opens_at);
-      const hours = v.opens_at && v.closes_at ? `${formatHour(v.opens_at)} - ${formatHour(v.closes_at)}` : null;
       return {
         ...v,
         open,
         status,
-        hours,
         rating: ratingMap[v.id] ?? null,
         menuItems: menuMap[v.id] ?? [],
       };
     })
     .sort((a, b) => Number(b.open === true) - Number(a.open === true))
-    .slice(0, 6);
+    .slice(0, 4);
 
   const activeListingCount = activeListingCountRes.count ?? listings.length;
-  const verifiedVendorCount = verifiedVendorCountRes.count ?? vendors.length;
+  const verifiedVendorCount = verifiedVendorCountRes.count ?? 0;
   const foodVendorCount = foodVendorsRes.count ?? foodVendors.length;
   const openFoodCount = foodVendors.filter((v) => isOpenNow(v) === true).length;
-  const primaryListings = featuredListings.length > 0 ? featuredListings : listings;
+  const primaryListings = (featuredListings.length > 0 ? featuredListings : listings).slice(0, 6);
+  const statLine =
+    activeListingCount > 0 || verifiedVendorCount > 0
+      ? `${activeListingCount.toLocaleString("en-NG")} listings · ${verifiedVendorCount.toLocaleString("en-NG")} verified vendors`
+      : "Phones, food, services and study help around JABU";
 
   const quickActions = [
     {
-      title: "Explore",
-      desc: `${formatCompactCount(activeListingCount)} listings`,
+      title: "Market",
       href: "/explore",
-      icon: Store,
-      tone: "border-orange-100 bg-orange-50 text-orange-700",
+      icon: ShoppingBag,
+      tone: "bg-orange-50 text-brand-market",
     },
     {
       title: "Food",
-      desc: openFoodCount > 0 ? `${openFoodCount} open now` : `${formatCompactCount(foodVendorCount)} vendors`,
       href: "/food",
       icon: UtensilsCrossed,
-      tone: "border-amber-100 bg-amber-50 text-amber-700",
+      tone: "bg-amber-50 text-amber-700",
+    },
+    {
+      title: "Study Hub",
+      href: "/study",
+      icon: BookOpen,
+      tone: "bg-[#EEEDFE] text-[#5B35D5]",
     },
     {
       title: "Delivery",
-      desc: "Campus riders",
       href: "/delivery",
       icon: Truck,
-      tone: "border-emerald-100 bg-emerald-50 text-emerald-700",
-    },
-    {
-      title: "Post",
-      desc: "Sell or offer",
-      href: "/post",
-      icon: Plus,
-      tone: "border-zinc-200 bg-zinc-950 text-white",
-    },
-  ];
-
-  const statusChips = [
-    {
-      label: "Active listings",
-      value: formatCompactCount(activeListingCount),
-      href: "/explore",
-    },
-    {
-      label: "Open food",
-      value: formatCompactCount(openFoodCount),
-      href: "/food?open=1",
-    },
-    {
-      label: "Verified vendors",
-      value: formatCompactCount(verifiedVendorCount),
-      href: "/explore?tab=vendors",
+      tone: "bg-rose-50 text-rose-700",
     },
   ];
 
   return (
-    <div className="space-y-7 pb-4">
-      <section className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-orange-700">
-              <PackageCheck className="h-3.5 w-3.5" />
-              Campus market
+    <div className="mx-auto max-w-md space-y-7 pb-4 md:max-w-6xl">
+      <section className="space-y-4 md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:items-start md:gap-6 md:space-y-0">
+        <div className="space-y-4 md:sticky md:top-20">
+          <div className="flex items-center justify-between gap-4">
+            <Link href="/me" className="flex min-w-0 items-center gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-market text-base font-black text-white">
+                {initials(firstName)}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-zinc-500">Good morning</span>
+                <span className="block truncate text-lg font-black leading-tight text-zinc-950">
+                  {firstName}
+                </span>
+              </span>
+            </Link>
+
+            <div className="flex items-center gap-2">
+              <Link
+                href="/notifications"
+                aria-label="Notifications"
+                className="relative grid h-11 w-11 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+              </Link>
+              <Link
+                href="/me"
+                aria-label="Profile"
+                className="grid h-11 w-11 place-items-center rounded-full bg-orange-50 text-sm font-black text-brand-market"
+              >
+                {initials(firstName).slice(0, 1)}
+              </Link>
             </div>
-            <h1 className="mt-3 max-w-xl text-3xl font-black leading-tight tracking-tight text-zinc-950 sm:text-4xl">
-              Jabu Market
-            </h1>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-600">
-              Buy, sell, order food and find delivery around JABU.
-            </p>
           </div>
+
+          <form action="/explore" method="GET">
+            <div className="flex h-14 items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 shadow-sm">
+              <Search className="h-5 w-5 shrink-0 text-zinc-500" />
+              <input
+                name="q"
+                placeholder="Search listings, food, courses..."
+                list="home-suggestions"
+                aria-label="Search Jabu Market"
+                className="min-w-0 flex-1 bg-transparent text-base font-medium text-zinc-900 outline-none placeholder:text-zinc-500"
+              />
+              <button
+                type="submit"
+                className="sr-only"
+              >
+                Search
+              </button>
+            </div>
+            <datalist id="home-suggestions">
+              <option value="Phones" />
+              <option value="Laptops" />
+              <option value="Fashion" />
+              <option value="Books" />
+              <option value="Food" />
+              <option value="Services" />
+              <option value="Delivery" />
+              <option value="Study materials" />
+            </datalist>
+          </form>
+
+          <div className="overflow-hidden rounded-[1.7rem] bg-brand-market p-6 text-white shadow-sm shadow-orange-900/10">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-100">Jabu campus</p>
+            <h1 className="mt-3 text-3xl font-black leading-tight tracking-tight md:text-4xl">
+              Find anything
+              <br />
+              on campus.
+            </h1>
+            <p className="mt-3 max-w-xs text-sm font-medium leading-6 text-orange-50">
+              {statLine}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/explore"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-black text-brand-market shadow-sm hover:bg-orange-50"
+              >
+                Explore
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/post"
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/45 px-5 text-sm font-black text-white hover:bg-white/10"
+              >
+                Post a listing
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-7">
+          <section className="space-y-3">
+            <SectionHeader title="Quick access" />
+            <div className="grid grid-cols-4 gap-3">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    className="group flex min-w-0 flex-col items-center gap-2 text-center"
+                  >
+                    <span className={cn("grid h-16 w-16 place-items-center rounded-3xl", action.tone)}>
+                      <Icon className="h-7 w-7" />
+                    </span>
+                    <span className="max-w-full truncate text-xs font-bold text-zinc-800">{action.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader title="Categories" />
+            <div className="flex flex-wrap gap-2">
+              {categoryChips.map((chip) => (
+                <Link
+                  key={chip.name}
+                  href={chip.href}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-full border px-4 text-sm font-bold",
+                    chip.active
+                      ? "border-brand-market bg-brand-market text-white"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:border-orange-200 hover:bg-orange-50 hover:text-brand-market",
+                  )}
+                >
+                  {chip.name}
+                </Link>
+              ))}
+              <Link
+                href="/explore"
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-700 hover:border-orange-200 hover:bg-orange-50 hover:text-brand-market"
+              >
+                More
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader title="Recent listings" href="/explore" />
+            {primaryListings.length === 0 ? (
+              <EmptyState
+                icon={Store}
+                title="No listings yet"
+                desc="Be the first to post an item or service on Jabu Market."
+                href="/post"
+                cta="Post now"
+              />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                {primaryListings.map((listing, index) => (
+                  <ListingCard key={listing.id} listing={listing} index={index} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader title="Food vendors" href="/food" />
+            {foodCards.length === 0 ? (
+              <EmptyState
+                icon={UtensilsCrossed}
+                title="No food vendors available"
+                desc="Verified food vendors will appear here when they start taking orders."
+                href="/food"
+                cta="Check food"
+              />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {foodCards.map((vendor, index) => (
+                  <FoodVendorCard key={vendor.id} vendor={vendor} index={index} />
+                ))}
+              </div>
+            )}
+          </section>
 
           <Link
-            href="/post"
-            aria-label="Post a listing"
-            className="mt-1 hidden h-11 shrink-0 items-center gap-2 rounded-2xl bg-zinc-950 px-4 text-sm font-bold text-white shadow-sm hover:bg-zinc-800 sm:inline-flex"
+            href="/study"
+            className="block rounded-3xl border border-[#5B35D5]/25 bg-[#EEEDFE] p-5 text-[#24115F] shadow-sm hover:bg-[#E5E0FF]"
           >
-            <Plus className="h-4 w-4" />
-            Post
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#5B35D5]">Study Hub</p>
+                <h2 className="mt-2 text-xl font-black leading-tight">Keep your streak going</h2>
+                <p className="mt-1 text-sm font-semibold text-[#5B35D5]">
+                  Practice cards, materials and course help
+                </p>
+              </div>
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-[#5B35D5] text-white">
+                <BookOpen className="h-7 w-7" />
+              </span>
+            </div>
+            <div className="mt-5">
+              <div className="h-2 overflow-hidden rounded-full bg-white/70">
+                <div className="h-full w-[68%] rounded-full bg-[#5B35D5]" />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs font-bold text-[#5B35D5]">
+                <span>Today progress</span>
+                <span>68%</span>
+              </div>
+            </div>
           </Link>
         </div>
-
-        <form action="/explore" method="GET">
-          <div className="flex items-center gap-2 rounded-[1.35rem] border border-zinc-200 bg-white p-2 shadow-sm">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-zinc-500">
-              <Search className="h-5 w-5" />
-            </div>
-            <input
-              name="q"
-              placeholder="Search items, food, services..."
-              list="home-suggestions"
-              aria-label="Search Jabu Market"
-              className="h-11 min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-900 outline-none placeholder:text-zinc-400"
-            />
-            <button
-              type="submit"
-              className="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl bg-orange-600 px-4 text-sm font-bold text-white hover:bg-orange-700"
-            >
-              Search
-            </button>
-          </div>
-          <datalist id="home-suggestions">
-            <option value="Phones" />
-            <option value="Laptops" />
-            <option value="Fashion" />
-            <option value="Provisions" />
-            <option value="Food" />
-            <option value="Beauty" />
-            <option value="Services" />
-            <option value="Repairs" />
-            <option value="Tutoring" />
-            <option value="iPhone" />
-            <option value="Android" />
-            <option value="Charger" />
-            <option value="Rice" />
-            <option value="Indomie" />
-            <option value="Laundry" />
-            <option value="Hair" />
-            <option value="Sneakers" />
-            <option value="Power bank" />
-          </datalist>
-        </form>
-
-        <div className="grid grid-cols-4 gap-2">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link
-                key={action.href}
-                href={action.href}
-                className="group min-w-0 rounded-2xl border border-zinc-100 bg-white p-2.5 shadow-sm transition hover:border-zinc-200 hover:bg-zinc-50"
-              >
-                <span className={cn("grid h-10 w-10 place-items-center rounded-2xl border", action.tone)}>
-                  <Icon className="h-5 w-5" />
-                </span>
-                <span className="mt-2 block truncate text-xs font-bold text-zinc-950">{action.title}</span>
-                <span className="mt-0.5 block truncate text-[10px] font-medium text-zinc-500">{action.desc}</span>
-              </Link>
-            );
-          })}
-        </div>
-
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:px-0">
-          {statusChips.map((chip) => (
-            <Link
-              key={chip.label}
-              href={chip.href}
-              className="flex min-w-[128px] shrink-0 items-center justify-between gap-3 rounded-2xl border border-zinc-100 bg-white px-3 py-2.5 shadow-sm hover:bg-zinc-50"
-            >
-              <span className="min-w-0">
-                <span className="block text-base font-black leading-none text-zinc-950">{chip.value}</span>
-                <span className="mt-1 block truncate text-[11px] font-medium text-zinc-500">{chip.label}</span>
-              </span>
-              <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300" />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <SectionHeader title="Shop by category" href="/explore" cta="All" />
-        <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-4 md:overflow-visible md:px-0 lg:grid-cols-8">
-          {categories.map((c) => {
-            const Icon = c.icon;
-            return (
-              <Link
-                key={c.name}
-                href={c.href}
-                className="group flex min-w-[76px] snap-start flex-col items-center gap-2 rounded-2xl border border-zinc-100 bg-white px-3 py-3 text-center shadow-sm transition hover:border-zinc-200 hover:bg-zinc-50 md:min-w-0"
-              >
-                <span className="grid h-10 w-10 place-items-center rounded-2xl bg-zinc-100 transition group-hover:bg-orange-50">
-                  <Icon className="h-5 w-5 text-zinc-700 transition group-hover:text-orange-700" />
-                </span>
-                <span className="text-[11px] font-bold leading-tight text-zinc-700">{c.name}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <SectionHeader
-          title="Food vendors"
-          subtitle={openFoodCount > 0 ? `${openFoodCount} open right now` : "Menus and delivery options around campus"}
-          href="/food"
-          cta="Order"
-        />
-
-        {foodCards.length === 0 ? (
-          <EmptyState
-            icon={UtensilsCrossed}
-            title="No food vendors available"
-            desc="Verified food vendors will appear here when they start taking orders."
-            href="/food"
-            cta="Check food"
-          />
-        ) : (
-          <ScrollRow>
-            {foodCards.map((vendor) => (
-              <FoodVendorCard key={vendor.id} vendor={vendor} />
-            ))}
-          </ScrollRow>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <SectionHeader
-          title={featuredListings.length > 0 ? "Featured picks" : "Fresh listings"}
-          subtitle="Recently posted items and services from the marketplace"
-          href="/explore"
-          cta="Browse"
-        />
-
-        {primaryListings.length === 0 ? (
-          <EmptyState
-            icon={Store}
-            title="No listings yet"
-            desc="Be the first to post an item or service on Jabu Market."
-            href="/post"
-            cta="Post now"
-          />
-        ) : (
-          <ScrollRow>
-            {primaryListings.slice(0, 6).map((l) => (
-              <ListingCard
-                key={l.id}
-                listing={l}
-                saves={savesMap[l.id]}
-                featured={featuredListings.some((item) => item.id === l.id)}
-              />
-            ))}
-          </ScrollRow>
-        )}
-      </section>
-
-      {featuredListings.length > 0 && listings.length > 0 ? (
-        <section className="space-y-3">
-          <SectionHeader title="New on campus" href="/explore?sort=newest" cta="Latest" />
-          <ScrollRow>
-            {listings.slice(0, 6).map((l) => (
-              <ListingCard key={l.id} listing={l} saves={savesMap[l.id]} />
-            ))}
-          </ScrollRow>
-        </section>
-      ) : null}
-
-      <section className="space-y-3">
-        <SectionHeader
-          title="Verified vendors"
-          subtitle="Stores and sellers with approved profiles"
-          href="/explore?tab=vendors"
-          cta="View all"
-        />
-
-        {vendors.length === 0 ? (
-          <EmptyState
-            icon={BadgeCheck}
-            title="Verified vendors coming soon"
-            desc="Approved vendors will show up here once their profiles are reviewed."
-            href="/explore?tab=vendors"
-            cta="Browse vendors"
-          />
-        ) : (
-          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 lg:grid-cols-3">
-            {vendors.map((v) => (
-              <VendorCard key={v.id} vendor={v} rating={ratingMap[v.id]} />
-            ))}
-          </div>
-        )}
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
         <TrustPrompt
-          icon={ShieldCheck}
-          title="Trade with confidence"
-          desc="Use verified profiles, public pickup points and reports when something feels off."
+          icon={BadgeCheck}
+          title="Verified sellers"
+          desc="Approved vendor profiles and marketplace signals help you shop with confidence."
         />
         <TrustPrompt
-          icon={MessageCircle}
-          title="Chat before paying"
-          desc="Ask questions, agree on pickup or delivery, and keep updates inside your inbox."
+          icon={ShoppingBag}
+          title="Campus pickup"
+          desc="Agree on pickup, delivery or order details before money changes hands."
         />
         <TrustPrompt
           icon={Truck}
-          title="Use campus delivery"
-          desc="Find riders for food, pickups and transport without leaving the app."
+          title="Delivery ready"
+          desc={`${openFoodCount || foodVendorCount} food vendors and campus delivery routes are one tap away.`}
         />
       </section>
     </div>
@@ -645,13 +565,13 @@ function EmptyState({
   cta: string;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-5 text-center shadow-sm">
+    <div className="rounded-3xl border border-dashed border-zinc-200 bg-white p-5 text-center shadow-sm">
       <Icon className="mx-auto h-8 w-8 text-zinc-300" />
-      <p className="mt-3 text-sm font-bold text-zinc-950">{title}</p>
+      <p className="mt-3 text-sm font-black text-zinc-950">{title}</p>
       <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-zinc-500">{desc}</p>
       <Link
         href={href}
-        className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-zinc-950 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-800"
+        className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-brand-market px-4 text-sm font-black text-white hover:bg-orange-700"
       >
         {cta}
         <ArrowRight className="h-4 w-4" />
@@ -660,248 +580,126 @@ function EmptyState({
   );
 }
 
+function ListingCard({ listing, index }: { listing: ListingPreview; index: number }) {
+  const title = listing.title ?? "Untitled listing";
+  const img = (listing.image_url ?? "").trim();
+  const hasImg = img.length > 0;
+  const mediaTone = listingTone(listing.category, index);
+
+  return (
+    <Link
+      href={`/listing/${listing.id}`}
+      className="group min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:border-orange-200 hover:shadow-md"
+    >
+      <div className={cn("relative aspect-[1.18/1] w-full overflow-hidden", mediaTone.bg)}>
+        {hasImg ? (
+          <ListingImage src={img} alt={title} className="h-full w-full object-cover transition group-hover:scale-105" />
+        ) : (
+          <div className="grid h-full w-full place-items-center">
+            <ListingMediaIcon category={listing.category} className={cn("h-9 w-9", mediaTone.icon)} />
+          </div>
+        )}
+        {listing.created_at ? (
+          <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-zinc-700">
+            {timeAgo(listing.created_at)}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="space-y-2 p-3">
+        <div className="line-clamp-2 min-h-[2.3rem] text-sm font-black leading-tight text-zinc-950">{title}</div>
+        <div className="text-base font-black leading-none text-brand-market">
+          {listing.price !== null ? formatNaira(listing.price) : listing.price_label?.trim() || "Contact"}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-[11px] font-semibold text-zinc-500">
+            {listing.category ?? listing.location ?? "Campus"}
+          </span>
+          {listing.negotiable ? (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">
+              Deal
+            </span>
+          ) : (
+            <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-black text-brand-market">
+              New
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function FoodVendorCard({
   vendor,
+  index,
 }: {
   vendor: FoodVendorPreview & {
     open: boolean | null;
     status: ReturnType<typeof getFoodStatus>;
-    hours: string | null;
     rating: { avg: number; count: number } | null;
     menuItems: MenuPreviewItem[];
   };
+  index: number;
 }) {
   const initial = (vendor.name ?? "F")[0].toUpperCase();
+  const tone = index % 2 === 0 ? "bg-amber-50 text-amber-700" : "bg-orange-50 text-brand-market";
+  const menu = vendor.menuItems
+    .map((item) => item.name?.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
 
   return (
     <Link
       href={`/vendors/${vendor.id}`}
-      className="group flex min-w-[245px] snap-start flex-col rounded-2xl border border-zinc-100 bg-white p-3.5 shadow-sm transition hover:border-zinc-200 hover:bg-zinc-50 md:min-w-0"
-    >
-      <div className="flex items-start gap-3">
-        {vendor.avatar_url ? (
-          <Image
-            src={vendor.avatar_url}
-            alt={vendor.name ?? "Food vendor"}
-            width={48}
-            height={48}
-            className="h-12 w-12 shrink-0 rounded-2xl object-cover"
-          />
-        ) : (
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-50 text-sm font-black text-amber-700">
-            {initial}
-          </div>
-        )}
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <p className="truncate text-sm font-bold text-zinc-950">{vendor.name ?? "Food vendor"}</p>
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                vendor.status.tone === "open"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : vendor.status.tone === "soon"
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                    : "border-zinc-200 bg-zinc-100 text-zinc-500",
-              )}
-            >
-              {vendor.status.tone === "open" ? <CheckCircle2 className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
-              {vendor.status.label}
-            </span>
-          </div>
-
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-            {vendor.rating ? (
-              <span className="inline-flex items-center gap-1">
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                <span className="font-bold text-zinc-800">{vendor.rating.avg.toFixed(1)}</span>
-                <span className="text-zinc-400">({vendor.rating.count})</span>
-              </span>
-            ) : null}
-            {vendor.hours ? (
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {vendor.hours}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {vendor.description ? (
-        <p className="mt-3 line-clamp-2 text-xs leading-5 text-zinc-500">{vendor.description}</p>
-      ) : null}
-
-      {vendor.menuItems.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {vendor.menuItems.map((item, index) => (
-            <span
-              key={`${vendor.id}-${item.name ?? "item"}-${index}`}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] font-semibold text-zinc-700"
-            >
-              <span>{item.emoji?.trim() || <UtensilsCrossed className="h-3 w-3" />}</span>
-              <span className="truncate">{item.name ?? "Menu item"}</span>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 rounded-2xl border border-dashed border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-400">
-          Menu preview coming soon
-        </div>
-      )}
-
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-100 pt-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-900">
-          <ShoppingBag className="h-3.5 w-3.5" />
-          View menu
-        </span>
-        {vendor.accepts_delivery === true && vendor.open === true ? (
-          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
-            Delivery
-          </span>
-        ) : (
-          <ArrowRight className="h-4 w-4 text-zinc-300 transition group-hover:text-zinc-500" />
-        )}
-      </div>
-    </Link>
-  );
-}
-
-function ListingCard({
-  listing: l,
-  saves,
-  featured = false,
-}: {
-  listing: ListingPreview;
-  saves?: number;
-  featured?: boolean;
-}) {
-  const title = l.title ?? "Untitled listing";
-  const img = (l.image_url ?? "").trim();
-  const hasImg = img.length > 0;
-
-  return (
-    <Link
-      href={`/listing/${l.id}`}
-      className="group min-w-[220px] snap-start overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-sm transition hover:border-zinc-200 hover:bg-zinc-50 md:min-w-0"
-    >
-      <div className="relative aspect-[4/3] w-full bg-zinc-100">
-        {hasImg ? (
-          <ListingImage src={img} alt={title} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-zinc-300">
-            <ImageIcon className="h-7 w-7" />
-          </div>
-        )}
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/45 to-transparent" />
-
-        {l.category ? (
-          <span className="absolute left-3 top-3 max-w-[75%] truncate rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-bold text-zinc-900">
-            {l.category}
-          </span>
-        ) : null}
-
-        {featured ? (
-          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-500/95 px-2 py-0.5 text-[11px] font-bold text-white">
-            <Star className="h-2.5 w-2.5 fill-white" />
-            Featured
-          </span>
-        ) : l.negotiable ? (
-          <span className="absolute right-3 top-3 rounded-full bg-zinc-950/75 px-2 py-0.5 text-[11px] font-bold text-white">
-            Negotiable
-          </span>
-        ) : null}
-
-        {l.created_at ? (
-          <span className="absolute bottom-3 left-3 text-[11px] font-semibold text-white/90">
-            {timeAgo(l.created_at)}
-          </span>
-        ) : null}
-
-        {(saves ?? 0) > 0 ? (
-          <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
-            <Bookmark className="h-3 w-3" />
-            {saves}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="p-3.5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-zinc-950">{title}</div>
-            {l.location ? (
-              <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{l.location}</span>
-              </div>
-            ) : null}
-          </div>
-          <div className="shrink-0 text-right">
-            <span className="text-sm font-black text-zinc-950">
-              {l.price !== null ? formatNaira(l.price) : l.price_label?.trim() || "Contact"}
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function VendorCard({
-  vendor,
-  rating,
-}: {
-  vendor: VendorPreview;
-  rating?: { avg: number; count: number };
-}) {
-  const verified = isVendorVerified(vendor);
-  const initial = (vendor.name ?? "V")[0].toUpperCase();
-
-  return (
-    <Link
-      href={`/vendors/${vendor.id}`}
-      className="group flex min-w-[230px] snap-start items-center gap-3 rounded-2xl border border-zinc-100 bg-white p-3.5 shadow-sm transition hover:border-zinc-200 hover:bg-zinc-50 md:min-w-0"
+      className="flex min-w-0 items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm transition hover:border-orange-200 hover:bg-orange-50/40"
     >
       {vendor.avatar_url ? (
         <Image
           src={vendor.avatar_url}
-          alt={vendor.name ?? "Vendor"}
-          width={46}
-          height={46}
-          className="h-11 w-11 shrink-0 rounded-2xl object-cover"
+          alt={vendor.name ?? "Food vendor"}
+          width={56}
+          height={56}
+          className="h-14 w-14 shrink-0 rounded-2xl object-cover"
         />
       ) : (
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-sm font-black text-zinc-500">
+        <span className={cn("grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-base font-black", tone)}>
           {initial}
-        </div>
+        </span>
       )}
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-bold text-zinc-950">{vendor.name ?? "Unnamed vendor"}</div>
-        <div className="mt-1 flex items-center gap-1 text-xs text-zinc-500">
-          <MapPin className="h-3 w-3 shrink-0" />
-          <span className="truncate">{vendor.location ?? "Campus"}</span>
+        <div className="flex items-start justify-between gap-2">
+          <p className="truncate text-base font-black text-zinc-950">{vendor.name ?? "Food vendor"}</p>
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black",
+              vendor.status.tone === "open"
+                ? "bg-lime-100 text-lime-800"
+                : vendor.status.tone === "soon"
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-zinc-100 text-zinc-500",
+            )}
+          >
+            {vendor.status.tone === "open" ? <CheckCircle2 className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
+            {vendor.status.label}
+          </span>
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          {verified ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-              <BadgeCheck className="h-3 w-3" />
-              Verified
-            </span>
-          ) : null}
-          {rating ? (
-            <span className="inline-flex items-center gap-1 text-xs">
-              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-              <span className="font-bold text-zinc-800">{rating.avg.toFixed(1)}</span>
-              <span className="text-zinc-400">({rating.count})</span>
-            </span>
-          ) : null}
+        <p className="mt-1 truncate text-sm font-medium text-zinc-600">
+          {menu || vendor.description || "Menu preview coming soon"}
+        </p>
+        <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-zinc-600">
+          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+          <span>{vendor.rating ? vendor.rating.avg.toFixed(1) : "New"}</span>
+          <span>·</span>
+          <span>
+            {vendor.accepts_delivery
+              ? `${formatNaira(vendor.delivery_fee ?? 0)} delivery`
+              : "Pickup available"}
+          </span>
         </div>
       </div>
-
-      <ArrowRight className="h-4 w-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-500" />
     </Link>
   );
 }
@@ -916,14 +714,51 @@ function TrustPrompt({
   desc: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-zinc-100">
-        <Icon className="h-5 w-5 text-zinc-700" />
+    <div className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-orange-50">
+        <Icon className="h-5 w-5 text-brand-market" />
       </div>
       <div className="min-w-0">
-        <h3 className="text-sm font-bold text-zinc-950">{title}</h3>
+        <h3 className="text-sm font-black text-zinc-950">{title}</h3>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">{desc}</p>
       </div>
     </div>
   );
+}
+
+function ListingMediaIcon({
+  category,
+  className,
+}: {
+  category: string | null | undefined;
+  className?: string;
+}) {
+  const value = (category ?? "").toLowerCase();
+  if (value.includes("phone")) return <Smartphone className={className} />;
+  if (value.includes("laptop") || value.includes("electronic")) return <Laptop className={className} />;
+  if (value.includes("fashion") || value.includes("cloth")) return <Shirt className={className} />;
+  if (value.includes("book") || value.includes("stationery")) return <BookOpen className={className} />;
+  if (value.includes("service")) return <Wrench className={className} />;
+  return <ImageIcon className={className} />;
+}
+
+function listingTone(category: string | null | undefined, index: number) {
+  const value = (category ?? "").toLowerCase();
+  if (value.includes("phone")) return { bg: "bg-orange-100", icon: "text-brand-market" };
+  if (value.includes("laptop") || value.includes("electronic")) {
+    return { bg: "bg-lime-100", icon: "text-lime-800" };
+  }
+  if (value.includes("fashion") || value.includes("cloth")) {
+    return { bg: "bg-amber-100", icon: "text-amber-800" };
+  }
+  if (value.includes("book") || value.includes("stationery")) {
+    return { bg: "bg-[#EEEDFE]", icon: "text-[#5B35D5]" };
+  }
+  const tones = [
+    { bg: "bg-orange-100", icon: "text-brand-market" },
+    { bg: "bg-amber-100", icon: "text-amber-800" },
+    { bg: "bg-lime-100", icon: "text-lime-800" },
+    { bg: "bg-[#EEEDFE]", icon: "text-[#5B35D5]" },
+  ];
+  return tones[index % tones.length];
 }

@@ -87,8 +87,8 @@ export default function MobileTopBar() {
   }, [q, pathname, showSearch]);
 
   // ── Early return AFTER all hooks ────────────────────────────────────────────
-  // Conversation pages are full-screen — they have their own header
-  if (isConversationPage) return null;
+  // Conversation pages are full-screen; home has its own mockup-style header.
+  if (isConversationPage || pathname === "/") return null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
