@@ -54,6 +54,30 @@ type UserPrefs = {
   department: string | null;
 };
 
+async function getLeaderboardEntryState() {
+  const supabase = await createSupabaseServerClient();
+  const { data: authData } = await supabase.auth.getUser();
+  const currentUserId = authData?.user?.id ?? null;
+  if (!currentUserId) return { currentUserId, profileComplete: false };
+
+  const { data } = await supabase
+    .from("study_preferences")
+    .select("faculty_id,department_id,level,semester,session")
+    .eq("user_id", currentUserId)
+    .maybeSingle();
+
+  const row = data as any;
+  const profileComplete = Boolean(
+    row?.faculty_id &&
+      row?.department_id &&
+      typeof row?.level === "number" &&
+      row?.semester &&
+      row?.session
+  );
+
+  return { currentUserId, profileComplete };
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** user_id → display name (full_name from profiles, fallback to email prefix) */
@@ -624,9 +648,51 @@ export default async function LeaderboardPage({
   searchParams?: { scope?: string };
 }) {
   // Validate scope param
-  const rawScope = (searchParams?.scope ?? "all").toLowerCase();
+  const entryState = await getLeaderboardEntryState();
+  const hasExplicitScope = Boolean(searchParams?.scope);
+  const rawScope = (searchParams?.scope ?? (entryState.profileComplete ? "dept" : "all")).toLowerCase();
   const scope: Scope =
     rawScope === "week" || rawScope === "dept" || rawScope === "level" ? rawScope : "all";
+
+  if (!entryState.profileComplete && !hasExplicitScope) {
+    return (
+      <div className="space-y-3 pb-28 md:pb-6">
+        <div className="overflow-hidden rounded-3xl border border-border bg-[#5B35D5] shadow-sm">
+          <div className="px-5 pt-5 pb-4">
+            <Link
+              href="/study"
+              className="mb-4 inline-flex items-center gap-1.5 rounded-2xl border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white no-underline hover:bg-white/25"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </Link>
+            <h1 className="text-2xl font-extrabold tracking-tight text-white">Leaderboard</h1>
+            <p className="mt-1 text-xs text-white/60">Top contributors in your academic scope</p>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-[#5B35D5]/20 bg-card p-5 shadow-sm">
+          <p className="text-base font-extrabold text-foreground">Set up your academic profile</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Save your official department and level to compare progress with the right classmates.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/study/onboarding?next=/study/leaderboard"
+              className="inline-flex items-center justify-center rounded-2xl bg-[#5B35D5] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#3B24A8]"
+            >
+              Complete setup
+            </Link>
+            <Link
+              href="/study/leaderboard?scope=all"
+              className="inline-flex items-center justify-center rounded-2xl border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground no-underline hover:bg-secondary/50"
+            >
+              View all of JABU
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   let rows: LeaderRow[] = [];
   let fetchError: string | null = null;

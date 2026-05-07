@@ -229,7 +229,7 @@ function QuestionsInner() {
       }));
     }, 350);
     return () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); };
-  }, [q, qParam, courseParam, router, pathname, levelParam, unsolvedParam, sortParam]);
+  }, [q, qParam, courseParam, router, pathname, levelParam, unsolvedParam, sortParam, personalizedOff]);
 
   function applyFilters() {
     router.replace(buildHref(pathname, {

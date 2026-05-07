@@ -469,6 +469,7 @@ export default function AiStudyPlanPage() {
   // ── Prefill state
   const [prefilling,    setPrefilling]    = useState(true);
   const [prefillSource, setPrefillSource] = useState<string | null>(null);
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
   const [cgpaPrefilled, setCgpaPrefilled] = useState(false);
   const [targetPrefilled, setTargetPrefilled] = useState(false);
 
@@ -511,8 +512,11 @@ export default function AiStudyPlanPage() {
         if (!user || cancelled) return;
 
         setUserId(user.id);
-        // Fetch study preferences + latest saved plan
-        const [{ data: prefs }, { data: latestPlan, error: latestPlanError }] = await Promise.all([
+        // Fetch study personalization, preferences + latest saved plan
+        const [personalization, { data: prefs }, { data: latestPlan, error: latestPlanError }] = await Promise.all([
+          fetch("/api/study/personalization", { cache: "no-store" })
+            .then((r) => r.json())
+            .catch(() => null),
           supabase
             .from("study_preferences")
             .select("level, department, department_id, faculty, last_study_plan_at, last_study_plan_progress")
@@ -530,6 +534,8 @@ export default function AiStudyPlanPage() {
         if (cancelled) return;
 
         const prefsData = (prefs as StudyPreferencesRow | null) ?? null;
+        const personalizationOk = personalization?.ok === true;
+        setProfileComplete(personalizationOk && personalization.profileStatus === "complete");
         const latestPlanMissingTable =
           latestPlanError?.code === "42P01" ||
           latestPlanError?.message?.includes("does not exist");
@@ -609,32 +615,21 @@ export default function AiStudyPlanPage() {
           setTargetPrefilled(true);
         }
 
-        if (!prefsData) return;
+        const personalizedCourses = personalizationOk && Array.isArray(personalization.courses)
+          ? personalization.courses
+          : [];
 
-        // Fetch courses matching their profile
-        let q = supabase
-          .from("study_courses")
-          .select("course_code, course_title")
-          .eq("status", "approved")
-          .order("course_code", { ascending: true })
-          .limit(10);
-
-        if (prefsData.level) q = q.eq("level", prefsData.level);
-        if (prefsData.department_id) q = q.eq("department_id", prefsData.department_id);
-        else if (prefsData.department) q = q.ilike("department", `%${prefsData.department}%`);
-
-        const { data: courseRows } = await q;
-        if (cancelled) return;
-
-        if (courseRows && courseRows.length > 0) {
-          const codes = (courseRows as Array<{ course_code: string }>).map((course) => course.course_code);
+        if (personalizedCourses.length > 0) {
+          const codes = personalizedCourses
+            .map((course: any) => String(course.course_code ?? "").trim().toUpperCase())
+            .filter(Boolean);
           setCourses(codes);
           setPrefillSource(
-            prefsData.department
+            personalization.scopeLabel ?? (prefsData?.department
               ? `${prefsData.level ? `${prefsData.level}L · ` : ""}${prefsData.department}`
-              : prefsData.level
+              : prefsData?.level
               ? `${prefsData.level}L`
-              : null
+              : null)
           );
 
           try {
@@ -717,6 +712,10 @@ export default function AiStudyPlanPage() {
   // ── Generation ──────────────────────────────────────────────────────────────
 
   async function generate() {
+    if (profileComplete === false) {
+      setError("Complete your academic profile before generating a personalized study plan.");
+      return;
+    }
     const validCourses = courses.filter(Boolean);
     if (!validCourses.length) {
       setError("Add at least one course.");
@@ -967,6 +966,21 @@ export default function AiStudyPlanPage() {
           <p className="text-[13px] text-muted-foreground">Personalised week-by-week study schedule</p>
         </div>
       </div>
+
+      {profileComplete === false ? (
+        <div className="rounded-3xl border border-[#5B35D5]/20 bg-card p-5 shadow-sm">
+          <p className="text-base font-extrabold text-foreground">Set up your academic profile first</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            AI Study Plan needs your official department, level, semester and courses to generate a useful plan.
+          </p>
+          <Link
+            href="/study/onboarding?next=/study/ai-plan"
+            className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-[#5B35D5] px-4 py-3 text-sm font-bold text-white no-underline hover:bg-[#4a2bb0]"
+          >
+            Complete setup <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      ) : null}
 
       {savedPlan ? (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">

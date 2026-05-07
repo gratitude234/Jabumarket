@@ -22,6 +22,8 @@ export default function AskQuestionClient() {
 
   const [userId,    setUserId]    = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [courseOptions, setCourseOptions] = useState<Array<{ code: string; title: string | null }>>([]);
+  const [profileComplete, setProfileComplete] = useState(false);
 
   const [title,   setTitle]   = useState("");
   const [body,    setBody]    = useState("");
@@ -48,8 +50,29 @@ export default function AskQuestionClient() {
       const { data } = await supabase.auth.getUser();
       setUserId(data?.user?.id ?? null);
       setUserEmail(data?.user?.email ?? null);
+      if (!data?.user) return;
+
+      try {
+        const res = await fetch("/api/study/personalization", { cache: "no-store" });
+        const json = await res.json();
+        if (!json?.ok) return;
+
+        setProfileComplete(json.profileStatus === "complete");
+        const nextCourses = ((json.courses as any[]) ?? [])
+          .map((row) => ({
+            code: String(row.course_code ?? "").trim().toUpperCase(),
+            title: row.course_title ? String(row.course_title) : null,
+          }))
+          .filter((row) => row.code);
+        setCourseOptions(nextCourses);
+
+        if (!presetLevel && json.prefs?.level) setLevel(String(json.prefs.level));
+        if (!presetCourse && nextCourses[0]?.code) setCourse(nextCourses[0].code);
+      } catch {
+        // personalization is optional for posting
+      }
     })();
-  }, []);
+  }, [presetCourse, presetLevel]);
 
   useEffect(() => {
     const trimmed = title.trim();
@@ -178,6 +201,16 @@ export default function AskQuestionClient() {
         </div>
       )}
 
+      {userId && !profileComplete ? (
+        <Link
+          href="/study/onboarding?next=/study/questions/ask"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-[#5B35D5]/20 bg-[#EEEDFE] px-4 py-3 text-sm font-semibold text-[#3B24A8] no-underline hover:bg-[#5B35D5]/10 dark:border-[#5B35D5]/30 dark:bg-[#5B35D5]/10 dark:text-indigo-200"
+        >
+          <span>Complete your academic profile so questions reach your courses first.</span>
+          <ExternalLink className="h-4 w-4 shrink-0" />
+        </Link>
+      ) : null}
+
       {/* All fields in one card — less visual noise */}
       <div className="rounded-2xl border border-border bg-background divide-y divide-border overflow-hidden">
 
@@ -290,8 +323,16 @@ export default function AskQuestionClient() {
               value={course}
               onChange={(e) => setCourse(e.target.value.toUpperCase())}
               placeholder="GST101"
+              list="study-question-course-options"
               className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
+            <datalist id="study-question-course-options">
+              {courseOptions.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.title ?? option.code}
+                </option>
+              ))}
+            </datalist>
             <p className="mt-1 text-[10px] text-muted-foreground">Optional</p>
           </div>
           <div className="p-4">
