@@ -89,8 +89,8 @@ export default function ApplyRepPage() {
         if (!auth?.user) { router.replace("/login?next=%2Fstudy%2Fapply-rep"); return; }
 
         const [facRes, depRes, meRes] = await Promise.all([
-          supabase.from("study_faculties").select("id,name,sort_order").order("sort_order"),
-          supabase.from("study_departments").select("id,name,faculty_id,sort_order").order("sort_order"),
+          supabase.from("study_faculties").select("id,name,sort_order").eq("is_active", true).order("sort_order"),
+          supabase.from("study_departments").select("id,name,faculty_id,sort_order").eq("is_active", true).order("sort_order"),
           fetch("/api/study/rep-applications/me", { cache: "no-store" }).then((r) => r.json()),
         ]);
 
