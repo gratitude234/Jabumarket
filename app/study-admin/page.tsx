@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Inbox, Loader2, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BookOpen, FileText, Inbox, Loader2, ShieldCheck, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -21,6 +21,15 @@ type Summary = {
   pendingRequests: number;
   // (optional) if your summary route later adds this
   pendingRepApplications?: number;
+  courseSetup?: Array<{
+    facultyId: string | null;
+    departmentId: string | null;
+    level: number;
+    semester: string;
+    courseCount: number;
+    status: "in_progress" | "complete";
+    completedAt: string | null;
+  }>;
 };
 
 function normalizeRole(role: ScopeRole): "super" | "course_rep" | "dept_librarian" {
@@ -130,6 +139,9 @@ export default function StudyAdminDashboardPage() {
     return `${dept} • Levels: ${lv}`;
   }, [data]);
 
+  const incompleteSetup = (data?.courseSetup ?? []).filter((item) => item.status !== "complete");
+  const nextSetup = incompleteSetup[0] ?? null;
+
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -167,6 +179,32 @@ export default function StudyAdminDashboardPage() {
         <div className="flex items-center gap-2 text-sm text-zinc-600">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </div>
+      ) : null}
+
+      {data && nextSetup ? (
+        <Link
+          href={`/study-admin/courses?level=${nextSetup.level}&semester=${nextSetup.semester}`}
+          className="group block rounded-3xl border border-violet-200 bg-violet-50 p-4 text-violet-950 shadow-sm transition hover:border-violet-300 hover:bg-violet-100"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-violet-800">
+                <BookOpen className="h-3.5 w-3.5" />
+                First job
+              </div>
+              <h2 className="mt-3 text-lg font-semibold tracking-tight">Set up your class course list</h2>
+              <p className="mt-1 text-sm text-violet-800">
+                Add or confirm courses for {nextSetup.level}L {nextSetup.semester} semester so classmates can upload to the right course.
+              </p>
+              <p className="mt-2 text-xs font-medium text-violet-700">
+                {nextSetup.courseCount} course{nextSetup.courseCount === 1 ? "" : "s"} added - {incompleteSetup.length} setup group{incompleteSetup.length === 1 ? "" : "s"} still incomplete
+              </p>
+            </div>
+            <div className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-violet-700 px-4 py-3 text-sm font-semibold text-white group-hover:bg-violet-800">
+              Open setup <ArrowRight className="h-4 w-4" />
+            </div>
+          </div>
+        </Link>
       ) : null}
 
       {data ? (

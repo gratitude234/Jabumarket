@@ -192,15 +192,19 @@ export default function StudyAdminRequestsPage() {
 
     setAcState(r.id, { busy: true, error: null, success: null });
     try {
-      // Step 1: create the course
-      const courseRes = await fetch("/api/study/courses", {
+      const token = await getTokenOrRedirect();
+      if (!token) return;
+
+      // Step 1: create the course through the scoped admin course API
+      const courseRes = await fetch("/api/study-admin/courses", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           course_code:  r.course_code,
           course_title: r.course_title,
           level,
           semester,
+          department_id: r.department_id,
         }),
       });
       const courseJson = await courseRes.json();
@@ -210,8 +214,6 @@ export default function StudyAdminRequestsPage() {
       }
 
       // Step 2: approve the request
-      const token = await getTokenOrRedirect();
-      if (!token) return;
       const approveRes = await fetch(`/api/study-admin/course-requests/${r.id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

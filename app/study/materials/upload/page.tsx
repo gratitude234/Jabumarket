@@ -656,9 +656,16 @@ export default function UploadMaterialsPage() {
     }
     setReqLoading(true);
     try {
-      const res = await fetch("/api/study/courses", {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setBanner({ type: "error", text: "Please log in to create a course." });
+        return;
+      }
+
+      const res = await fetch("/api/study-admin/courses", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           course_code: code, course_title: reqTitle.trim() || null,
           level: reqLevel, semester: reqSemester,
