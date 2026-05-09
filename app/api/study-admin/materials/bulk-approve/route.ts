@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "../../../../../lib/supabase/admin";
 import { requireStudyModeratorFromRequest } from "../../../../../lib/studyAdmin/requireStudyModeratorFromRequest";
 import { isWithinScope } from "../../../../../lib/studyAdmin/scope";
 import { notifyBulkMaterialsApproved } from "../../../../../lib/studyAdmin/notifyUploader";
+import { triggerMaterialIndex } from "../../../../../lib/studyMaterialIndexTrigger";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +130,7 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ material_id: id }),
         }).catch(() => {});
+        triggerMaterialIndex(id);
       }
     } catch {}
 

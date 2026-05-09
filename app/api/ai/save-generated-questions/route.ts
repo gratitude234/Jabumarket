@@ -23,6 +23,14 @@ type MCQ = {
   options: { A: string; B: string; C: string; D: string };
   answer: "A" | "B" | "C" | "D";
   explanation: string;
+  hint?: string;
+  studyRef?: {
+    chunkId?: string;
+    topic?: string;
+    instruction?: string;
+    quote?: string;
+    page?: number;
+  };
 };
 
 type MaterialTitleRow = {
@@ -39,6 +47,56 @@ type InsertedQuestionRow = {
   id: string;
   position: number | null;
 };
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function cleanPage(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const page = Math.floor(value);
+  return page >= 1 && page <= 2000 ? page : undefined;
+}
+
+function cleanStudyRef(question: MCQ, validChunkIds?: Set<string>) {
+  const raw = question.studyRef ?? {};
+  const rawChunkId = cleanString(raw.chunkId);
+  const chunkId = rawChunkId && validChunkIds?.has(rawChunkId) ? rawChunkId : undefined;
+  const topic = cleanString(raw.topic);
+  const instruction = cleanString(raw.instruction) ?? cleanString(question.hint);
+  const quote = cleanString(raw.quote);
+  const page = cleanPage(raw.page);
+  const ref: Record<string, string | number> = {};
+
+  if (chunkId) ref.chunkId = chunkId;
+  if (topic) ref.topic = topic;
+  if (instruction) ref.instruction = instruction;
+  if (quote) ref.quote = quote;
+  if (page) ref.page = page;
+
+  return Object.keys(ref).length > 0 ? ref : null;
+}
+
+async function validSourceChunkIds(materialId: string, questions: MCQ[]) {
+  const requested = [
+    ...new Set(questions.map((question) => cleanString(question.studyRef?.chunkId)).filter(Boolean)),
+  ] as string[];
+
+  if (requested.length === 0) return new Set<string>();
+
+  const { data, error } = await adminSupabase
+    .from("study_material_chunks")
+    .select("id")
+    .eq("material_id", materialId)
+    .in("id", requested);
+
+  if (error) {
+    console.warn("[save-generated-questions] source chunk validation failed:", error.message);
+    return new Set<string>();
+  }
+
+  return new Set((data ?? []).map((row: any) => String(row.id)));
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -114,12 +172,15 @@ export async function POST(req: NextRequest) {
   }
 
   const quizSet = set as QuizSetRow;
+  const chunkIds = await validSourceChunkIds(materialId, questions);
 
   const questionPayload = questions.map((question, index) => ({
     set_id: quizSet.id,
     prompt: question.question,
     position: index,
     explanation: question.explanation,
+    study_ref: cleanStudyRef(question, chunkIds),
+    source_chunk_id: chunkIds.has(question.studyRef?.chunkId ?? "") ? question.studyRef?.chunkId : null,
   }));
 
   const { data: insertedQuestions, error: questionsError } = await admin

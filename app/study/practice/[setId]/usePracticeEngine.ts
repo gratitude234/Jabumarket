@@ -168,7 +168,7 @@ export function usePracticeEngine({
         const qReq = supabase
           .from("study_quiz_questions")
           .select(
-            "id,prompt,explanation,ai_explanation,position," +
+            "id,prompt,explanation,ai_explanation,study_ref,position," +
             "study_quiz_options(id,question_id,text,is_correct,position)"
           )
           .eq("set_id", setId)
@@ -240,6 +240,7 @@ export function usePracticeEngine({
           prompt: String(rest.prompt ?? ""),
           explanation: rest.explanation ?? null,
           ai_explanation: (rest as any).ai_explanation ?? null,
+          study_ref: (rest as any).study_ref ?? null,
           position: typeof rest.position === "number" ? rest.position : null,
         }));
 

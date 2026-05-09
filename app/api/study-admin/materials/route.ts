@@ -77,6 +77,9 @@ export async function GET(req: Request) {
           "featured",
           "file_hash",
           "uploader_email",
+          "index_status",
+          "indexed_at",
+          "index_error",
           "study_courses!inner(id, course_code, course_title, level, semester, faculty_id, department_id)",
         ].join(",")
       )

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { triggerMaterialIndex } from "@/lib/studyMaterialIndexTrigger";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +18,10 @@ export async function POST(req: Request) {
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    for (const id of ids) {
+      triggerMaterialIndex(id);
     }
 
     return NextResponse.json({ ok: true });

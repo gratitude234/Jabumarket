@@ -7,8 +7,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
+  ExternalLink,
   FileText,
   Flag,
+  Lightbulb,
   Loader2,
   MessageCircle,
   RefreshCcw,
@@ -29,6 +31,7 @@ import {
   Share2,
 } from "lucide-react";
 import { Card, EmptyState } from "../../_components/StudyUI";
+import { GuidedSourceModal, type GuidedStudyRef } from "../../_components/GuidedSourceModal";
 import { cn, msToClock, normalize } from "@/lib/utils";
 import { usePracticeEngine } from "./usePracticeEngine";
 import { supabase } from "@/lib/supabase";
@@ -220,6 +223,109 @@ function AiExplainInline({
   );
 }
 
+type PracticeStudyRef = {
+  chunkId?: string;
+  topic?: string;
+  instruction?: string;
+  quote?: string;
+  page?: number;
+} | null | undefined;
+
+type PracticeSourceMaterial = {
+  id: string;
+  title: string | null;
+  file_path: string | null;
+  material_type: string | null;
+};
+
+function studyRefPage(page: unknown): number | undefined {
+  if (typeof page !== "number" || !Number.isFinite(page)) return undefined;
+  const rounded = Math.floor(page);
+  return rounded >= 1 && rounded <= 2000 ? rounded : undefined;
+}
+
+function hasStudyRef(ref: PracticeStudyRef) {
+  return Boolean(ref?.chunkId?.trim() || ref?.topic?.trim() || ref?.instruction?.trim() || ref?.quote?.trim() || studyRefPage(ref?.page));
+}
+
+function PracticeGuidedHint({
+  studyRef,
+  sourceMaterial,
+  onReadSource,
+  onHide,
+}: {
+  studyRef: PracticeStudyRef;
+  sourceMaterial: PracticeSourceMaterial | null;
+  onReadSource: (page?: number, studyRef?: GuidedStudyRef) => void;
+  onHide: () => void;
+}) {
+  if (!hasStudyRef(studyRef)) return null;
+
+  const page = studyRefPage(studyRef?.page);
+  const topic = studyRef?.topic?.trim();
+  const instruction = studyRef?.instruction?.trim() || "Review the relevant part of the source material before answering.";
+  const quote = studyRef?.quote?.trim();
+  const sourceBacked = Boolean(studyRef?.chunkId?.trim());
+  const sourceHref = sourceMaterial
+    ? `/study/materials/${encodeURIComponent(sourceMaterial.id)}`
+    : null;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-amber-300/50 bg-amber-50 px-3 py-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+      <div className="flex items-start gap-2.5">
+        <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-extrabold text-amber-900 dark:text-amber-200">Review this first</p>
+            {topic ? (
+              <span className="rounded-full border border-amber-300/70 bg-background/80 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
+                {topic}
+              </span>
+            ) : null}
+            {page ? (
+              <span className="rounded-full border border-amber-300/70 bg-background/80 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
+                {sourceBacked ? `Source: Page ${page}` : `Page ${page}`}
+              </span>
+            ) : null}
+            {sourceBacked ? (
+              <span className="rounded-full border border-emerald-300/70 bg-background/80 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                Source-backed
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1.5 text-xs font-medium leading-relaxed text-amber-800 dark:text-amber-300">
+            {instruction}
+          </p>
+          {quote ? (
+            <blockquote className="mt-2 border-l-2 border-amber-300 pl-3 text-[11px] font-medium leading-relaxed text-amber-900/80 dark:border-amber-700 dark:text-amber-200/80">
+              {quote}
+            </blockquote>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {sourceHref ? (
+              <button
+                type="button"
+                onClick={() => onReadSource(page, studyRef)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white no-underline transition hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Read source
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onHide}
+              className="inline-flex items-center rounded-xl border border-amber-300/70 bg-background/80 px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300"
+            >
+              Hide
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function PracticeTakeClient() {
@@ -303,6 +409,7 @@ export default function PracticeTakeClient() {
 
   // Question navigator drawer
   const [navOpen, setNavOpen] = useState(false);
+  const [studyHintOpen, setStudyHintOpen] = useState<Record<string, boolean>>({});
 
   // Milestone toast — fires once when finalization completes
   const [milestone, setMilestone] = useState<Milestone | null>(null);
@@ -350,7 +457,8 @@ export default function PracticeTakeClient() {
     })();
   }, [submitted, finalizing]);
 
-  const [sourceMaterial, setSourceMaterial] = useState<{ id: string; title: string | null } | null>(null);
+  const [sourceMaterial, setSourceMaterial] = useState<PracticeSourceMaterial | null>(null);
+  const [readingRef, setReadingRef] = useState<{ open: boolean; page?: number; studyRef?: GuidedStudyRef } | null>(null);
   useEffect(() => {
     const sourceMaterialId = meta?.source_material_id?.trim();
     if (!sourceMaterialId) {
@@ -363,7 +471,7 @@ export default function PracticeTakeClient() {
       try {
         const { data: srcMat } = await supabase
           .from("study_materials")
-          .select("id, title")
+          .select("id, title, file_path, material_type")
           .eq("id", sourceMaterialId)
           .maybeSingle();
 
@@ -371,6 +479,8 @@ export default function PracticeTakeClient() {
           setSourceMaterial({
             id: String(srcMat.id),
             title: srcMat.title ?? null,
+            file_path: (srcMat as any).file_path ?? null,
+            material_type: (srcMat as any).material_type ?? null,
           });
         } else if (!cancelled) {
           setSourceMaterial(null);
@@ -477,6 +587,8 @@ export default function PracticeTakeClient() {
 
   function resetAll() {
     setRevealed({});
+    setStudyHintOpen({});
+    setReadingRef(null);
     softReset();
   }
 
@@ -605,6 +717,17 @@ if (err || !meta) {
 
   return (
     <div className="pb-28 md:pb-6">
+      <GuidedSourceModal
+        open={Boolean(readingRef?.open)}
+        onResume={() => setReadingRef(null)}
+        materialId={sourceMaterial?.id}
+        title={sourceMaterial?.title ?? "Source material"}
+        filePath={sourceMaterial?.file_path}
+        materialType={sourceMaterial?.material_type}
+        studyRef={readingRef?.studyRef}
+        page={readingRef?.page}
+      />
+
       {/* Sticky mobile header */}
       <div className="sticky top-0 z-20 -mx-4 bg-background/85 px-4 pb-3 pt-2 backdrop-blur border-b border-border">
         <div className="flex items-center justify-between gap-2">
@@ -794,7 +917,7 @@ if (err || !meta) {
               {stats.correct < stats.total ? (
                 <button
                   type="button"
-                  onClick={() => { setRevealed({}); retryWeakQuestions(); }}
+                  onClick={() => { setRevealed({}); setStudyHintOpen({}); retryWeakQuestions(); }}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-[#5B35D5] transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 >
                   <RotateCcw className="h-4 w-4" />
@@ -1015,7 +1138,7 @@ if (err || !meta) {
               {stats.correct < stats.total && (
                 <button
                   type="button"
-                  onClick={() => { setRevealed({}); retryWeakQuestions(); }}
+                  onClick={() => { setRevealed({}); setStudyHintOpen({}); retryWeakQuestions(); }}
                   className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-secondary/40 focus-visible:outline-none"
                 >
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-50 dark:bg-rose-950/30">
@@ -1163,6 +1286,26 @@ if (err || !meta) {
                 )
               ) : null}
             </div>
+
+            {current && hasStudyRef(current.study_ref) && !isRevealed ? (
+              studyHintOpen[current.id] ? (
+                <PracticeGuidedHint
+                  studyRef={current.study_ref}
+                  sourceMaterial={sourceMaterial}
+                  onReadSource={(page, studyRef) => setReadingRef({ open: true, page, studyRef })}
+                  onHide={() => setStudyHintOpen((prev) => ({ ...prev, [current.id]: false }))}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setStudyHintOpen((prev) => ({ ...prev, [current.id]: true }))}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700/40 dark:bg-amber-950/20 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                >
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  Show study hint
+                </button>
+              )
+            ) : null}
 
             {/* Options */}
             <div className="mt-4 grid gap-2">

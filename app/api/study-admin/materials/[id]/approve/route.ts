@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "../../../../../../lib/supabase/admin"
 import { requireStudyModeratorFromRequest } from "../../../../../../lib/studyAdmin/requireStudyModeratorFromRequest";
 import { isWithinScope } from "../../../../../../lib/studyAdmin/scope";
 import { notifyMaterialApproved } from "../../../../../../lib/studyAdmin/notifyUploader";
+import { triggerMaterialIndex } from "../../../../../../lib/studyMaterialIndexTrigger";
 
 function idFromUrl(req: Request) {
   try {
@@ -146,6 +147,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }).catch(() => {});
       }
     } catch {}
+
+    triggerMaterialIndex(id);
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

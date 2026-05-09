@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { isIndexableMaterialPath } from "@/lib/studyMaterialIndexEligibility";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,6 +16,7 @@ import {
   FileText,
   Filter,
   Loader2,
+  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -56,6 +58,10 @@ type MaterialRow = {
   file_url: string;
   file_path: string;
   created_at: string;
+  approved?: boolean | null;
+  index_status?: "pending" | "indexing" | "ready" | "failed" | "skipped" | null;
+  indexed_at?: string | null;
+  index_error?: string | null;
   study_courses: CourseRow;
   // Optional, if your table has it
   uploader_id?: string | null;
@@ -122,6 +128,38 @@ function formatDate(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function indexStatusLabel(status: MaterialRow["index_status"]) {
+  if (status === "ready") return "Indexed";
+  if (status === "indexing") return "Indexing";
+  if (status === "failed") return "Index failed";
+  if (status === "skipped") return "Skipped";
+  return "Not indexed";
+}
+
+function IndexStatusBadge({ row }: { row: MaterialRow }) {
+  const status = row.index_status ?? "pending";
+  const classes =
+    status === "ready"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : status === "indexing"
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : status === "failed"
+          ? "border-red-200 bg-red-50 text-red-700"
+          : status === "skipped"
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-zinc-200 bg-zinc-50 text-zinc-600";
+
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold", classes)}
+      title={row.index_error || (row.indexed_at ? `Indexed ${formatDate(row.indexed_at)}` : undefined)}
+    >
+      {status === "indexing" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+      {indexStatusLabel(status)}
+    </span>
+  );
 }
 
 function guessFileKind(url: string) {
@@ -349,7 +387,7 @@ export default function AdminStudyPage() {
   const [qaAnswersLoading, setQaAnswersLoading] = useState(false);
 
   // per-row mutation tracking
-  const [mutating, setMutating] = useState<Record<string, "approve" | "reject">>({});
+  const [mutating, setMutating] = useState<Record<string, "approve" | "reject" | "reindex">>({});
 
   // selection
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -377,6 +415,7 @@ export default function AdminStudyPage() {
 
   // bulk approve busy
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkIndexBusy, setBulkIndexBusy] = useState(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / Math.max(1, perPage))), [total, perPage]);
 
@@ -490,7 +529,7 @@ export default function AdminStudyPage() {
     let q = supabase
       .from("study_materials")
       .select(
-        `id, title, material_type, session, file_url, file_path, created_at, uploader_id,
+        `id, title, material_type, session, file_url, file_path, created_at, uploader_id, approved, index_status, indexed_at, index_error,
          study_courses:course_id!inner(id, department, level, course_code, course_title, semester)`,
         { count: "exact" }
       );
@@ -977,6 +1016,63 @@ export default function AdminStudyPage() {
     setSelected({});
     setBulkBusy(false);
     setBanner({ kind: "success", text: `Approved ${selectedCount} item(s).` });
+  }
+
+  async function reindexOne(id: string) {
+    if (!id || mutating[id]) return;
+    setMutating((prev) => ({ ...prev, [id]: "reindex" }));
+    setBanner(null);
+
+    try {
+      const resp = await fetch("/api/admin/study/materials/reindex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await resp.json().catch(() => null);
+
+      if (!resp.ok || !json?.ok) {
+        throw new Error(json?.error ?? "Reindex failed.");
+      }
+
+      await fetchPage();
+      setBanner({ kind: "success", text: json.status === "ready" ? `Indexed ${json.chunks ?? 0} chunk(s).` : "Reindex completed." });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e?.message ?? "Reindex failed." });
+    } finally {
+      setMutating((prev) => {
+        const n = { ...prev };
+        delete n[id];
+        return n;
+      });
+    }
+  }
+
+  async function reindexBulk() {
+    if (bulkIndexBusy || selectedCount === 0) return;
+    setBulkIndexBusy(true);
+    setBanner(null);
+
+    try {
+      const resp = await fetch("/api/admin/study/materials/bulk-reindex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const json = await resp.json().catch(() => null);
+
+      if (!resp.ok || !json?.ok) {
+        throw new Error(json?.error ?? "Bulk reindex failed.");
+      }
+
+      setSelected({});
+      await fetchPage();
+      setBanner({ kind: "success", text: `Queued ${json.queued ?? 0} material(s) for indexing. ${json.skipped ?? 0} skipped.` });
+    } catch (e: any) {
+      setBanner({ kind: "error", text: e?.message ?? "Bulk reindex failed." });
+    } finally {
+      setBulkIndexBusy(false);
+    }
   }
 
   function openRejectModalForSelected() {
@@ -2285,10 +2381,10 @@ export default function AdminStudyPage() {
             <button
               type="button"
               onClick={approveBulk}
-              disabled={selectedCount === 0 || bulkBusy}
+              disabled={selectedCount === 0 || bulkBusy || bulkIndexBusy}
               className={cn(
                 "inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
-                selectedCount === 0 || bulkBusy
+                selectedCount === 0 || bulkBusy || bulkIndexBusy
                   ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
                   : "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-600"
               )}
@@ -2299,11 +2395,26 @@ export default function AdminStudyPage() {
 
             <button
               type="button"
-              onClick={openRejectModalForSelected}
-              disabled={selectedCount === 0 || bulkBusy}
+              onClick={reindexBulk}
+              disabled={selectedCount === 0 || bulkBusy || bulkIndexBusy}
               className={cn(
                 "inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
-                selectedCount === 0 || bulkBusy
+                selectedCount === 0 || bulkBusy || bulkIndexBusy
+                  ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
+                  : "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50"
+              )}
+            >
+              {bulkIndexBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Index selected
+            </button>
+
+            <button
+              type="button"
+              onClick={openRejectModalForSelected}
+              disabled={selectedCount === 0 || bulkBusy || bulkIndexBusy}
+              className={cn(
+                "inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
+                selectedCount === 0 || bulkBusy || bulkIndexBusy
                   ? "cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500"
                   : "border border-red-700 bg-red-700 text-white hover:bg-red-600"
               )}
@@ -2341,6 +2452,8 @@ export default function AdminStudyPage() {
             const meta = `${c.department} • ${c.level}L • ${c.course_code}${c.course_title ? ` — ${c.course_title}` : ""} • ${c.semester.toUpperCase()}`;
             const busy = !!mutating[m.id];
             const selectedRow = !!selected[m.id];
+            const canReindex = Boolean(m.approved) && isIndexableMaterialPath(m.file_path);
+            const indexBusy = mutating[m.id] === "reindex" || m.index_status === "indexing";
 
             return (
               <div key={m.id} className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -2362,6 +2475,7 @@ export default function AdminStudyPage() {
                         <span className="rounded-full border bg-zinc-50 px-2 py-1 text-[11px] font-medium text-zinc-700">
                           {TYPE_LABEL[m.material_type]}
                         </span>
+                        <IndexStatusBadge row={m} />
                         {m.session ? (
                           <span className="rounded-full border bg-zinc-50 px-2 py-1 text-[11px] font-medium text-zinc-700">
                             {m.session}
@@ -2404,6 +2518,9 @@ export default function AdminStudyPage() {
                           Uploader: <span className="font-semibold">{m.uploader_id}</span>
                         </p>
                       ) : null}
+                      {m.index_error ? (
+                        <p className="mt-2 line-clamp-1 text-[11px] text-amber-700">Index note: {m.index_error}</p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -2411,11 +2528,11 @@ export default function AdminStudyPage() {
                     <button
                       type="button"
                       onClick={() => approveOne(m.id)}
-                      disabled={busy || bulkBusy}
+                      disabled={busy || bulkBusy || bulkIndexBusy}
                       className={cn(
                         "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
                         "border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-600",
-                        busy || bulkBusy ? "opacity-70" : ""
+                        busy || bulkBusy || bulkIndexBusy ? "opacity-70" : ""
                       )}
                     >
                       {mutating[m.id] === "approve" ? (
@@ -2426,14 +2543,30 @@ export default function AdminStudyPage() {
                       Approve
                     </button>
 
+                    {canReindex ? (
+                      <button
+                        type="button"
+                        onClick={() => reindexOne(m.id)}
+                        disabled={busy || bulkBusy || bulkIndexBusy || indexBusy}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
+                          "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50",
+                          busy || bulkBusy || bulkIndexBusy || indexBusy ? "opacity-70" : ""
+                        )}
+                      >
+                        {indexBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Reindex
+                      </button>
+                    ) : null}
+
                     <button
                       type="button"
                       onClick={() => openRejectModalForOne(m)}
-                      disabled={busy || bulkBusy}
+                      disabled={busy || bulkBusy || bulkIndexBusy}
                       className={cn(
                         "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold",
                         "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50",
-                        busy || bulkBusy ? "opacity-70" : ""
+                        busy || bulkBusy || bulkIndexBusy ? "opacity-70" : ""
                       )}
                     >
                       <Trash2 className="h-4 w-4" /> Reject

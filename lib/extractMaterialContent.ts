@@ -27,6 +27,11 @@ export type UnsupportedContent = {
 
 export type MaterialContent = InlineContent | TextContent | UnsupportedContent;
 
+export type PageTextContent = {
+  pageNumber: number | null;
+  text: string;
+};
+
 const IMAGE_MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -92,7 +97,11 @@ function configurePdfWorker(PDFParse: PDFParseConstructor) {
   pdfWorkerConfigured = true;
 }
 
-async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
+function normalizeExtractedText(text: string): string {
+  return text.replace(/\s+\n/g, "\n").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+export async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
   const warnings = result.messages.filter((m) => m.type === "warning");
   if (warnings.length) {
@@ -101,7 +110,7 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   return result.value.trim();
 }
 
-async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+export async function extractPdfPageTexts(buffer: ArrayBuffer): Promise<PageTextContent[]> {
   const PDFParse = await loadPdfParse();
   configurePdfWorker(PDFParse);
 
@@ -113,13 +122,29 @@ async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
 
   try {
     const result = await parser.getText();
-    return result.text.replace(/\s+\n/g, "\n").replace(/[ \t]{2,}/g, " ").trim();
+    const pages = Array.isArray(result.pages) ? result.pages : [];
+    if (pages.length > 0) {
+      return pages
+        .map((page) => ({
+          pageNumber: typeof page.num === "number" ? page.num : null,
+          text: normalizeExtractedText(page.text ?? ""),
+        }))
+        .filter((page) => page.text.length > 0);
+    }
+
+    const text = normalizeExtractedText(result.text ?? "");
+    return text ? [{ pageNumber: null, text }] : [];
   } finally {
     await parser.destroy();
   }
 }
 
-async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  const pages = await extractPdfPageTexts(buffer);
+  return pages.map((page) => page.text).join("\n\n").trim();
+}
+
+export async function extractPptxSlideTexts(buffer: ArrayBuffer): Promise<PageTextContent[]> {
   const zip = await JSZip.loadAsync(buffer);
 
   const slideFiles = Object.keys(zip.files)
@@ -130,7 +155,7 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
       return na - nb;
     });
 
-  const slideTexts: string[] = [];
+  const slideTexts: PageTextContent[] = [];
 
   for (const slideName of slideFiles) {
     const xml = await zip.files[slideName].async("string");
@@ -149,11 +174,19 @@ async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
 
     if (texts.length) {
       const slideNum = slideFiles.indexOf(slideName) + 1;
-      slideTexts.push(`[Slide ${slideNum}]\n${texts.join(" ")}`);
+      slideTexts.push({
+        pageNumber: slideNum,
+        text: normalizeExtractedText(texts.join(" ")),
+      });
     }
   }
 
-  return slideTexts.join("\n\n");
+  return slideTexts;
+}
+
+async function extractPptxText(buffer: ArrayBuffer): Promise<string> {
+  const slides = await extractPptxSlideTexts(buffer);
+  return slides.map((slide) => `[Slide ${slide.pageNumber ?? "?"}]\n${slide.text}`).join("\n\n");
 }
 
 /**
@@ -184,7 +217,7 @@ export async function extractMaterialContent(
           kind: "inline",
           mimeType: "application/pdf",
           base64: Buffer.from(buffer).toString("base64"),
-          reason: `PDF text extraction failed: ${e?.message ?? "unknown error"}`,
+          reason: "Gemini read the PDF directly.",
         };
       }
     } else {
@@ -193,7 +226,7 @@ export async function extractMaterialContent(
         kind: "inline",
         mimeType: "application/pdf",
         base64: Buffer.from(buffer).toString("base64"),
-        reason: "PDF text extraction is disabled by server configuration, so Gemini read the PDF directly.",
+        reason: "Gemini read the PDF directly.",
       };
     }
 
@@ -201,7 +234,7 @@ export async function extractMaterialContent(
       kind: "inline",
       mimeType: "application/pdf",
       base64: Buffer.from(buffer).toString("base64"),
-      reason: "PDF did not contain enough selectable text, so Gemini read the PDF directly.",
+      reason: "Gemini read the PDF directly.",
     };
   }
 

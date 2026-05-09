@@ -119,6 +119,13 @@ export type QuizQuestion = {
   prompt: string;
   explanation: string | null;
   ai_explanation?: string | null;
+  study_ref?: {
+    chunkId?: string;
+    topic?: string;
+    instruction?: string;
+    quote?: string;
+    page?: number;
+  } | null;
   position: number | null;
 };
 

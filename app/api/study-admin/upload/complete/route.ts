@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "../../../../../lib/supabase/admin";
 import { requireStudyModeratorFromRequest } from "../../../../../lib/studyAdmin/requireStudyModeratorFromRequest";
+import { triggerMaterialIndex } from "../../../../../lib/studyMaterialIndexTrigger";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
       .eq("id", material_id);
 
     if (updateErr) throw updateErr;
+
+    triggerMaterialIndex(material_id);
 
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {

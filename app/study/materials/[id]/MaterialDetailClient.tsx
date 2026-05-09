@@ -34,6 +34,7 @@ import {
 import { cn, timeAgo } from "@/lib/utils";
 import { toggleSaved } from "@/lib/studySaved";
 import { supabase } from "@/lib/supabase";
+import { GuidedSourceModal, type GuidedStudyRef } from "@/app/study/_components/GuidedSourceModal";
 
 type GeneratedQuestion = {
   question: string;
@@ -41,6 +42,13 @@ type GeneratedQuestion = {
   answer: "A" | "B" | "C" | "D";
   explanation: string;
   hint?: string;
+  studyRef?: {
+    chunkId?: string;
+    topic?: string;
+    instruction?: string;
+    quote?: string;
+    page?: number;
+  };
 };
 
 type AiGenerationMeta = {
@@ -158,7 +166,24 @@ function formatAiModel(ai: AiGenerationMeta | null) {
 }
 
 function formatAiReason(ai: AiGenerationMeta | null) {
-  return ai?.reason ?? "";
+  const reason = ai?.reason?.trim() ?? "";
+  if (!reason) return "";
+  if (/pdf text extraction failed|dommatrix/i.test(reason)) {
+    return "Gemini read the PDF directly.";
+  }
+  return reason;
+}
+
+function normalizedPage(page: unknown): number | undefined {
+  if (typeof page !== "number" || !Number.isFinite(page)) return undefined;
+  const rounded = Math.floor(page);
+  return rounded >= 1 && rounded <= 2000 ? rounded : undefined;
+}
+
+function withPdfPage(url: string, page?: number) {
+  const safePage = normalizedPage(page);
+  if (!safePage) return url;
+  return `${url.split("#")[0]}#page=${safePage}`;
 }
 
 async function readGenerateQuestionsResponse(res: Response): Promise<GenerateQuestionsResponse> {
@@ -188,11 +213,12 @@ function previewUrl(url: string) {
   return `${url}${url.includes("?") ? "&" : "?"}preview=1`;
 }
 
-function PdfViewer({ url, heightClass = "h-[70vh]" }: { url: string; heightClass?: string }) {
+function PdfViewer({ url, heightClass = "h-[70vh]", page }: { url: string; heightClass?: string; page?: number }) {
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
-  const src = useFallback ? GDOCS(url) : url;
+  const safePage = normalizedPage(page);
+  const src = useFallback ? GDOCS(url) : withPdfPage(url, safePage);
 
   useEffect(() => { setLoading(true); setErrored(false); }, [src]);
   useEffect(() => {
@@ -222,7 +248,7 @@ function PdfViewer({ url, heightClass = "h-[70vh]" }: { url: string; heightClass
                   <RefreshCw className="h-3.5 w-3.5" /> Try Google Docs viewer
                 </button>
               )}
-              <a href={url} target="_blank" rel="noreferrer"
+              <a href={withPdfPage(url, safePage)} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary/50">
                 <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
               </a>
@@ -234,6 +260,11 @@ function PdfViewer({ url, heightClass = "h-[70vh]" }: { url: string; heightClass
           onLoad={() => setLoading(false)}
           onError={() => { setLoading(false); setErrored(true); }} />
       )}
+      {safePage && (
+        <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-full border border-border bg-background/90 px-3 py-1 text-[11px] font-semibold text-foreground shadow-sm backdrop-blur">
+          Go to page {safePage}
+        </div>
+      )}
     </div>
   );
 }
@@ -243,11 +274,13 @@ function ResolvedFileViewer({
   title,
   kind,
   heightClass,
+  page,
 }: {
   url: string;
   title: string;
   kind: "pdf" | "image";
   heightClass: string;
+  page?: number;
 }) {
   const [resolvedUrl, setResolvedUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -307,7 +340,7 @@ function ResolvedFileViewer({
               <RefreshCw className="h-3.5 w-3.5" /> Try again
             </button>
             <a
-              href={url}
+              href={kind === "pdf" ? withPdfPage(url, page) : url}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary/50"
@@ -320,7 +353,7 @@ function ResolvedFileViewer({
     );
   }
 
-  if (kind === "pdf") return <PdfViewer url={resolvedUrl} heightClass={heightClass} />;
+  if (kind === "pdf") return <PdfViewer url={resolvedUrl} heightClass={heightClass} page={page} />;
   return <ImageViewer url={resolvedUrl} title={title} heightClass={heightClass} />;
 }
 
@@ -422,7 +455,23 @@ function computeWeakQuestionNextDue(missCount: number, fromIso: string): string 
   return new Date(base + days * 86_400_000).toISOString();
 }
 
-function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onClose: () => void; title: string; url: string; kind: "pdf" | "image" | "other" }) {
+function PreviewModal({
+  open,
+  onClose,
+  title,
+  url,
+  kind,
+  page,
+  resumeLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  url: string;
+  kind: "pdf" | "image" | "other";
+  page?: number;
+  resumeLabel?: string;
+}) {
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -439,12 +488,23 @@ function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onCl
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex h-full flex-col md:m-auto md:h-auto md:w-[90vw] md:max-w-4xl md:rounded-3xl md:border md:border-border md:shadow-2xl bg-card">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+            {normalizedPage(page) && (
+              <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">Go to page {normalizedPage(page)}</p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
-            <a href={url} target="_blank" rel="noreferrer"
+            <a href={kind === "pdf" ? withPdfPage(url, page) : url} target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground hover:bg-secondary/50">
               <ExternalLink className="h-3.5 w-3.5" /> Open
             </a>
+            {resumeLabel && (
+              <button type="button" onClick={onClose}
+                className="hidden items-center gap-2 rounded-2xl bg-[#5B4FD9] px-3 py-2 text-sm font-semibold text-white hover:bg-[#4A3FC8] md:inline-flex">
+                <ArrowLeft className="h-3.5 w-3.5" /> {resumeLabel}
+              </button>
+            )}
             <button type="button" onClick={onClose}
               className="grid h-9 w-9 place-items-center rounded-2xl border border-border bg-background hover:bg-secondary/50" aria-label="Close preview">
               <X className="h-4 w-4" />
@@ -452,7 +512,7 @@ function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onCl
           </div>
         </div>
         <div className="flex-1 overflow-hidden p-3 md:flex-none">
-          {kind === "pdf" && <ResolvedFileViewer url={url} title={title} kind="pdf" heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
+          {kind === "pdf" && <ResolvedFileViewer url={url} title={title} kind="pdf" page={page} heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
           {kind === "image" && <ResolvedFileViewer url={url} title={title} kind="image" heightClass="h-[calc(100vh-6rem)] md:h-[75vh]" />}
           {kind === "other" && (
             <div className="grid h-48 place-items-center p-6 text-center">
@@ -462,6 +522,91 @@ function PreviewModal({ open, onClose, title, url, kind }: { open: boolean; onCl
               </div>
             </div>
           )}
+        </div>
+        {resumeLabel && (
+          <div className="shrink-0 border-t border-border p-3 md:hidden">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B4FD9] px-4 py-3 text-sm font-semibold text-white hover:bg-[#4A3FC8]"
+            >
+              <ArrowLeft className="h-4 w-4" /> {resumeLabel}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReviewBeforeAnswer({
+  question,
+  canReadSource,
+  onReadSource,
+  onHide,
+}: {
+  question: GeneratedQuestion;
+  canReadSource: boolean;
+  onReadSource: (page?: number) => void;
+  onHide: () => void;
+}) {
+  const ref = question.studyRef;
+  const page = normalizedPage(ref?.page);
+  const instruction = ref?.instruction?.trim() || question.hint?.trim() || "Review the relevant part of the material before answering.";
+  const topic = ref?.topic?.trim();
+  const quote = ref?.quote?.trim();
+  const sourceLabel = ref?.chunkId ? "Source-backed" : null;
+
+  return (
+    <div className="rounded-xl border border-amber-300/60 bg-amber-50 px-3.5 py-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+      <div className="flex items-start gap-2.5">
+        <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-extrabold text-amber-900 dark:text-amber-200">Review this first</p>
+            {topic && (
+              <span className="rounded-full border border-amber-300/70 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
+                {topic}
+              </span>
+            )}
+            {sourceLabel && (
+              <span className="rounded-full border border-emerald-300/70 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                {sourceLabel}
+              </span>
+            )}
+            {page && (
+              <span className="rounded-full border border-amber-300/70 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
+                {ref?.chunkId ? `Source: Page ${page}` : `Page ${page}`}
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs font-medium leading-relaxed text-amber-800 dark:text-amber-300">
+            {instruction}
+          </p>
+          {quote && (
+            <blockquote className="mt-2 border-l-2 border-amber-300 pl-3 text-[11px] font-medium leading-relaxed text-amber-900/80 dark:border-amber-700 dark:text-amber-200/80">
+              {quote}
+            </blockquote>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canReadSource && (
+              <button
+                type="button"
+                onClick={() => onReadSource(page)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Read source
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onHide}
+              className="inline-flex items-center rounded-xl border border-amber-300/70 bg-white/70 px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300"
+            >
+              Hide
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -486,6 +631,7 @@ export default function MaterialDetailClient({
   const [downloads, setDownloads] = useState(m.downloads ?? 0);
   const [uploaderIsRep, setUploaderIsRep] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [readingRef, setReadingRef] = useState<{ open: boolean; page?: number; studyRef?: GuidedStudyRef } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const upvoteCount = m.up_votes ?? 0;
   const [relatedMaterials] = useState<any[]>(initialRelatedMaterials);
@@ -1127,6 +1273,16 @@ export default function MaterialDetailClient({
 
       {/* Preview modal */}
       <PreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} title={title} url={fileUrl} kind={kind} />
+      <GuidedSourceModal
+        open={Boolean(readingRef?.open)}
+        onResume={() => setReadingRef(null)}
+        materialId={m.id}
+        title={title}
+        filePath={m.file_path}
+        materialType={m.material_type}
+        studyRef={readingRef?.studyRef}
+        page={readingRef?.page}
+      />
 
       {/* Toast */}
       {toast && (
@@ -1275,15 +1431,15 @@ export default function MaterialDetailClient({
                     </p>
 
                     {/* Hint */}
-                    {currentQ.hint && !answered && (
+                    {(currentQ.hint || currentQ.studyRef) && !answered && (
                       <div className="mb-4">
                         {hintShown[currentQuestionIndex] ? (
-                          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/60 bg-amber-50 px-3.5 py-3 dark:border-amber-700/40 dark:bg-amber-950/20">
-                            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                            <p className="text-xs font-medium leading-relaxed text-amber-800 dark:text-amber-300">
-                              {currentQ.hint}
-                            </p>
-                          </div>
+                          <ReviewBeforeAnswer
+                            question={currentQ}
+                            canReadSource={hasFile}
+                            onReadSource={(page) => setReadingRef({ open: true, page, studyRef: currentQ.studyRef })}
+                            onHide={() => setHintShown((prev) => ({ ...prev, [currentQuestionIndex]: false }))}
+                          />
                         ) : (
                           <button
                             type="button"

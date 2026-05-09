@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { triggerMaterialIndex } from "@/lib/studyMaterialIndexTrigger";
 
 export async function POST(req: Request) {
   try {
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ material_id: id }),
         });
+        triggerMaterialIndex(id);
       } catch { /* non-critical */ }
     }
 

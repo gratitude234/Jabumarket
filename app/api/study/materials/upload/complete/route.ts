@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { triggerMaterialIndex } from "@/lib/studyMaterialIndexTrigger";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,7 @@ export async function POST(req: Request) {
     const nowIso = new Date().toISOString();
 
     const patch: any = { updated_at: nowIso };
+    let autoApprove = false;
 
     if (exists) {
       const { data: repRow } = await admin
@@ -110,7 +112,7 @@ export async function POST(req: Request) {
         .select("user_id")
         .eq("user_id", uid)
         .maybeSingle();
-      const autoApprove = process.env.STUDY_AUTO_APPROVE_UPLOADS === "true" || Boolean(repRow || adminRow);
+      autoApprove = process.env.STUDY_AUTO_APPROVE_UPLOADS === "true" || Boolean(repRow || adminRow);
       patch.upload_status = "live";
       patch.approved = autoApprove;
       patch.approved_by = autoApprove ? uid : null;
@@ -131,6 +133,10 @@ export async function POST(req: Request) {
 
     const { error: updErr } = await admin.from("study_materials").update(patch).eq("id", material_id);
     if (updErr) return jsonError(updErr.message || "Update failed", 500, "DB_ERROR");
+
+    if (exists && autoApprove) {
+      triggerMaterialIndex(material_id);
+    }
 
     return NextResponse.json({ ok: true, verified_in_storage: exists });
   } catch (e: any) {
