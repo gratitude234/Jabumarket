@@ -42,6 +42,12 @@ type GeneratedQuestion = {
   answer: "A" | "B" | "C" | "D";
   explanation: string;
   hint?: string;
+  questionKind?: string;
+  difficultyLevel?: string;
+  cognitiveLevel?: string;
+  sourceTopic?: string;
+  questionFingerprint?: string;
+  generationMeta?: Record<string, unknown> | null;
   studyRef?: {
     chunkId?: string;
     topic?: string;
@@ -54,8 +60,15 @@ type GeneratedQuestion = {
 type AiGenerationMeta = {
   provider: "gemini";
   model: string;
-  inputMode: "extracted-text" | "inline-file";
+  inputMode: "extracted-text" | "inline-file" | "indexed-chunks" | "coverage-aware";
   reason?: string;
+  coverage?: {
+    topicsCovered?: number;
+    questionKindCounts?: Record<string, number>;
+    cognitiveLevelCounts?: Record<string, number>;
+    chunksLoaded?: number;
+    chunksCatalogued?: number;
+  };
 };
 
 type GenerateQuestionsResponse = {
@@ -1429,6 +1442,25 @@ export default function MaterialDetailClient({
                     <p className="mb-4 text-sm font-bold text-foreground leading-relaxed">
                       {currentQuestionIndex + 1}. {currentQ.question}
                     </p>
+                    {(currentQ.studyRef?.chunkId || currentQ.questionKind || currentQ.cognitiveLevel) && (
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {currentQ.studyRef?.chunkId && (
+                          <span className="rounded-full border border-emerald-300/70 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                            Source-backed
+                          </span>
+                        )}
+                        {currentQ.questionKind && (
+                          <span className="rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
+                            {currentQ.questionKind.replace(/_/g, " ")}
+                          </span>
+                        )}
+                        {currentQ.cognitiveLevel && (
+                          <span className="rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
+                            {currentQ.cognitiveLevel}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Hint */}
                     {(currentQ.hint || currentQ.studyRef) && !answered && (

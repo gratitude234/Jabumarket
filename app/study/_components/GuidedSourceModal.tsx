@@ -51,6 +51,12 @@ function fileKind(filePath?: string | null, materialType?: string | null): "pdf"
   return "other";
 }
 
+function sourceSnippet(value: string, maxLength = 260) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
+}
+
 const GDOCS = (url: string) =>
   `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 
@@ -133,7 +139,7 @@ function PdfSourceFrame({ url, page }: { url: string; page?: number }) {
   );
 }
 
-function ImageSourceFrame({ url, title }: { url: string; title: string }) {
+function ImageSourceFrame({ url, title, fallbackText }: { url: string; title: string; fallbackText?: string }) {
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
 
@@ -145,7 +151,13 @@ function ImageSourceFrame({ url, title }: { url: string; title: string }) {
         </div>
       ) : null}
       {errored ? (
-        <p className="p-6 text-center text-sm text-muted-foreground">Image preview could not load.</p>
+        <div className="p-6 text-center">
+          <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground" />
+          <p className="mt-3 text-sm font-semibold text-foreground">Image preview could not load</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {fallbackText || "Open the source directly, then resume the question."}
+          </p>
+        </div>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -186,8 +198,15 @@ export function GuidedSourceModal({
   const topic = studyRef?.topic?.trim();
   const instruction = studyRef?.instruction?.trim() || "Review the source material, then return to answer the question.";
   const quote = studyRef?.quote?.trim();
-  const highlightText = quote || chunkText.slice(0, 450);
+  const chunkSnippet = chunkText ? sourceSnippet(chunkText) : "";
+  const visibleQuote = quote || chunkSnippet;
+  const highlightText = quote || chunkText.slice(0, 650);
   const sourceBacked = Boolean(studyRef?.chunkId?.trim());
+  const sourceStateLabel = sourceBacked
+    ? "Source-backed"
+    : safePage
+      ? "Best effort page"
+      : "No exact page";
   const sourceHref = materialId ? `/api/study/materials/${encodeURIComponent(materialId)}/download` : "";
 
   useEffect(() => {
@@ -233,7 +252,8 @@ export function GuidedSourceModal({
   }, [open, materialId, retryKey]);
 
   useEffect(() => {
-    if (!open || !materialId || !studyRef?.chunkId || quote) {
+    const hasPage = Boolean(normalizedPage(page) ?? normalizedPage(studyRef?.page));
+    if (!open || !materialId || !studyRef?.chunkId || (quote && hasPage)) {
       setChunkText("");
       setChunkPage(undefined);
       return;
@@ -263,7 +283,7 @@ export function GuidedSourceModal({
     })();
 
     return () => controller.abort();
-  }, [open, materialId, quote, studyRef?.chunkId]);
+  }, [open, materialId, page, quote, studyRef?.chunkId, studyRef?.page]);
 
   useEffect(() => {
     if (open) setHighlightFailed(false);
@@ -290,11 +310,18 @@ export function GuidedSourceModal({
                     {sourceBacked ? `Source: Page ${safePage}` : `Page ${safePage}`}
                   </span>
                 ) : null}
-                {sourceBacked ? (
-                  <span className="rounded-full border border-emerald-300/70 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300">
-                    Source-backed
-                  </span>
-                ) : null}
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                    sourceBacked
+                      ? "border-emerald-300/70 bg-emerald-50 text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                      : safePage
+                        ? "border-blue-300/70 bg-blue-50 text-blue-800 dark:border-blue-700/50 dark:bg-blue-950/30 dark:text-blue-300"
+                        : "border-zinc-300/70 bg-zinc-50 text-zinc-700 dark:border-zinc-700/50 dark:bg-zinc-950/30 dark:text-zinc-300"
+                  )}
+                >
+                  {sourceStateLabel}
+                </span>
               </div>
               <p className="mt-1 line-clamp-1 text-xs font-semibold text-muted-foreground">{title}</p>
             </div>
@@ -310,9 +337,9 @@ export function GuidedSourceModal({
           </div>
 
           <p className="mt-3 text-sm font-medium leading-relaxed text-foreground">{instruction}</p>
-          {quote ? (
+          {visibleQuote ? (
             <blockquote className="mt-2 border-l-2 border-amber-300 pl-3 text-xs font-medium leading-relaxed text-muted-foreground dark:border-amber-700">
-              {quote}
+              {visibleQuote}
             </blockquote>
           ) : null}
         </div>
@@ -363,13 +390,20 @@ export function GuidedSourceModal({
               <PdfSourceFrame url={resolvedUrl} page={safePage} />
             )
           ) : kind === "image" ? (
-            <ImageSourceFrame url={resolvedUrl} title={title} />
+            <ImageSourceFrame url={resolvedUrl} title={title} fallbackText={instruction} />
           ) : (
             <div className="grid h-full min-h-[18rem] place-items-center rounded-2xl border border-border bg-background p-6 text-center">
-              <div>
+              <div className="max-w-md">
                 <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
                 <p className="mt-3 text-sm font-semibold text-foreground">Open the source to review</p>
-                <p className="mt-1 text-xs text-muted-foreground">This file type is best viewed outside the inline reader.</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {instruction || "This file type is best viewed outside the inline reader."}
+                </p>
+                {visibleQuote ? (
+                  <blockquote className="mt-4 border-l-2 border-amber-300 pl-3 text-left text-xs font-medium leading-relaxed text-muted-foreground dark:border-amber-700">
+                    {visibleQuote}
+                  </blockquote>
+                ) : null}
                 {sourceHref ? (
                   <a
                     href={sourceHref}

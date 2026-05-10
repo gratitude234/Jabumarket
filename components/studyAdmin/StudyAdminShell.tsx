@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, FileText, Inbox, LayoutDashboard, UserCheck2, Upload, History, BookOpen } from "lucide-react";
+import { ShieldCheck, FileText, Inbox, LayoutDashboard, UserCheck2, Upload, History, BookOpen, ListChecks } from "lucide-react";
 import type React from "react";
 
 function NavItem({
@@ -59,6 +59,7 @@ export default function StudyAdminShell({ children }: { children: React.ReactNod
             <NavItem href="/study-admin/upload" label="Upload Materials" icon={<Upload className="h-4 w-4" />} />
             <NavItem href="/study-admin/history" label="History" icon={<History className="h-4 w-4" />} />
             <NavItem href="/study-admin/courses" label="Courses" icon={<BookOpen className="h-4 w-4" />} />
+            <NavItem href="/study-admin/question-quality" label="Question Quality" icon={<ListChecks className="h-4 w-4" />} />
           </nav>
 
           <div className="flex items-center gap-2">
@@ -85,6 +86,7 @@ export default function StudyAdminShell({ children }: { children: React.ReactNod
             <NavItem href="/study-admin/upload" label="Upload" icon={<Upload className="h-4 w-4" />} />
             <NavItem href="/study-admin/history" label="History" icon={<History className="h-4 w-4" />} />
             <NavItem href="/study-admin/courses" label="Courses" icon={<BookOpen className="h-4 w-4" />} />
+            <NavItem href="/study-admin/question-quality" label="Quality" icon={<ListChecks className="h-4 w-4" />} />
           </div>
         </div>
       </header>

@@ -168,7 +168,7 @@ export function usePracticeEngine({
         const qReq = supabase
           .from("study_quiz_questions")
           .select(
-            "id,prompt,explanation,ai_explanation,study_ref,position," +
+            "id,prompt,explanation,ai_explanation,study_ref,question_kind,difficulty_level,cognitive_level,source_topic,question_fingerprint,generation_meta,position," +
             "study_quiz_options(id,question_id,text,is_correct,position)"
           )
           .eq("set_id", setId)
@@ -241,6 +241,12 @@ export function usePracticeEngine({
           explanation: rest.explanation ?? null,
           ai_explanation: (rest as any).ai_explanation ?? null,
           study_ref: (rest as any).study_ref ?? null,
+          question_kind: (rest as any).question_kind ?? null,
+          difficulty_level: (rest as any).difficulty_level ?? null,
+          cognitive_level: (rest as any).cognitive_level ?? null,
+          source_topic: (rest as any).source_topic ?? null,
+          question_fingerprint: (rest as any).question_fingerprint ?? null,
+          generation_meta: (rest as any).generation_meta ?? null,
           position: typeof rest.position === "number" ? rest.position : null,
         }));
 

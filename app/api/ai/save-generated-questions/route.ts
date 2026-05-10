@@ -24,6 +24,12 @@ type MCQ = {
   answer: "A" | "B" | "C" | "D";
   explanation: string;
   hint?: string;
+  questionKind?: string;
+  difficultyLevel?: string;
+  cognitiveLevel?: string;
+  sourceTopic?: string;
+  questionFingerprint?: string;
+  generationMeta?: Record<string, unknown> | null;
   studyRef?: {
     chunkId?: string;
     topic?: string;
@@ -50,6 +56,20 @@ type InsertedQuestionRow = {
 
 function cleanString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function cleanLabel(value: unknown, maxLength = 80): string | null {
+  const clean = cleanString(value);
+  return clean ? clean.slice(0, maxLength) : null;
+}
+
+function cleanJsonObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function cleanPage(value: unknown): number | undefined {
@@ -179,8 +199,16 @@ export async function POST(req: NextRequest) {
     prompt: question.question,
     position: index,
     explanation: question.explanation,
+    ai_generated: true,
+    source_material_id: materialId,
     study_ref: cleanStudyRef(question, chunkIds),
     source_chunk_id: chunkIds.has(question.studyRef?.chunkId ?? "") ? question.studyRef?.chunkId : null,
+    question_kind: cleanLabel(question.questionKind),
+    difficulty_level: cleanLabel(question.difficultyLevel, 40),
+    cognitive_level: cleanLabel(question.cognitiveLevel, 40),
+    source_topic: cleanLabel(question.sourceTopic ?? question.studyRef?.topic, 120),
+    question_fingerprint: cleanLabel(question.questionFingerprint, 240),
+    generation_meta: cleanJsonObject(question.generationMeta),
   }));
 
   const { data: insertedQuestions, error: questionsError } = await admin

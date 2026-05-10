@@ -14,6 +14,7 @@ import {
   extractMaterialContent,
   truncateText,
 } from "@/lib/extractMaterialContent";
+import { generateCoverageAwareQuestions } from "@/lib/studyQuestionGeneration";
 
 const MODEL = "gemini-2.5-flash-lite";
 const QUESTION_GEN_TEXT_CHARS = 24_000;
@@ -303,42 +304,39 @@ async function handleGenerateQuestionsRequest(req: NextRequest) {
     ? `\n\nThe following questions have ALREADY been generated from this document. Do NOT repeat these topics or ask similar questions. Identify sections or concepts in the document that are NOT covered by these questions and generate new questions from those parts:\n${coveredQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}`
     : "";
 
-  const indexedChunks = chunkPromptBlocks(await loadIndexedChunks(materialId));
-  if (indexedChunks.length > 0) {
-    const chunksById = new Map(indexedChunks.map((chunk) => [chunk.id, chunk]));
-    const systemPrompt = buildQuestionPrompt({
+  try {
+    const coverageResult = await generateCoverageAwareQuestions({
+      materialId,
+      materialTitle: material.title ?? "Untitled material",
       count,
-      difficultyInstruction,
-      focusInstruction,
-      coveredInstruction,
-      chunkMode: true,
+      difficulty,
+      focus,
+      coveredQuestions,
     });
 
-    const result = await generateJson<{ questions: unknown[] }>({
-      messages: [userMessage(`SOURCE CHUNKS:\n\n${buildChunkDocument(indexedChunks)}\n\n${systemPrompt}`)],
-      temperature: 0.25,
-      maxTokens: Math.min(6000, count * 420),
-      timeoutMs: GEMINI_QUESTION_TIMEOUT_MS,
-    });
-
-    if (!result.ok) {
-      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
+    if (coverageResult?.questions.length) {
+      const kindSummary = Object.entries(coverageResult.questionKindCounts)
+        .map(([kind, value]) => `${value} ${kind.replace(/_/g, " ")}`)
+        .join(", ");
+      return NextResponse.json({
+        questions: coverageResult.questions,
+        ai: {
+          provider: "gemini",
+          model: geminiModelName(),
+          inputMode: "coverage-aware",
+          reason: `Coverage-aware generation covered ${coverageResult.topicsCovered} topic(s)${kindSummary ? `: ${kindSummary}` : ""}.`,
+          coverage: {
+            topicsCovered: coverageResult.topicsCovered,
+            questionKindCounts: coverageResult.questionKindCounts,
+            cognitiveLevelCounts: coverageResult.cognitiveLevelCounts,
+            chunksLoaded: coverageResult.chunksLoaded,
+            chunksCatalogued: coverageResult.chunksCatalogued,
+          },
+        },
+      });
     }
-    if (!Array.isArray(result.data.questions) || result.data.questions.length === 0) {
-      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
-    }
-    const questions = normalizeGeneratedQuestions(result.data.questions, chunksById);
-    if (questions.length === 0) {
-      return NextResponse.json({ error: "Failed to generate questions." }, { status: 500 });
-    }
-    return NextResponse.json({
-      questions,
-      ai: {
-        provider: result.provider,
-        model: geminiModelName(),
-        inputMode: "indexed-chunks",
-      },
-    });
+  } catch (error) {
+    console.warn("[generate-questions] coverage-aware generation fell back:", error instanceof Error ? error.message : error);
   }
 
   // ── Resolve signed download URL ────────────────────────────────────────────

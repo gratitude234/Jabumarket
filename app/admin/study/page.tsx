@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isIndexableMaterialPath } from "@/lib/studyMaterialIndexEligibility";
+import { QuestionQualityClient } from "@/app/study-admin/question-quality/QuestionQualityClient";
 import {
   ArrowLeft,
   ArrowRight,
@@ -30,6 +31,7 @@ import {
   MessageSquareText,
   CalendarDays,
   Activity,
+  ListChecks,
 } from "lucide-react";
 
 type Semester = "first" | "second" | "summer";
@@ -336,7 +338,7 @@ export default function AdminStudyPage() {
   const pathname = usePathname();
   const sp = useSearchParams();
 
-  const tab = (sp.get("tab") ?? "materials") as "materials" | "tutors" | "reports" | "practice" | "qa";
+  const tab = (sp.get("tab") ?? "materials") as "materials" | "tutors" | "reports" | "practice" | "qa" | "quality";
 
   // URL state
   const page = asInt(sp.get("page"), 1);
@@ -1374,6 +1376,13 @@ export default function AdminStudyPage() {
             >
               <MessageSquareText className="h-4 w-4" /> Q&amp;A
             </button>
+            <button
+              type="button"
+              onClick={() => router.replace(buildHref(pathname, { tab: "quality", page: null }))}
+              className={cn("inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold", "bg-white hover:bg-zinc-50")}
+            >
+              <ListChecks className="h-4 w-4" /> Question Quality
+            </button>
           </div>
         </header>
 
@@ -1645,6 +1654,13 @@ export default function AdminStudyPage() {
               className="rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
             >
               Q&amp;A
+            </button>
+            <button
+              type="button"
+              onClick={() => router.replace(buildHref(pathname, { tab: "quality", page: null }))}
+              className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
+            >
+              <ListChecks className="h-4 w-4" /> Question Quality
             </button>
           </div>
 
@@ -2200,6 +2216,32 @@ export default function AdminStudyPage() {
     );
   }
 
+  if (tab === "quality") {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-4 py-6">
+        <div className="mb-4">
+          <Link href="/admin" className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700 hover:text-zinc-900">
+            <ArrowLeft className="h-4 w-4" /> Back to admin
+          </Link>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => router.replace(buildHref(pathname, { tab: null, page: null }))} className="rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50">Materials</button>
+            <button type="button" onClick={() => router.replace(buildHref(pathname, { tab: "practice", page: null }))} className="rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50">CBT Sets</button>
+            <button type="button" onClick={() => router.replace(buildHref(pathname, { tab: "qa", page: null }))} className="rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50">Q&amp;A</button>
+            <button type="button" onClick={() => router.replace(buildHref(pathname, { tab: "quality", page: null }))} className="inline-flex items-center gap-2 rounded-full border bg-zinc-900 px-3 py-2 text-sm font-semibold text-white">
+              <ListChecks className="h-4 w-4" /> Question Quality
+            </button>
+          </div>
+        </div>
+        <QuestionQualityClient
+          apiPath="/api/admin/study/questions/quality"
+          title="Question Quality"
+          description="Inspect generated questions, source coverage, repeated fingerprints, and metadata health."
+          tabValue="quality"
+        />
+      </main>
+    );
+  }
+
   return (
     <div className="space-y-4 pb-28 md:pb-6">
       <header className="rounded-3xl border bg-white p-4 shadow-sm sm:p-5">
@@ -2245,6 +2287,13 @@ export default function AdminStudyPage() {
             className="rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
           >
             Q&amp;A
+          </button>
+          <button
+            type="button"
+            onClick={() => router.replace(buildHref(pathname, { tab: "quality", page: null }))}
+            className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50"
+          >
+            <ListChecks className="h-4 w-4" /> Question Quality
           </button>
         </div>
 
