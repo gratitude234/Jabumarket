@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HighlightedPdfViewer } from "./HighlightedPdfViewer";
 
 export type GuidedStudyRef = {
   chunkId?: string;
@@ -177,11 +178,15 @@ export function GuidedSourceModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
-  const safePage = normalizedPage(page) ?? normalizedPage(studyRef?.page);
+  const [chunkText, setChunkText] = useState("");
+  const [chunkPage, setChunkPage] = useState<number | undefined>(undefined);
+  const [highlightFailed, setHighlightFailed] = useState(false);
+  const safePage = normalizedPage(page) ?? normalizedPage(studyRef?.page) ?? chunkPage;
   const kind = useMemo(() => fileKind(filePath, materialType), [filePath, materialType]);
   const topic = studyRef?.topic?.trim();
   const instruction = studyRef?.instruction?.trim() || "Review the source material, then return to answer the question.";
   const quote = studyRef?.quote?.trim();
+  const highlightText = quote || chunkText.slice(0, 450);
   const sourceBacked = Boolean(studyRef?.chunkId?.trim());
   const sourceHref = materialId ? `/api/study/materials/${encodeURIComponent(materialId)}/download` : "";
 
@@ -226,6 +231,43 @@ export function GuidedSourceModal({
 
     return () => controller.abort();
   }, [open, materialId, retryKey]);
+
+  useEffect(() => {
+    if (!open || !materialId || !studyRef?.chunkId || quote) {
+      setChunkText("");
+      setChunkPage(undefined);
+      return;
+    }
+
+    const controller = new AbortController();
+    setChunkText("");
+    setChunkPage(undefined);
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/study/materials/${encodeURIComponent(materialId)}/chunks/${encodeURIComponent(studyRef.chunkId ?? "")}`,
+          { cache: "no-store", signal: controller.signal }
+        );
+        const json = res.ok ? await res.json() : null;
+        if (!res.ok || !json?.chunk) return;
+        if (typeof json.chunk.text === "string") setChunkText(json.chunk.text);
+        const pageNumber = normalizedPage(json.chunk.page_number);
+        if (pageNumber) setChunkPage(pageNumber);
+      } catch {
+        if (!controller.signal.aborted) {
+          setChunkText("");
+          setChunkPage(undefined);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [open, materialId, quote, studyRef?.chunkId]);
+
+  useEffect(() => {
+    if (open) setHighlightFailed(false);
+  }, [open, resolvedUrl, safePage, highlightText]);
 
   if (!open) return null;
 
@@ -310,7 +352,16 @@ export function GuidedSourceModal({
               </div>
             </div>
           ) : kind === "pdf" ? (
-            <PdfSourceFrame url={resolvedUrl} page={safePage} />
+            safePage && !highlightFailed ? (
+              <HighlightedPdfViewer
+                url={resolvedUrl}
+                page={safePage}
+                highlightText={highlightText}
+                onFatalError={() => setHighlightFailed(true)}
+              />
+            ) : (
+              <PdfSourceFrame url={resolvedUrl} page={safePage} />
+            )
           ) : kind === "image" ? (
             <ImageSourceFrame url={resolvedUrl} title={title} />
           ) : (
