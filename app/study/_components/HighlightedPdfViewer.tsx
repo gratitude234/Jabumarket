@@ -16,6 +16,7 @@ type HighlightedPdfViewerProps = {
   url: string;
   page: number;
   highlightText?: string;
+  fallbackHighlightText?: string;
   onFatalError?: (message: string) => void;
 };
 
@@ -83,8 +84,15 @@ function keywordList(value: string | undefined) {
     .filter((word) => word.length > 3 && !MATCH_STOP_WORDS.has(word));
 }
 
-function findMatchedItemIndexes(items: Array<{ str: string }>, highlightText?: string): MatchResult {
-  const candidates = candidateTexts(highlightText);
+function findMatchedItemIndexes(
+  items: Array<{ str: string }>,
+  highlightText?: string,
+  fallbackHighlightText?: string
+): MatchResult {
+  const candidates = [...new Set([
+    ...candidateTexts(highlightText),
+    ...candidateTexts(fallbackHighlightText),
+  ])];
   if (candidates.length === 0) return { indexes: new Set<number>(), strategy: "none" };
 
   const ranges: Array<{ itemIndex: number; start: number; end: number }> = [];
@@ -113,7 +121,10 @@ function findMatchedItemIndexes(items: Array<{ str: string }>, highlightText?: s
     if (matched.size > 0) return { indexes: matched, strategy: candidateIndex === 0 ? "exact" : "window" };
   }
 
-  const highlightKeywords = [...new Set(keywordList(highlightText))].slice(0, 24);
+  const highlightKeywords = [...new Set([
+    ...keywordList(highlightText),
+    ...keywordList(fallbackHighlightText),
+  ])].slice(0, 28);
   if (highlightKeywords.length < 4) return { indexes: new Set<number>(), strategy: "none" };
 
   const windowSize = Math.min(14, Math.max(4, Math.ceil(highlightKeywords.length * 1.3)));
@@ -157,10 +168,37 @@ function getTextItemBox(pdfjs: any, viewport: any, item: any, index: number): Hi
   };
 }
 
+function canvasLooksBlank(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context || canvas.width <= 0 || canvas.height <= 0) return false;
+
+  const sampleSize = 52;
+  const stepX = Math.max(1, Math.floor(canvas.width / sampleSize));
+  const stepY = Math.max(1, Math.floor(canvas.height / sampleSize));
+  let sampled = 0;
+  let inked = 0;
+
+  try {
+    for (let y = Math.floor(stepY / 2); y < canvas.height; y += stepY) {
+      for (let x = Math.floor(stepX / 2); x < canvas.width; x += stepX) {
+        const [red, green, blue, alpha] = context.getImageData(x, y, 1, 1).data;
+        sampled++;
+        if (alpha > 24 && (red < 245 || green < 245 || blue < 245)) inked++;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  if (sampled < 50) return false;
+  return inked / sampled < 0.003;
+}
+
 export function HighlightedPdfViewer({
   url,
   page,
   highlightText,
+  fallbackHighlightText,
   onFatalError,
 }: HighlightedPdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,6 +210,7 @@ export function HighlightedPdfViewer({
   const [pdfjs, setPdfjs] = useState<any>(null);
   const [pageNumber, setPageNumber] = useState(page);
   const [pageCount, setPageCount] = useState<number | null>(null);
+  const [pdfLoadKey, setPdfLoadKey] = useState(0);
   const [renderWidth, setRenderWidth] = useState(0);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [highlightBoxes, setHighlightBoxes] = useState<HighlightBox[]>([]);
@@ -239,8 +278,10 @@ export function HighlightedPdfViewer({
     setRenderError(null);
     setHighlightBoxes([]);
     setMatched(null);
+    setPageCount(null);
 
     void (async () => {
+      let loaded = false;
       try {
         const loadingTask = pdfjs.getDocument({ url });
         const pdf = await loadingTask.promise;
@@ -250,12 +291,14 @@ export function HighlightedPdfViewer({
         }
         pdfRef.current = pdf;
         setPageCount(pdf.numPages ?? null);
+        setPdfLoadKey((key) => key + 1);
+        loaded = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not open PDF.";
         setRenderError(message);
         onFatalErrorRef.current?.(message);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !loaded) setLoading(false);
       }
     })();
 
@@ -314,7 +357,11 @@ export function HighlightedPdfViewer({
 
         const textContent = await pageProxy.getTextContent();
         const items = (textContent.items ?? []) as Array<any>;
-        const match = findMatchedItemIndexes(items, highlightText);
+        if (canvasLooksBlank(canvas)) {
+          throw new Error("Highlighted reader rendered a blank PDF page.");
+        }
+
+        const match = findMatchedItemIndexes(items, highlightText, fallbackHighlightText);
         const boxes = items.flatMap((item, index) => {
           if (!match.indexes.has(index)) return [];
           const box = getTextItemBox(pdfjs, viewport, item, index);
@@ -322,7 +369,8 @@ export function HighlightedPdfViewer({
         });
 
         setHighlightBoxes(boxes);
-        setMatched(candidateTexts(highlightText).length > 0 ? boxes.length > 0 : null);
+        const hasHighlightCandidate = candidateTexts(highlightText).length > 0 || candidateTexts(fallbackHighlightText).length > 0;
+        setMatched(hasHighlightCandidate ? boxes.length > 0 : null);
         setMatchStrategy(match.strategy);
       } catch (error: any) {
         if (error?.name === "RenderingCancelledException") return;
@@ -340,7 +388,7 @@ export function HighlightedPdfViewer({
       cancelled = true;
       renderTaskRef.current?.cancel?.();
     };
-  }, [pdfjs, pageNumber, highlightText, renderWidth]);
+  }, [pdfjs, pdfLoadKey, pageNumber, highlightText, fallbackHighlightText, renderWidth]);
 
   const canGoPrev = pageNumber > 1;
   const canGoNext = pageCount ? pageNumber < pageCount : false;

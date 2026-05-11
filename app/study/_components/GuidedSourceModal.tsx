@@ -193,6 +193,7 @@ export function GuidedSourceModal({
   const [chunkText, setChunkText] = useState("");
   const [chunkPage, setChunkPage] = useState<number | undefined>(undefined);
   const [highlightFailed, setHighlightFailed] = useState(false);
+  const [highlightFailureReason, setHighlightFailureReason] = useState("");
   const safePage = normalizedPage(page) ?? normalizedPage(studyRef?.page) ?? chunkPage;
   const kind = useMemo(() => fileKind(filePath, materialType), [filePath, materialType]);
   const topic = studyRef?.topic?.trim();
@@ -200,13 +201,18 @@ export function GuidedSourceModal({
   const quote = studyRef?.quote?.trim();
   const chunkSnippet = chunkText ? sourceSnippet(chunkText) : "";
   const visibleQuote = quote || chunkSnippet;
-  const highlightText = quote || chunkText.slice(0, 650);
+  const highlightText = quote || chunkSnippet;
   const sourceBacked = Boolean(studyRef?.chunkId?.trim());
   const sourceStateLabel = sourceBacked
     ? "Source-backed"
     : safePage
       ? "Best effort page"
-      : "No exact page";
+      : "Not indexed yet";
+  const sourceStateNote = sourceBacked
+    ? null
+    : safePage
+      ? "Highlight may not appear until this material is indexed and questions are regenerated."
+      : "This question can still use the source, but it does not have an exact indexed page yet.";
   const sourceHref = materialId ? `/api/study/materials/${encodeURIComponent(materialId)}/download` : "";
 
   useEffect(() => {
@@ -252,8 +258,7 @@ export function GuidedSourceModal({
   }, [open, materialId, retryKey]);
 
   useEffect(() => {
-    const hasPage = Boolean(normalizedPage(page) ?? normalizedPage(studyRef?.page));
-    if (!open || !materialId || !studyRef?.chunkId || (quote && hasPage)) {
+    if (!open || !materialId || !studyRef?.chunkId) {
       setChunkText("");
       setChunkPage(undefined);
       return;
@@ -283,10 +288,13 @@ export function GuidedSourceModal({
     })();
 
     return () => controller.abort();
-  }, [open, materialId, page, quote, studyRef?.chunkId, studyRef?.page]);
+  }, [open, materialId, studyRef?.chunkId]);
 
   useEffect(() => {
-    if (open) setHighlightFailed(false);
+    if (open) {
+      setHighlightFailed(false);
+      setHighlightFailureReason("");
+    }
   }, [open, resolvedUrl, safePage, highlightText]);
 
   if (!open) return null;
@@ -337,6 +345,11 @@ export function GuidedSourceModal({
           </div>
 
           <p className="mt-3 text-sm font-medium leading-relaxed text-foreground">{instruction}</p>
+          {sourceStateNote ? (
+            <p className="mt-2 text-xs font-medium leading-relaxed text-blue-700 dark:text-blue-300">
+              {sourceStateNote}
+            </p>
+          ) : null}
           {visibleQuote ? (
             <blockquote className="mt-2 border-l-2 border-amber-300 pl-3 text-xs font-medium leading-relaxed text-muted-foreground dark:border-amber-700">
               {visibleQuote}
@@ -384,10 +397,24 @@ export function GuidedSourceModal({
                 url={resolvedUrl}
                 page={safePage}
                 highlightText={highlightText}
-                onFatalError={() => setHighlightFailed(true)}
+                fallbackHighlightText={sourceBacked ? chunkSnippet : undefined}
+                onFatalError={(message) => {
+                  setHighlightFailureReason(message);
+                  setHighlightFailed(true);
+                }}
               />
             ) : (
-              <PdfSourceFrame url={resolvedUrl} page={safePage} />
+              <div className="flex h-full min-h-[18rem] flex-col gap-2">
+                {highlightFailed ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+                    Highlighted reader could not load this PDF, so we opened the normal source preview.
+                    {highlightFailureReason ? <span className="font-medium"> {highlightFailureReason}</span> : null}
+                  </div>
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  <PdfSourceFrame url={resolvedUrl} page={safePage} />
+                </div>
+              </div>
             )
           ) : kind === "image" ? (
             <ImageSourceFrame url={resolvedUrl} title={title} fallbackText={instruction} />

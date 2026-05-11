@@ -39,6 +39,7 @@ type StudyMaterialRow = {
   file_url: string | null;
   file_path: string | null;
   material_type: string | null;
+  index_status?: string | null;
 };
 
 type StudyRef = {
@@ -282,7 +283,7 @@ async function handleGenerateQuestionsRequest(req: NextRequest) {
   const admin = adminSupabase;
   const { data: mat, error: matErr } = await admin
     .from("study_materials")
-    .select("id, title, file_url, file_path, material_type, study_courses(id, course_code)")
+    .select("id, title, file_url, file_path, material_type, index_status, study_courses(id, course_code)")
     .eq("id", materialId)
     .maybeSingle();
 
@@ -315,6 +316,13 @@ async function handleGenerateQuestionsRequest(req: NextRequest) {
     });
 
     if (coverageResult?.questions.length) {
+      const missingChunkRefs = coverageResult.questions.filter((question) => !question.studyRef?.chunkId).length;
+      if (missingChunkRefs > 0) {
+        console.warn("[generate-questions] coverage-aware result included best-effort refs for indexed material:", {
+          materialId,
+          missingChunkRefs,
+        });
+      }
       const kindSummary = Object.entries(coverageResult.questionKindCounts)
         .map(([kind, value]) => `${value} ${kind.replace(/_/g, " ")}`)
         .join(", ");
@@ -337,6 +345,12 @@ async function handleGenerateQuestionsRequest(req: NextRequest) {
     }
   } catch (error) {
     console.warn("[generate-questions] coverage-aware generation fell back:", error instanceof Error ? error.message : error);
+    if (material.index_status === "ready") {
+      console.warn("[generate-questions] indexed material is using best-effort generation fallback:", {
+        materialId,
+        indexStatus: material.index_status,
+      });
+    }
   }
 
   // ── Resolve signed download URL ────────────────────────────────────────────
