@@ -411,8 +411,8 @@ export default async function ListingPage({
                 {isLongDesc ? (
                   <details className="group">
                     <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-900 hover:underline">
-                      <span className="group-open:hidden">Read more â†“</span>
-                      <span className="hidden group-open:inline">Show less â†‘</span>
+                      <span className="group-open:hidden">Read more</span>
+                      <span className="hidden group-open:inline">Show less</span>
                     </summary>
                     <p className="text-sm leading-relaxed text-zinc-700 line-clamp-5 group-open:line-clamp-none">
                       {desc}

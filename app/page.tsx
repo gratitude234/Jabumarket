@@ -23,8 +23,8 @@ export const revalidate = 60;
 
 function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
-  if (!Number.isFinite(n)) return "â‚¦0";
-  return `â‚¦${n.toLocaleString("en-NG")}`;
+  if (!Number.isFinite(n)) return "\u20A60";
+  return `\u20A6${n.toLocaleString("en-NG")}`;
 }
 
 function getGreeting() {
@@ -178,7 +178,7 @@ export default async function HomePage() {
       <section className="px-4 pt-2 pb-4 md:hidden">
         <p className="text-xs text-muted-foreground leading-tight">{greeting}</p>
         <h1 className="text-[17px] font-semibold text-foreground leading-tight">
-          {firstName ? `${firstName} ðŸ‘‹` : "Welcome ðŸ‘‹"}
+          {firstName ? `${firstName} \u{1F44B}` : "Welcome \u{1F44B}"}
         </h1>
       </section>
 
@@ -383,7 +383,7 @@ export default async function HomePage() {
 
                     {v._menuItems && v._menuItems.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {v._menuItems.join(" Â· ")}
+                        {v._menuItems.join(" \u00B7 ")}
                       </p>
                     )}
 
@@ -398,7 +398,7 @@ export default async function HomePage() {
                       )}
                       {v.accepts_delivery && (
                         <span className="text-xs text-muted-foreground">
-                          {rating ? " Â· Delivery available" : "Delivery available"}
+                          {rating ? " \u00B7 Delivery available" : "Delivery available"}
                         </span>
                       )}
                     </div>

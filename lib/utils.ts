@@ -143,8 +143,8 @@ export function safePushRecent(item: RecentItem): void {
 /** Format a number as Nigerian Naira. Handles null / non-finite gracefully. */
 export function formatNaira(amount: number | null | undefined): string {
   const n = Number(amount ?? 0);
-  if (!Number.isFinite(n)) return "â‚¦0";
-  return `â‚¦${n.toLocaleString("en-NG")}`;
+  if (!Number.isFinite(n)) return "\u20A60";
+  return `\u20A6${n.toLocaleString("en-NG")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ export function formatDuration(totalSeconds: number): string {
 
 /** Score / total â†’ percentage string with % symbol */
 export function fmtPct(score: number, total: number): string {
-  if (!total) return "â€”";
+  if (!total) return "N/A";
   return `${Math.round((score / total) * 100)}%`;
 }
 

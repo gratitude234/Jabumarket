@@ -153,22 +153,22 @@ export default function AdminHomePage() {
     return [
       {
         title: "Vendors",
-        value: loading ? "â€¦" : `${counts.vendorsPending}`,
-        subtitle: loading ? "Pending requests" : `Pending â€¢ ${counts.vendorsAll} total`,
+        value: loading ? "..." : `${counts.vendorsPending}`,
+        subtitle: loading ? "Pending requests" : `Pending - ${counts.vendorsAll} total`,
         href: "/admin/vendors",
         icon: <Store className="h-5 w-5 text-zinc-800" />,
       },
       {
         title: "Delivery Agents",
-        value: loading ? "â€¦" : `${counts.ridersPending}`,
-        subtitle: loading ? "Pending verifications" : `Pending â€¢ ${counts.ridersAll} total`,
+        value: loading ? "..." : `${counts.ridersPending}`,
+        subtitle: loading ? "Pending verifications" : `Pending - ${counts.ridersAll} total`,
         href: "/admin/riders",
         icon: <Bike className="h-5 w-5 text-zinc-800" />,
       },
       {
         title: "Campus Transport",
-        value: loading ? "â€¦" : `${counts.couriersPending}`,
-        subtitle: loading ? "Pending verifications" : `Pending â€¢ ${counts.couriersAll} total`,
+        value: loading ? "..." : `${counts.couriersPending}`,
+        subtitle: loading ? "Pending verifications" : `Pending - ${counts.couriersAll} total`,
         href: "/admin/couriers",
         icon: <Truck className="h-5 w-5 text-zinc-800" />,
       },
@@ -222,7 +222,7 @@ export default function AdminHomePage() {
                       </Link>
                     </td>
                     <td className="py-2 pr-4 text-xs text-zinc-500 truncate max-w-[120px]">
-                      {l.vendor_name ?? "â€”"}
+                      {l.vendor_name ?? "N/A"}
                     </td>
                     <td className="py-2 pr-4">
                       <span className={cn(
@@ -231,7 +231,7 @@ export default function AdminHomePage() {
                         l.status === "sold" ? "bg-zinc-100 text-zinc-600" :
                         "bg-amber-50 text-amber-700"
                       )}>
-                        {l.status ?? "â€”"}
+                        {l.status ?? "N/A"}
                       </span>
                     </td>
                     <td className="py-2 text-right">
