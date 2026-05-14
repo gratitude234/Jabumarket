@@ -49,16 +49,9 @@
       "type": "image/jpeg",
       "form_factor": "narrow",
       "label": "Order food from campus vendors"
-    },
-    {
-      "src": "/images/screenshot-study.jpg",
-      "sizes": "1080x2000",
-      "type": "image/jpeg",
-      "form_factor": "narrow",
-      "label": "Study Hub — materials, MCQs, Q&A"
     }
   ],
-  "categories": ["shopping", "education"],
+  "categories": ["shopping", "food", "business"],
   "shortcuts": [
     {
       "name": "Post a listing",
@@ -69,11 +62,6 @@
       "name": "Explore listings",
       "url": "/explore",
       "description": "Browse all listings"
-    },
-    {
-      "name": "Study Hub",
-      "url": "/study",
-      "description": "Course materials, MCQs, Q&A"
     }
   ]
 }

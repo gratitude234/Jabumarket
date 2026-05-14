@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       redirect(`/login?next=${encodeURIComponent("/admin")}`);
     }
     // Forbidden or other errors
-    redirect("/study");
+    redirect("/");
   }
 
   return <AdminShell>{children}</AdminShell>;

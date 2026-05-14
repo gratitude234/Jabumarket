@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   ArrowRight,
   Bike,
-  BookOpen,
   ChevronDown,
   ChevronRight,
   Image as ImageIcon,
@@ -20,12 +19,12 @@ import { isOpenNow } from "@/lib/vendorSchedule";
 
 export const revalidate = 60;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function formatNaira(amount: number | null | undefined) {
   const n = Number(amount ?? 0);
-  if (!Number.isFinite(n)) return "₦0";
-  return `₦${n.toLocaleString("en-NG")}`;
+  if (!Number.isFinite(n)) return "â‚¦0";
+  return `â‚¦${n.toLocaleString("en-NG")}`;
 }
 
 function getGreeting() {
@@ -40,7 +39,7 @@ function getFirstName(fullName: string | null | undefined): string {
   return fullName.trim().split(" ")[0];
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ListingPreview = {
   id: string;
@@ -71,12 +70,11 @@ type FoodVendorPreview = {
   _rating?: { avg: number; count: number };
 };
 
-// ── Static data ───────────────────────────────────────────────────────────────
+// â”€â”€ Static data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const quickAccess = [
   { label: "Market", icon: ShoppingBag, href: "/explore", bg: "bg-orange-50", color: "text-[#ff5c00]" },
   { label: "Food", icon: UtensilsCrossed, href: "/food", bg: "bg-[#FAEEDA]", color: "text-[#854F0B]" },
-  { label: "Study Hub", icon: BookOpen, href: "/study", bg: "bg-[#EAF3DE]", color: "text-[#3B6D11]" },
   { label: "Delivery", icon: Bike, href: "/delivery", bg: "bg-[#FBEAF0]", color: "text-[#993356]" },
 ];
 
@@ -88,7 +86,7 @@ const categoryChips = [
   { label: "Services", href: "/explore?type=service" },
 ];
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
@@ -176,26 +174,26 @@ export default async function HomePage() {
 
   return (
     <div className="pb-28 md:pb-10">
-      {/* ── Greeting (mobile only) ─────────────────────────────── */}
+      {/* â”€â”€ Greeting (mobile only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="px-4 pt-2 pb-4 md:hidden">
         <p className="text-xs text-muted-foreground leading-tight">{greeting}</p>
         <h1 className="text-[17px] font-semibold text-foreground leading-tight">
-          {firstName ? `${firstName} 👋` : "Welcome 👋"}
+          {firstName ? `${firstName} ðŸ‘‹` : "Welcome ðŸ‘‹"}
         </h1>
       </section>
 
-      {/* ── Search ────────────────────────────────────────────── */}
+      {/* â”€â”€ Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="px-4 pb-5 md:pb-6">
         <Link
           href="/explore"
           className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-border bg-card/80 shadow-sm no-underline"
         >
           <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="text-sm text-muted-foreground">Search listings, food, courses…</span>
+          <span className="text-sm text-muted-foreground">Search listings, food, and services...</span>
         </Link>
       </section>
 
-      {/* ── Hero banner ───────────────────────────────────────── */}
+      {/* â”€â”€ Hero banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="px-4 pb-5">
         <div className="rounded-[20px] bg-[#130a3e] p-5 md:p-7">
           <p className="text-[10px] font-semibold text-indigo-300 uppercase tracking-widest mb-1.5">
@@ -225,7 +223,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Quick access ──────────────────────────────────────── */}
+      {/* â”€â”€ Quick access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="px-4 pb-5">
         <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
           Quick access
@@ -257,7 +255,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Category chips ────────────────────────────────────── */}
+      {/* â”€â”€ Category chips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="pb-5">
         <p className="px-4 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
           Categories
@@ -286,7 +284,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Recent listings ───────────────────────────────────── */}
+      {/* â”€â”€ Recent listings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <section className="px-4 pb-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
@@ -322,7 +320,7 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* ── Food vendors ──────────────────────────────────────── */}
+      {/* â”€â”€ Food vendors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {foodVendors.length > 0 && (
         <section className="px-4 pb-5">
           <div className="flex items-center justify-between mb-3">
@@ -385,7 +383,7 @@ export default async function HomePage() {
 
                     {v._menuItems && v._menuItems.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {v._menuItems.join(" · ")}
+                        {v._menuItems.join(" Â· ")}
                       </p>
                     )}
 
@@ -400,7 +398,7 @@ export default async function HomePage() {
                       )}
                       {v.accepts_delivery && (
                         <span className="text-xs text-muted-foreground">
-                          {rating ? " · Delivery available" : "Delivery available"}
+                          {rating ? " Â· Delivery available" : "Delivery available"}
                         </span>
                       )}
                     </div>
@@ -412,35 +410,11 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* ── Study Hub banner ──────────────────────────────────── */}
-      <section className="px-4 pb-5">
-        <Link
-          href="/study"
-          className="block rounded-[18px] bg-[#EAF3DE] border border-[#97C459]/60 p-5 no-underline hover:bg-[#dceec8] transition-colors"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-semibold text-[#3B6D11] uppercase tracking-widest mb-1.5">
-                Study Hub
-              </p>
-              <h3 className="text-base font-semibold text-[#173404] mb-0.5">Keep your streak! 🔥</h3>
-              <p className="text-xs text-[#3B6D11]">Flashcards, MCQs, past questions</p>
-            </div>
-            <div className="w-11 h-11 rounded-[14px] bg-[#639922] flex items-center justify-center shrink-0">
-              <BookOpen className="h-5 w-5 text-white" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#3B6D11]">Open Study Hub</span>
-            <ArrowRight className="h-3.5 w-3.5 text-[#3B6D11]" />
-          </div>
-        </Link>
-      </section>
     </div>
   );
 }
 
-// ── ListingCard ───────────────────────────────────────────────────────────────
+// â”€â”€ ListingCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ListingCard({ listing: l, saves }: { listing: ListingPreview; saves?: number }) {
   const title = l.title ?? "Untitled listing";

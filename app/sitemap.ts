@@ -11,17 +11,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${base}/`, changeFrequency: "daily", priority: 1.0 },
     { url: `${base}/explore`, changeFrequency: "daily", priority: 0.9 },
-    { url: `${base}/study`, changeFrequency: "weekly", priority: 0.9 },
     { url: `${base}/food`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/vendors`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${base}/delivery`, changeFrequency: "weekly", priority: 0.5 },
     { url: `${base}/couriers`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/practice`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/materials`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/questions`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/tutors`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/leaderboard`, changeFrequency: "weekly", priority: 0.5 },
-    { url: `${base}/study/gpa`, changeFrequency: "weekly", priority: 0.5 },
   ];
 
   try {

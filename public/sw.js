@@ -25,7 +25,6 @@ const NETWORK_ONLY = [
   '/vendor/',
   '/vendor',
   '/rider/',
-  '/study-admin/',
   '/admin/',
 ]
 

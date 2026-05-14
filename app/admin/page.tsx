@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ArrowRight, Bike, Store, Truck, FileText, Star } from "lucide-react";
+import { ArrowRight, Bike, Store, Truck, Star } from "lucide-react";
 
 function StatCard({
   title,
@@ -55,7 +55,6 @@ export default function AdminHomePage() {
     ridersAll: 0,
     couriersPending: 0,
     couriersAll: 0,
-    studyPending: 0,
   });
 
   const [listings, setListings] = useState<AdminListing[]>([]);
@@ -93,12 +92,6 @@ export default function AdminHomePage() {
       const cAll = await supabase.from("couriers").select("id", { count: "exact", head: true });
       const cPending = await supabase.from("couriers").select("id", { count: "exact", head: true }).eq("verified", false);
 
-      // Study uploads
-      const sPending = await supabase
-        .from("study_materials")
-        .select("id", { count: "exact", head: true })
-        .eq("approved", false);
-
       if (!mounted) return;
 
       setCounts({
@@ -108,7 +101,6 @@ export default function AdminHomePage() {
         ridersAll: rAll.count ?? 0,
         couriersPending: cPending.count ?? 0,
         couriersAll: cAll.count ?? 0,
-        studyPending: sPending.count ?? 0,
       });
 
       setLoading(false);
@@ -161,31 +153,24 @@ export default function AdminHomePage() {
     return [
       {
         title: "Vendors",
-        value: loading ? "…" : `${counts.vendorsPending}`,
-        subtitle: loading ? "Pending requests" : `Pending • ${counts.vendorsAll} total`,
+        value: loading ? "â€¦" : `${counts.vendorsPending}`,
+        subtitle: loading ? "Pending requests" : `Pending â€¢ ${counts.vendorsAll} total`,
         href: "/admin/vendors",
         icon: <Store className="h-5 w-5 text-zinc-800" />,
       },
       {
         title: "Delivery Agents",
-        value: loading ? "…" : `${counts.ridersPending}`,
-        subtitle: loading ? "Pending verifications" : `Pending • ${counts.ridersAll} total`,
+        value: loading ? "â€¦" : `${counts.ridersPending}`,
+        subtitle: loading ? "Pending verifications" : `Pending â€¢ ${counts.ridersAll} total`,
         href: "/admin/riders",
         icon: <Bike className="h-5 w-5 text-zinc-800" />,
       },
       {
         title: "Campus Transport",
-        value: loading ? "…" : `${counts.couriersPending}`,
-        subtitle: loading ? "Pending verifications" : `Pending • ${counts.couriersAll} total`,
+        value: loading ? "â€¦" : `${counts.couriersPending}`,
+        subtitle: loading ? "Pending verifications" : `Pending â€¢ ${counts.couriersAll} total`,
         href: "/admin/couriers",
         icon: <Truck className="h-5 w-5 text-zinc-800" />,
-      },
-      {
-        title: "Study",
-        value: loading ? "…" : `${counts.studyPending}`,
-        subtitle: loading ? "Pending uploads" : "Pending uploads",
-        href: "/admin/study",
-        icon: <FileText className="h-5 w-5 text-zinc-800" />,
       },
     ];
   }, [loading, counts]);
@@ -237,7 +222,7 @@ export default function AdminHomePage() {
                       </Link>
                     </td>
                     <td className="py-2 pr-4 text-xs text-zinc-500 truncate max-w-[120px]">
-                      {l.vendor_name ?? "—"}
+                      {l.vendor_name ?? "â€”"}
                     </td>
                     <td className="py-2 pr-4">
                       <span className={cn(
@@ -246,7 +231,7 @@ export default function AdminHomePage() {
                         l.status === "sold" ? "bg-zinc-100 text-zinc-600" :
                         "bg-amber-50 text-amber-700"
                       )}>
-                        {l.status ?? "—"}
+                        {l.status ?? "â€”"}
                       </span>
                     </td>
                     <td className="py-2 text-right">

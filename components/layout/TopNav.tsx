@@ -20,28 +20,8 @@ const links = [
 function buildNextUrl(pathname: string, sp: URLSearchParams, nextQ: string) {
   const q = nextQ.trim();
 
-  // ✅ Special routing rules:
-  // - Home search goes to Explore
   if (pathname === "/") return q ? `/explore?q=${encodeURIComponent(q)}` : "/";
 
-  // - Anywhere in /study: route search to /study/library
-  if (pathname.startsWith("/study")) {
-    // keep you on library if you’re already there
-    if (pathname.startsWith("/study/library")) {
-      const copy = new URLSearchParams(sp.toString());
-      if (q) copy.set("q", q);
-      else copy.delete("q");
-      const qs = copy.toString();
-      return qs ? `${pathname}?${qs}` : pathname;
-    }
-
-    // otherwise: only send to library when the user is actually searching.
-    // If the query is empty, DO NOT redirect away from the current /study page.
-    // (TopNav is hidden on mobile but still runs its effects; forcing /study -> /study/library breaks the Study homepage.)
-    return q ? `/study/library?q=${encodeURIComponent(q)}` : pathname;
-  }
-
-  // default: update q on current route
   const copy = new URLSearchParams(sp.toString());
   if (q) copy.set("q", q);
   else copy.delete("q");
@@ -64,8 +44,7 @@ export default function TopNav() {
   const showSearch =
     pathname === "/" ||
     pathname.startsWith("/explore") ||
-    pathname.startsWith("/vendors") ||
-    pathname.startsWith("/study");
+    pathname.startsWith("/vendors");
 
   const initialQ = useMemo(() => sp.get("q") ?? "", [sp]);
   const [q, setQ] = useState(initialQ);
@@ -78,7 +57,7 @@ export default function TopNav() {
     return () => window.clearTimeout(timer);
   }, [initialQ]);
 
-  // ✅ debounced replace
+  // âœ… debounced replace
   useEffect(() => {
     if (!showSearch) return;
 
@@ -156,17 +135,11 @@ export default function TopNav() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder={
-                    pathname.startsWith("/vendors")
-                      ? "Search vendors..."
-                      : pathname.startsWith("/study")
-                        ? "Search materials..."
-                        : "Search listings..."
-                  }
+                  placeholder={pathname.startsWith("/vendors") ? "Search vendors..." : "Search listings..."}
                   className="w-64 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
                 />
 
-                {/* ✅ Clear */}
+                {/* âœ… Clear */}
                 {q.trim().length > 0 ? (
                   <button
                     type="button"

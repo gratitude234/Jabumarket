@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 
 import BottomNav from "@/components/layout/BottomNav";
 import MobileTopBar from "@/components/layout/MobileTopBar";
-import StudyBottomNav from "@/components/layout/StudyBottomNav";
 import TopNav from "@/components/layout/TopNav";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { subscribeToPush } from "@/components/ServiceWorkerRegister";
@@ -37,10 +36,9 @@ type ActiveOrdersResponse = {
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading: authLoading } = useAuth();
-  const isAdmin = pathname?.startsWith("/admin") || pathname?.startsWith("/study-admin");
-  const isStudyPage = pathname === "/study" || pathname?.startsWith("/study/");
+  const isAdmin = pathname?.startsWith("/admin");
   const isConversationPage = /^\/inbox\/[^/]+$/.test(pathname ?? "");
-  const hideActiveOrderBanner = pathname === "/my-orders" || isStudyPage;
+  const hideActiveOrderBanner = pathname === "/my-orders";
 
   const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null);
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
@@ -188,7 +186,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
           {children}
         </main>
 
-        {isStudyPage ? <StudyBottomNav /> : <BottomNav />}
+        <BottomNav />
 
         {updateWorker && (
           <div className="pointer-events-none fixed bottom-20 left-0 right-0 z-50 flex justify-center px-4">

@@ -12,7 +12,6 @@ export default function robots(): MetadataRoute.Robots {
         allow: "/",
         disallow: [
           "/admin/",
-          "/study-admin/",
           "/api/",
           "/auth/",
           "/login",

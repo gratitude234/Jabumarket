@@ -33,16 +33,15 @@ export function safeSearchTerm(v: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// URL helpers (replaces buildHref() duplicated in MaterialsClient,
-// QuestionsClient, PracticeHomeClient, etc.)
+// URL helpers.
 // ---------------------------------------------------------------------------
 
 /**
  * Build a URL with only non-empty params.
  *
  * @example
- * buildHref("/study/materials", { q: "BCH 201", level: null })
- * // → "/study/materials?q=BCH+201"
+ * buildHref("/explore", { q: "phone", page: null })
+ * // "/explore?q=phone"
  */
 export function buildHref(
   path: string,
@@ -85,11 +84,11 @@ export function timeAgo(iso?: string | null): string {
   return `${days}d ago`;
 }
 
-/** Alias — some files used `formatWhen`; keep it so we can swap lazily. */
+/** Alias â€” some files used `formatWhen`; keep it so we can swap lazily. */
 export const formatWhen = timeAgo;
 
 // ---------------------------------------------------------------------------
-// Practice engine helpers (moved from usePracticeEngine.ts — Step 2.5)
+// Practice engine helpers (moved from usePracticeEngine.ts â€” Step 2.5)
 // ---------------------------------------------------------------------------
 
 /**
@@ -100,7 +99,7 @@ export const normalize = normalizeStr;
 
 /**
  * Format milliseconds as MM:SS clock string.
- * @example msToClock(90_000) → "01:30"
+ * @example msToClock(90_000) â†’ "01:30"
  */
 export function msToClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -132,7 +131,7 @@ export function safePushRecent(item: RecentItem): void {
       .slice(0, 12);
     window.localStorage.setItem("jabuStudyRecent", JSON.stringify(next));
   } catch {
-    // ignore — localStorage may be blocked
+    // ignore â€” localStorage may be blocked
   }
 }
 
@@ -144,8 +143,8 @@ export function safePushRecent(item: RecentItem): void {
 /** Format a number as Nigerian Naira. Handles null / non-finite gracefully. */
 export function formatNaira(amount: number | null | undefined): string {
   const n = Number(amount ?? 0);
-  if (!Number.isFinite(n)) return "₦0";
-  return `₦${n.toLocaleString("en-NG")}`;
+  if (!Number.isFinite(n)) return "â‚¦0";
+  return `â‚¦${n.toLocaleString("en-NG")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,29 +171,29 @@ export function clamp(n: number, min: number, max: number): number {
  * from the current date.  Nigerian academic year typically starts in Sept/Oct.
  *
  * This is used as a runtime fallback when the academic calendar table is
- * unavailable — replacing every hardcoded `"2025/2026"` string in the codebase.
+ * unavailable â€” replacing every hardcoded `"2025/2026"` string in the codebase.
  */
 // ---------------------------------------------------------------------------
-// Study-specific color and format helpers (Task 1 — consolidated from client files)
+// Study-specific color and format helpers (Task 1 â€” consolidated from client files)
 // ---------------------------------------------------------------------------
 
-/** Score percentage → accent color (for rings, text, bars) */
+/** Score percentage â†’ accent color (for rings, text, bars) */
 export function pctToColor(pct: number): string {
-  if (pct >= 70) return "#1D9E75";   // teal  — mastered
-  if (pct >= 60) return "#378ADD";   // blue  — good
-  if (pct >= 50) return "#BA7517";   // amber — passing
-  if (pct >= 45) return "#E8762A";   // orange-amber — borderline
-  return "#A32D2D";                  // red   — needs work
+  if (pct >= 70) return "#1D9E75";   // teal  â€” mastered
+  if (pct >= 60) return "#378ADD";   // blue  â€” good
+  if (pct >= 50) return "#BA7517";   // amber â€” passing
+  if (pct >= 45) return "#E8762A";   // orange-amber â€” borderline
+  return "#A32D2D";                  // red   â€” needs work
 }
 
-/** Score percentage → background fill color (for cards, pills) */
+/** Score percentage â†’ background fill color (for cards, pills) */
 export function pctToBg(pct: number): string {
   if (pct >= 70) return "#EAF3DE";
   if (pct >= 50) return "#FAEEDA";
   return "#FCEBEB";
 }
 
-/** Duration in seconds → human-readable string */
+/** Duration in seconds â†’ human-readable string */
 export function formatDuration(totalSeconds: number): string {
   if (totalSeconds <= 0) return "0m";
   const m = Math.floor(totalSeconds / 60);
@@ -204,9 +203,9 @@ export function formatDuration(totalSeconds: number): string {
   return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
 }
 
-/** Score / total → percentage string with % symbol */
+/** Score / total â†’ percentage string with % symbol */
 export function fmtPct(score: number, total: number): string {
-  if (!total) return "—";
+  if (!total) return "â€”";
   return `${Math.round((score / total) * 100)}%`;
 }
 

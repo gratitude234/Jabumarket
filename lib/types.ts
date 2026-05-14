@@ -20,13 +20,13 @@ export type ListingRow = {
   description: string | null;
   listing_type: ListingType;
   category: string;
-  /** Physical condition of the item — null for services or when not specified. */
+  /** Physical condition of the item â€” null for services or when not specified. */
   condition?: ListingCondition | null;
   price: number | null;
   price_label: string | null;
   location: string | null;
   image_url: string | null;
-  /** Multi-image support — array of public URLs. Falls back to [image_url] if absent. */
+  /** Multi-image support â€” array of public URLs. Falls back to [image_url] if absent. */
   image_urls?: string[] | null;
   negotiable: boolean | null;
   status: "active" | "sold" | "inactive";
@@ -101,49 +101,6 @@ export type VendorVerificationDocRow = {
 };
 
 // ---------------------------------------------------------------------------
-// Study Hub — Practice engine types (moved from usePracticeEngine.ts — Step 2.5)
-// ---------------------------------------------------------------------------
-
-export type QuizSet = {
-  id: string;
-  title: string;
-  description: string | null;
-  course_code: string | null;
-  level: string | null;
-  time_limit_minutes: number | null;
-  source_material_id?: string | null;
-};
-
-export type QuizQuestion = {
-  id: string;
-  prompt: string;
-  explanation: string | null;
-  ai_explanation?: string | null;
-  question_kind?: string | null;
-  difficulty_level?: string | null;
-  cognitive_level?: string | null;
-  source_topic?: string | null;
-  question_fingerprint?: string | null;
-  generation_meta?: Record<string, unknown> | null;
-  study_ref?: {
-    chunkId?: string;
-    topic?: string;
-    instruction?: string;
-    quote?: string;
-    page?: number;
-  } | null;
-  position: number | null;
-};
-
-export type QuizOption = {
-  id: string;
-  question_id: string;
-  text: string;
-  is_correct: boolean;
-  position: number | null;
-};
-
-export type ReviewTab = "all" | "wrong" | "flagged" | "unanswered";
 export type CourierRow = {
   id: string;
   name: string;
